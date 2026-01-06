@@ -2,20 +2,27 @@
   "name": "grapple-game",
   "tree": {
     "$className": "DataModel",
+
     "ReplicatedStorage": {
       "$path": "src/ReplicatedStorage"
     },
+
     "ServerScriptService": {
       "$path": "src/ServerScriptService"
     },
+
     "StarterPlayer": {
-      "$path": "src/StarterPlayer"
-    },
-    "StarterGui": {
-      "$path": "src/StarterGui"
-    },
-    "StarterPack": {
-      "$path": "src/StarterPack"
+      "$className": "StarterPlayer",
+
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "$path": "src/StarterPlayer/StarterPlayerScripts"
+      },
+
+      "StarterCharacterScripts": {
+        "$className": "StarterCharacterScripts",
+        "$path": "src/StarterPlayer/StarterCharacterScripts"
+      }
     }
   }
 }
