@@ -26,6 +26,22 @@ local debugMode = grappleConfig.debugMode
 -- Templates for ropes and visuals
 local Templates = ReplicatedStorage.Templates
 
+-- Initialize template rope constraint properties
+if Templates:FindFirstChild("RopeConstraint") then
+	local templateRope = Templates.RopeConstraint
+	local templateVisual = templateRope:FindFirstChild("RopeVisual")
+	
+	-- Disable template Beam visual
+	if templateVisual then
+ 		templateVisual.Enabled = false
+	end
+	
+	-- Set default RopeConstraint visual properties
+	templateRope.Visible = true
+	templateRope.Thickness = 0.1
+	templateRope.Color = BrickColor.new("Black")
+end
+
 -- Sound helper module
 local PlaySound = require(ReplicatedStorage.Modules.PlaySound)
 
@@ -185,11 +201,17 @@ local hitPart = function(plr:Player, firePoint : Attachment, hitbox : BasePart, 
 
 			-- Attach rope visuals
 			local RopeVisual = RopeConstraint:FindFirstChild("RopeVisual")
+			
+			-- Set attachments and constraint properties unconditionally
+			RopeConstraint.Attachment0 = firePoint
+			RopeConstraint.Attachment1 = impactAtt
+			RopeConstraint.Visible = true
+			RopeConstraint.Thickness = 0.1
+			RopeConstraint.Color = BrickColor.new("Black")
+			
+			-- Disable RopeVisual Beam if it exists
 			if RopeVisual then
-				RopeConstraint.Attachment0 = firePoint
-				RopeVisual.Attachment0 = firePoint
-				RopeConstraint.Attachment1 = impactAtt
-				RopeVisual.Attachment1 = impactAtt
+ 				RopeVisual.Enabled = false
 			end
 			
 			-- Notify client of wall grapple
@@ -313,11 +335,17 @@ local hitPart = function(plr:Player, firePoint : Attachment, hitbox : BasePart, 
 		end)
 
 	local RopeVisual = RopeConstraint:FindFirstChild("RopeVisual")
+	
+	-- Set attachments and constraint properties unconditionally
+	RopeConstraint.Attachment0 = firePoint
+	RopeConstraint.Attachment1 = impactAtt
+	RopeConstraint.Visible = true
+	RopeConstraint.Thickness = 0.1
+	RopeConstraint.Color = BrickColor.new("Black")
+	
+	-- Disable RopeVisual Beam if it exists
 	if RopeVisual then
-		RopeConstraint.Attachment0 = firePoint
-		RopeVisual.Attachment0 = firePoint
-		RopeConstraint.Attachment1 = impactAtt
-		RopeVisual.Attachment1 = impactAtt
+ 		RopeVisual.Enabled = false
 	end
 
 	-- Notify grappler client
