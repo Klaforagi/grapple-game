@@ -80,7 +80,7 @@ return {
 	
 	ropeLengthSpeed = 10000, -- In studs, The interval on how fast the rope length should change
 	
-	ragdollToggle_Cooldown = 2, -- In seconds, how long before the player can toggle ragdoll again
+	ragdollToggle_Cooldown = 3, -- In seconds, how long before the player can toggle ragdoll again
 
 
 	--[[

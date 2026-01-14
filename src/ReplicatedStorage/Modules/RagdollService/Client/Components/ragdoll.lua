@@ -51,7 +51,16 @@ function module:Start()
 	self.Instance:ChangeState(Enum.HumanoidStateType.Physics)
 
 	self.Instance.EvaluateStateMachine = false
+	self.Instance.PlatformStand = true
 	characterUtil:toggleLimbCollisions(self.character, true)
+
+	-- Continuously force Physics state to prevent auto-recovery
+	self.runTimeTrove:Connect(runService.Heartbeat, function()
+		if self.Instance:GetState() ~= Enum.HumanoidStateType.Physics and self.Instance:GetState() ~= Enum.HumanoidStateType.Dead then
+			self.Instance:ChangeState(Enum.HumanoidStateType.Physics)
+		end
+		self.Instance.PlatformStand = true
+	end)
 
 	if constants.RAGDOLL_CAMERA_SPRING then
 		self.torso = self.character:FindFirstChild("Torso") or self.character:FindFirstChild("UpperTorso")
@@ -94,6 +103,7 @@ function module:Start()
 			--characterUtil:toggleLimbCollisions(self.character, false)
 		end
 
+		self.Instance.PlatformStand = false
 		self.Instance.EvaluateStateMachine = true
 	end)
 

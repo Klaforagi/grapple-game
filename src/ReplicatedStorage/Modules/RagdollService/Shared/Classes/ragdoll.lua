@@ -51,30 +51,31 @@ function module.new(character: Model)
 	end
 
 	self.humanoid.AutoRotate = false
+	self.humanoid.PlatformStand = true
 
 	-- troves
 	self.runTimeTrove:Add(function()
 		self.humanoid.AutoRotate = true
+		self.humanoid.PlatformStand = false
 	end)
 
-	if not self.player then
-		self.humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+	-- Force the humanoid to stay in Physics state (ragdolled) for both players and NPCs
+	self.humanoid:ChangeState(Enum.HumanoidStateType.Physics)
 
-		self.runTimeTrove:Connect(
-			self.humanoid.StateChanged,
-			function(_: Enum.HumanoidStateType?, new: Enum.HumanoidStateType)
-				if new ~= Enum.HumanoidStateType.Physics and new ~= Enum.HumanoidStateType.Dead then
-					self.humanoid:ChangeState(Enum.HumanoidStateType.Physics)
-				end
+	self.runTimeTrove:Connect(
+		self.humanoid.StateChanged,
+		function(_: Enum.HumanoidStateType?, new: Enum.HumanoidStateType)
+			if new ~= Enum.HumanoidStateType.Physics and new ~= Enum.HumanoidStateType.Dead then
+				self.humanoid:ChangeState(Enum.HumanoidStateType.Physics)
 			end
-		)
+		end
+	)
 
-		self.runTimeTrove:Add(function()
-			if self.humanoid:GetState() ~= Enum.HumanoidStateType.Dead then
-				self.humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-			end
-		end)
-	end
+	self.runTimeTrove:Add(function()
+		if self.humanoid:GetState() ~= Enum.HumanoidStateType.Dead then
+			self.humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+		end
+	end)
 
 	self.runTimeTrove:Add(function()
 		if self.character then
