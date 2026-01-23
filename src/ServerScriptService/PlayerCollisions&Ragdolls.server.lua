@@ -180,6 +180,9 @@ CollectionService:GetInstanceAddedSignal("Ragdoll"):Connect(function(instance : 
 		if char and char:IsA("Model") then
 			for _,v in pairs(char:GetChildren()) do
 				if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
+					-- Enable collision immediately to prevent visible drop
+					v.CanCollide = true
+					
 					task.spawn(function()
 						-- Ragdolling disables cancollide so I have to use a loop
 						while CollectionService:HasTag(instance, "Ragdoll") do

@@ -45,6 +45,12 @@ function module.new(character: Model)
 
 	self.oldPhysicalProperties = characterUtil:disableRootPartCollision(self.character)
 
+	-- Re-enable collision on HumanoidRootPart to prevent sinking
+	local humanoidRootPart = self.character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if humanoidRootPart then
+		humanoidRootPart.CanCollide = true
+	end
+
 	local head = self.character:FindFirstChild("Head") :: BasePart
 	if head then
 		head.CanCollide = true
