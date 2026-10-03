@@ -1,115 +1,61 @@
--- Player collision groups and the server-side ragdoll lifecycle.
-
 local CollectionService = game:GetService("CollectionService")
 local PhysicsService = game:GetService("PhysicsService")
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local Config = require(ReplicatedStorage:WaitForChild("GrappleConfig"))
-local Remotes = ReplicatedStorage:WaitForChild("Remotes")
-
--- Requiring the service starts its tagged components.
-require(ReplicatedStorage.Modules:WaitForChild("RagdollService"))
-
-local PLAYER_GROUP = "p"
-local groupExists = false
-for _, group in ipairs(PhysicsService:GetRegisteredCollisionGroups()) do
-	if group.name == PLAYER_GROUP then
-		groupExists = true
-		break
+local storage = game:GetService("ReplicatedStorage")
+local Config = require(storage:WaitForChild("GrappleConfig"))
+local Remotes = require(storage.Modules:WaitForChild("GrappleRemotes"))
+local Ragdoll = require(storage.Modules:WaitForChild("RagdollService"))
+-- Disable the old GUI before StarterGui copies it into a player's PlayerGui.
+local function retireGui(gui)
+	if (gui.Name ~= Config.toolName and gui.Name ~= "Grapple Gun") or not gui:IsA("ScreenGui") then return end
+	gui.Enabled = false
+	local function disable(instance)
+		if instance:IsA("LocalScript") then instance.Disabled = true end
 	end
+	for _, instance in ipairs(gui:GetDescendants()) do disable(instance) end
+	gui.DescendantAdded:Connect(disable)
 end
-if not groupExists then PhysicsService:RegisterCollisionGroup(PLAYER_GROUP) end
-PhysicsService:CollisionGroupSetCollidable(PLAYER_GROUP, PLAYER_GROUP, false)
+local starterGui = game:GetService("StarterGui")
+for _, gui in ipairs(starterGui:GetChildren()) do retireGui(gui) end
+starterGui.ChildAdded:Connect(retireGui)
+local GROUP = "GrappleCharacters"
+pcall(function() PhysicsService:RegisterCollisionGroup(GROUP) end)
+PhysicsService:CollisionGroupSetCollidable(GROUP, GROUP, false)
+local debounce = {}
 
-local ragdollDebounces: {[Player]: number} = {}
-local collisionEnforcers: {[Humanoid]: RBXScriptConnection} = {}
-
-local function assignCharacterCollisionGroup(character: Model)
-	for _, descendant in ipairs(character:GetDescendants()) do
-		if descendant:IsA("BasePart") then descendant.CollisionGroup = PLAYER_GROUP end
-	end
-end
-
-local function stopCollisionEnforcer(humanoid: Humanoid)
-	local connection = collisionEnforcers[humanoid]
-	if connection then connection:Disconnect() end
-	collisionEnforcers[humanoid] = nil
-end
-
-local function setRagdollCollisions(humanoid: Humanoid)
-	local character = humanoid.Parent
-	if not character or not character:IsA("Model") then return end
-	for _, part in ipairs(character:GetChildren()) do
-		if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-			part.CanCollide = true
-		end
-	end
-end
-
-local function enforceRagdollCollisions(humanoid: Humanoid)
-	stopCollisionEnforcer(humanoid)
-	setRagdollCollisions(humanoid)
-	local elapsed = 0
-	collisionEnforcers[humanoid] = RunService.Heartbeat:Connect(function(dt)
-		if not CollectionService:HasTag(humanoid, "Ragdoll") then
-			stopCollisionEnforcer(humanoid)
-			return
-		end
-		elapsed += dt
-		if elapsed < 0.25 then return end
-		elapsed = 0
-		setRagdollCollisions(humanoid)
-	end)
-end
-
-CollectionService:GetInstanceAddedSignal("Ragdoll"):Connect(function(instance)
-	if not instance:IsA("Humanoid") then return end
-	instance:UnequipTools()
-	enforceRagdollCollisions(instance)
-end)
-
-CollectionService:GetInstanceRemovedSignal("Ragdoll"):Connect(function(instance)
-	if instance:IsA("Humanoid") then stopCollisionEnforcer(instance) end
-end)
-
-local function configureCharacter(character: Model)
-	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
+local function configure(character)
+	local humanoid = character:WaitForChild("Humanoid")
 	character:WaitForChild("HumanoidRootPart")
-	humanoid:AddTag("Ragdollable")
-	humanoid:AddTag("RagdollOnHumanoidDied")
-	assignCharacterCollisionGroup(character)
-	character.DescendantAdded:Connect(function(instance)
-		if instance:IsA("BasePart") then instance.CollisionGroup = PLAYER_GROUP end
+	local function collision(instance)
+		if instance:IsA("BasePart") then instance.CollisionGroup = GROUP end
+	end
+	for _, instance in ipairs(character:GetDescendants()) do collision(instance) end
+	character.DescendantAdded:Connect(collision)
+	character.ChildAdded:Connect(function(instance)
+		if instance:IsA("Tool") and humanoid:HasTag("Ragdoll") then humanoid:UnequipTools() end
 	end)
+	Ragdoll.Prepare(humanoid)
+	if humanoid:HasTag("Ragdoll") then Ragdoll.Set(humanoid, true) end
+	humanoid.Died:Connect(function() humanoid:AddTag("Ragdoll") end)
 end
-
-local function configurePlayer(player: Player)
-	player.CharacterAdded:Connect(configureCharacter)
-	if player.Character then task.spawn(configureCharacter, player.Character) end
+CollectionService:GetInstanceAddedSignal("Ragdoll"):Connect(function(humanoid)
+	if humanoid:IsA("Humanoid") and humanoid.Parent then Ragdoll.Set(humanoid, true) end
+end)
+CollectionService:GetInstanceRemovedSignal("Ragdoll"):Connect(function(humanoid)
+	if humanoid:IsA("Humanoid") and humanoid.Parent and humanoid.Health > 0 then Ragdoll.Set(humanoid, false) end
+end)
+local function playerAdded(player)
+	player.CharacterAdded:Connect(configure)
+	if player.Character then task.spawn(configure, player.Character) end
 end
-
-Players.PlayerAdded:Connect(configurePlayer)
-for _, player in ipairs(Players:GetPlayers()) do configurePlayer(player) end
-
+Players.PlayerAdded:Connect(playerAdded)
+for _, player in ipairs(Players:GetPlayers()) do playerAdded(player) end
 Remotes.ToggleRagdoll.OnServerEvent:Connect(function(player)
-	local humanoid = player.Character and player.Character:FindFirstChildWhichIsA("Humanoid")
+	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 or humanoid:GetAttribute("GrappledBy") then return end
 	local now = os.clock()
-	if ragdollDebounces[player] and now - ragdollDebounces[player] < (Config.ragdollToggle_Cooldown or 3) then return end
-	ragdollDebounces[player] = now
-	if humanoid:HasTag("Ragdoll") then
-		humanoid:RemoveTag("Ragdoll")
-	else
-		humanoid:AddTag("Ragdoll")
-	end
+	if debounce[player] and now - debounce[player] < Config.ragdollToggle_Cooldown then return end
+	debounce[player] = now
+	if humanoid:HasTag("Ragdoll") then humanoid:RemoveTag("Ragdoll") else humanoid:AddTag("Ragdoll") end
 end)
-
-Players.PlayerRemoving:Connect(function(player)
-	ragdollDebounces[player] = nil
-	if player.Character then
-		local humanoid = player.Character:FindFirstChildWhichIsA("Humanoid")
-		if humanoid then stopCollisionEnforcer(humanoid) end
-	end
-end)
+Players.PlayerRemoving:Connect(function(player) debounce[player] = nil end)

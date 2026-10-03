@@ -3,9 +3,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = game:GetService("Debris")
 
 -- You can change this to wherever your global sounds are stored
-local DefaultSoundLibrary = ReplicatedStorage:WaitForChild("Sounds")
+local DefaultSoundLibrary = ReplicatedStorage:FindFirstChild("Sounds")
 
-local function PlaySound(source: Instance?, soundInput: string | Sound)
+local function PlaySound(source: Instance?, soundInput: (string | Sound)?)
+	if not soundInput then return end
 	-- Fallback source
 	source = source or workspace
 
@@ -16,7 +17,7 @@ local function PlaySound(source: Instance?, soundInput: string | Sound)
 		sound = soundInput
 	elseif typeof(soundInput) == "string" then
 		-- Try to find by name in sound library
-		local found = DefaultSoundLibrary:FindFirstChild(soundInput,true)
+		local found = DefaultSoundLibrary and DefaultSoundLibrary:FindFirstChild(soundInput,true)
 		if found and found:IsA("Sound") then
 			sound = found
 		end
@@ -31,7 +32,8 @@ local function PlaySound(source: Instance?, soundInput: string | Sound)
 	local clone = sound:Clone()
 	clone.Parent = source
 	clone:Play()
-	Debris:AddItem(clone, clone.TimeLength + 0.1)
+	clone.Ended:Once(function() clone:Destroy() end)
+	Debris:AddItem(clone, math.max(10, clone.TimeLength + 1))
 end
 
 return PlaySound

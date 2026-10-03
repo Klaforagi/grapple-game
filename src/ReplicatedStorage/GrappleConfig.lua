@@ -28,8 +28,7 @@ return {
 	minRopeLength = 0.1,
 	-- Max Hook distance
 	maxRopeLength = 500,
-	-- How long the grapple should be
-	GrappleTime = 30, -- In seconds
+	-- Connected grapples persist until released, escaped, or a character leaves/dies.
 	-- How fast the hook travels
 	HookSpeed = 80, -- Studs per second
 	-- The cooldown after it unhooks
@@ -82,6 +81,11 @@ return {
 	-- is a ragdoll. Keep this finite so the server can solve the rope smoothly.
 	ropeLengthSpeed = 75, -- Studs per second
 	ropeLengthStep = 2, -- Studs added/removed for each rope-control tick
+	playerMinDragDistance = 4, -- Prevent bodies being forced into the gun
+	dragAcceleration = 100, -- Bounded force per unit of victim mass
+	dragMaxSpeed = 45,
+	dragResponsiveness = 12,
+	wallWinchForce = 5000,
 	
 	ragdollToggle_Cooldown = 3, -- In seconds, how long before the player can toggle ragdoll again
 
