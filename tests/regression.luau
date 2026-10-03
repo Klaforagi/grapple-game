@@ -174,7 +174,7 @@ return function(sources)
 	end
 	local config = execute(sources.config)
 	local remotes = {}
-	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "StruggleInput", "StruggleProgress"}) do
+	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "StruggleInput", "StruggleProgress"}) do
 		remotes[name] = instance("RemoteEvent", name)
 	end
 	local ragdoll = execute(sources.ragdoll)
@@ -293,6 +293,8 @@ return function(sources)
 	ragdoll.Set(hum6, true)
 	assert(#r6:FindFirstChild("GrappleRagdollJoints"):GetChildren() == 5 and motor6.Enabled and not root6.CanCollide)
 	ragdoll.Set(hum6, false)
+	assert(config.ragdollToggle_Cooldown == 0.5, "ragdoll recovery cooldown should be half a second")
+	assert(hum6:GetAttribute("RagdollRecoveredAt") == now, "cooldown did not start on recovery")
 	for _, object in ipairs(r6:GetDescendants()) do if object:IsA("Motor6D") then assert(object.Enabled) end end
 	-- Upgraded player avatars use AnimationConstraint, not Motor6D.
 	local upgradedRig = instance("Model", "UpgradedR15", world)
@@ -368,11 +370,20 @@ return function(sources)
 	services.UserInputService = input
 	players.LocalPlayer = attacker
 	function attacker:GetMouse() return {} end
+	local aimPixels
 	world.CurrentCamera = {
 		CFrame = {Position = V.new(0, 0, -100)}, ViewportSize = {X = 800, Y = 600},
-		ScreenPointToRay = function() return {Origin = V.new(), Direction = V.new(0, 0, 1)} end,
-		ViewportPointToRay = function() return {Origin = V.new(), Direction = V.new(0, 0, 1)} end,
+		ScreenPointToRay = function() error("Raw mouse coordinates must not apply a GUI inset") end,
+		ViewportPointToRay = function(_, x, y)
+			aimPixels = {x, y}
+			return {Origin = V.new(), Direction = V.new(0, 0, 1)}
+		end,
 	}
+	local clickedPoint = V.new(7, 3, 100)
+	world.Raycast = function(_, _, _, params)
+		assert(params.FilterDescendantsInstances[1] == attacker.Character, "aim ray must exclude own character")
+		return {Position = clickedPoint}
+	end
 	env.Enum.UserInputType = {MouseButton1 = "MouseButton1", Keyboard = "Keyboard"}
 	local toolClient = execute(sources.tool)
 	toolClient.Init(gun)
@@ -381,10 +392,36 @@ return function(sources)
 	input.InputBegan:Emit({UserInputType = "MouseButton1"}, false)
 	gun.Activated:Emit()
 	assert(#remotes.FireGrapple.sent == 1, "mouse fallback duplicated or missed shot")
+	assert(aimPixels[1] == 100 and aimPixels[2] == 100, "mouse pixel changed during ray conversion")
+	assert(remotes.FireGrapple.sent[1][1] == clickedPoint, "shot target differs from exact aim ray hit")
 	input.InputBegan:Emit({UserInputType = "Keyboard", KeyCode = "W"}, false)
 	assert(#remotes.FireGrapple.sent == 1, "movement fired the gun")
 	now += 0.2
 	toolClient.Fire(gun, true)
 	assert(#remotes.FireGrapple.sent == 2, "touch fire did not use shared firing path")
-	print("PASS: classic/upgraded rigs, grounded drag, escape/recovery, no expiry, zoomed-camera firing, stale cooldown, duplicate X, both player roles, disconnect/death, client joint enforcement, mouse/touch firing without movement")
+	assert(aimPixels[1] == 400 and aimPixels[2] == 300, "touch center aim changed")
+	-- Exercise the actual toggle handler: get up immediately, then wait 0.5 seconds.
+	services.CollectionService = {
+		GetInstanceAddedSignal = function() return signal() end,
+		GetInstanceRemovedSignal = function() return signal() end,
+	}
+	services.StarterGui = instance("Folder", "StarterGui")
+	services.PhysicsService.RegisterCollisionGroup = function() end
+	services.PhysicsService.CollisionGroupSetCollidable = function() end
+	execute(sources.lifecycle)
+	now += 1
+	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
+	assert(attackerHumanoid:HasTag("Ragdoll"), "ready player could not ragdoll")
+	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
+	assert(not attackerHumanoid:HasTag("Ragdoll"), "getting up incorrectly waits for cooldown")
+	local recoveredAt = now
+	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
+	assert(not attackerHumanoid:HasTag("Ragdoll"), "immediate re-ragdoll bypassed cooldown")
+	now = recoveredAt + 0.49
+	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
+	assert(not attackerHumanoid:HasTag("Ragdoll"), "cooldown ended before half a second")
+	now = recoveredAt + 0.5
+	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
+	assert(attackerHumanoid:HasTag("Ragdoll"), "cooldown did not expire after half a second")
+	print("PASS: gameplay regressions, exact mouse pixels/raycast target, touch center, immediate get-up and 0.5-second recovery cooldown")
 end

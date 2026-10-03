@@ -12,6 +12,8 @@ Player dragging applies a limited horizontal pull to the victim; gravity keeps t
 
 The HUD sits at the bottom left. X switches player/wall target mode while the gun is equipped. Mouse and touch firing share a deduplicated input path and are independent of movement. Camera zoom no longer causes valid shots to be rejected.
 
+Mouse aiming uses raw viewport coordinates without adding the top-bar inset. Ragdoll recovery is immediate when you are not grappled; the 0.5-second cooldown starts when you get up and prevents re-entering ragdoll during that window.
+
 ## Verification
 
 Build with `rojo build default.project.json -o <temporary-path>.rbxlx`.

@@ -21,7 +21,6 @@ starterGui.ChildAdded:Connect(retireGui)
 local GROUP = "GrappleCharacters"
 pcall(function() PhysicsService:RegisterCollisionGroup(GROUP) end)
 PhysicsService:CollisionGroupSetCollidable(GROUP, GROUP, false)
-local debounce = {}
 
 local function configure(character)
 	local humanoid = character:WaitForChild("Humanoid")
@@ -53,9 +52,14 @@ for _, player in ipairs(Players:GetPlayers()) do playerAdded(player) end
 Remotes.ToggleRagdoll.OnServerEvent:Connect(function(player)
 	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 or humanoid:GetAttribute("GrappledBy") then return end
-	local now = os.clock()
-	if debounce[player] and now - debounce[player] < Config.ragdollToggle_Cooldown then return end
-	debounce[player] = now
-	if humanoid:HasTag("Ragdoll") then humanoid:RemoveTag("Ragdoll") else humanoid:AddTag("Ragdoll") end
+	if humanoid:HasTag("Ragdoll") then
+		-- Getting up is always available when not being held by a grapple.
+		humanoid:RemoveTag("Ragdoll")
+		Ragdoll.Set(humanoid, false)
+	else
+		local recoveredAt = humanoid:GetAttribute("RagdollRecoveredAt")
+		if recoveredAt and os.clock() - recoveredAt < Config.ragdollToggle_Cooldown then return end
+		humanoid:AddTag("Ragdoll")
+		Ragdoll.Set(humanoid, true)
+	end
 end)
-Players.PlayerRemoving:Connect(function(player) debounce[player] = nil end)

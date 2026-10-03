@@ -6,6 +6,7 @@ $sources = @{
     ragdoll = 'src/ReplicatedStorage/Modules/RagdollService/init.lua'
     server = 'src/ServerScriptService/GrappleHandler.server.lua'
     tool = 'src/ReplicatedStorage/Modules/GrappleToolClient.lua'
+    lifecycle = 'src/ServerScriptService/PlayerCollisions&Ragdolls.server.lua'
 }
 $bundle = 'local sources = {}' + [Environment]::NewLine
 foreach ($key in $sources.Keys) {

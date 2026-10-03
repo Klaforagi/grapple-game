@@ -24,7 +24,9 @@ function M.Fire(tool, centerAim)
 		ray = camera:ViewportPointToRay(size.X / 2, size.Y / 2)
 	else
 		local position = UIS:GetMouseLocation()
-		ray = camera:ScreenPointToRay(position.X, position.Y)
+		-- GetMouseLocation uses raw viewport pixels. ScreenPointToRay would
+		-- apply the top-bar inset again and aim below the clicked pixel.
+		ray = camera:ViewportPointToRay(position.X, position.Y)
 	end
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude

@@ -87,7 +87,7 @@ return {
 	dragResponsiveness = 12,
 	wallWinchForce = 5000,
 	
-	ragdollToggle_Cooldown = 3, -- In seconds, how long before the player can toggle ragdoll again
+	ragdollToggle_Cooldown = 0.5, -- Seconds after getting up before ragdoll can start again
 
 
 	--[[

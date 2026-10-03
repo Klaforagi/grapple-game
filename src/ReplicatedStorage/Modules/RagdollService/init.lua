@@ -133,6 +133,7 @@ function Service.Set(humanoid, enabled)
 		end
 		table.clear(rig.parts)
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, rig.gettingUp)
+		humanoid:SetAttribute("RagdollRecoveredAt", os.clock())
 	end
 	if enabled then humanoid.AutoRotate = false else humanoid.AutoRotate = rig.autoRotate end
 	humanoid.PlatformStand = enabled or rig.platformStand == true
