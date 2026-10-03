@@ -1,7 +1,7 @@
 -- ModuleScript (client): ReplicatedStorage.Modules.LengthenClient
 -- Purpose:
 -- Allows the player to SHORTEN or LENGTHEN the grapple rope while grappling.
--- Works by changing RopeConstraint.WinchTarget and syncing change to the server.
+-- Requests changes from the authoritative server winch and updates the local UI.
 --
 -- Call: require(...).Init(rootGui)
 
@@ -43,9 +43,9 @@ function M.Init(rootGui: Instance)
 	----------------------------------------------------------------
 	-- TUNING VALUES (FROM CONFIG)
 	----------------------------------------------------------------
-	local STEP_STUDS = config.LengthStep or 2
-	local MIN_LEN = config.MinRopeLength or 0
-	local MAX_LEN = config.MaxRopeLength or config.maxRopeLength or config.MaxDistance or 500
+	local STEP_STUDS = config.ropeLengthStep or config.LengthStep or 2
+	local MIN_LEN = config.minRopeLength or config.MinRopeLength or 0.1
+	local MAX_LEN = config.maxRopeLength or config.MaxRopeLength or config.MaxDistance or 500
 	local REPEAT_INTERVAL = 0.08
 
 	----------------------------------------------------------------
@@ -78,6 +78,9 @@ function M.Init(rootGui: Instance)
 	local currentVictim: Model? = nil
 	local currentRopeConstraint: RopeConstraint? = nil
 	local currentRopeVisual: Beam? = nil
+	-- WinchTarget is authoritative on the server. Keeping a local display target
+	-- gives responsive UI without trying to write a server-owned constraint.
+	local displayTargetLength = 0
 
 	----------------------------------------------------------------
 	-- INPUT STATE
@@ -122,15 +125,7 @@ function M.Init(rootGui: Instance)
 	-- ROPE LENGTH HELPERS
 	----------------------------------------------------------------
 	local function getCurrentTargetLength(): number
-		if currentRopeConstraint and currentRopeConstraint:IsA("RopeConstraint") then
-			return currentRopeConstraint.WinchTarget
-		end
-		return 0
-	end
-
-	local function setLocalTargetLength(newLen: number)
-		if not currentRopeConstraint then return end
-		currentRopeConstraint.WinchTarget = newLen
+		return displayTargetLength
 	end
 
 	----------------------------------------------------------------
@@ -176,7 +171,7 @@ function M.Init(rootGui: Instance)
 		changeLengthRemote:FireServer(newLen)
 		dbg("Fired ChangeLength ->", newLen)
 
-		setLocalTargetLength(newLen)
+		displayTargetLength = newLen
 		safeSetPercentageFromLength(newLen)
 	end
 
@@ -237,9 +232,13 @@ function M.Init(rootGui: Instance)
 			if input.UserInputType == Enum.UserInputType.Keyboard then
 				if input.KeyCode == config.lengthenRope then
 					held.lengthen = true
+					-- Apply once on press. The repeat loop below handles a held key;
+					-- without this, quick Q/E taps were ignored entirely.
+					applyLengthChange(getCurrentTargetLength() + STEP_STUDS)
 					dbg("Hold start: lengthen")
 				elseif input.KeyCode == config.shortenRope then
 					held.shorten = true
+					applyLengthChange(getCurrentTargetLength() - STEP_STUDS)
 					dbg("Hold start: shorten")
 				end
 			end
@@ -279,7 +278,8 @@ function M.Init(rootGui: Instance)
 		currentRopeVisual = ropeVisual
 
 		if currentRopeConstraint and currentRopeConstraint:IsA("RopeConstraint") then
-			safeSetPercentageFromLength(currentRopeConstraint.WinchTarget)
+			displayTargetLength = currentRopeConstraint.WinchTarget
+			safeSetPercentageFromLength(displayTargetLength)
 		else
 			dbg("No RopeConstraint provided or invalid")
 		end
@@ -307,7 +307,8 @@ function M.Init(rootGui: Instance)
 		currentRopeVisual = ropeVisual
 
 		if currentRopeConstraint and currentRopeConstraint:IsA("RopeConstraint") then
-			safeSetPercentageFromLength(currentRopeConstraint.WinchTarget)
+			displayTargetLength = currentRopeConstraint.WinchTarget
+			safeSetPercentageFromLength(displayTargetLength)
 		else
 			dbg("No RopeConstraint provided or invalid")
 		end

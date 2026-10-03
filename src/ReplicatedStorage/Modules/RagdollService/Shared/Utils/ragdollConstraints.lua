@@ -79,7 +79,9 @@ function ragdollConstraints:rig(attachmentMap: attachmentMapType, folder: Folder
 				or (constants.USE_AUTO_CREATED_CONSTRAINTS_IF_JOINT_PROVIDED_IN_INFO and jointConstraintInfo)
 			then
 				defaultConstraints(info, parent, folder)
-				return
+				-- Keep rigging the remaining joints. Returning here left a character
+				-- with only its first joint constrained, causing unstable ragdolls.
+				continue
 			end
 
 			local success: boolean, constraint: Constraint | NoCollisionConstraint = pcall(function()

@@ -78,7 +78,10 @@ return {
 	
 	grappleGravity = Vector3.new(0,0,0), -- Change the Y axis if you want the hook to be affected by gravity, ex: Vector3.new(0,-50,0)
 	
-	ropeLengthSpeed = 10000, -- In studs, The interval on how fast the rope length should change
+	-- A 10,000 stud/s winch creates extreme corrective impulses when the target
+	-- is a ragdoll. Keep this finite so the server can solve the rope smoothly.
+	ropeLengthSpeed = 75, -- Studs per second
+	ropeLengthStep = 2, -- Studs added/removed for each rope-control tick
 	
 	ragdollToggle_Cooldown = 3, -- In seconds, how long before the player can toggle ragdoll again
 

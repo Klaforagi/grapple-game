@@ -26,6 +26,19 @@ local BoltTemplate = Templates:FindFirstChild("Bolt")
 -- Load grapple configuration (used for debug mode, settings, etc.)
 local config = require(ReplicatedStorage:WaitForChild("GrappleConfig"))
 
+-- This character script is already present in every spawned character, so it
+-- is also a reliable fallback initializer for Q/E rope controls. The module's
+-- attribute guard prevents a duplicate controller if GrappleUi got there first.
+task.spawn(function()
+	local playerGui = plr:WaitForChild("PlayerGui")
+	local grappleGui = playerGui:WaitForChild("Grapple Gun", 10)
+	if not grappleGui then return end
+	local lengthGui = grappleGui:FindFirstChild("Length", true)
+	if lengthGui then
+		require(ReplicatedStorage.Modules:WaitForChild("LengthenClient")).Init(lengthGui)
+	end
+end)
+
 -- This table keeps track of which visual belongs to which hitbox
 -- Format:
 -- visualMap[hitbox] = {

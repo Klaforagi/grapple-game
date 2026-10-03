@@ -1,527 +1,373 @@
--- This script runs on the SERVER
--- It handles all grapple logic: firing, hit detection, ropes,
--- grabbing players, wall grappling, struggle system, and cleanup
+-- Authoritative grapple simulation. Clients only provide aim and UI input.
 
--- Services
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local workspace = game:GetService("Workspace")
-local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 
--- Load grapple configuration (distances, cooldowns, debug mode, etc.)
-local grappleConfig = require(ReplicatedStorage.GrappleConfig)
+local Config = require(ReplicatedStorage:WaitForChild("GrappleConfig"))
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+local Templates = ReplicatedStorage:WaitForChild("Templates")
+local Sounds = ReplicatedStorage:WaitForChild("Sounds")
+local PlaySound = require(ReplicatedStorage.Modules:WaitForChild("PlaySound"))
 
--- Shared folders / modules
-local Remotes = ReplicatedStorage.Remotes
-local FastCast = require(game.ReplicatedStorage.Modules.FastCastRedux)
-local PartCache = require(game.ReplicatedStorage.Modules.PartCache)
+local FIRE_INTERVAL = 0.05
+local LENGTH_INTERVAL = 0.05
+local MAX_CAMERA_OFFSET = 20
+local minRopeLength = Config.minRopeLength or Config.MinRopeLength or 0.1
+local maxRopeLength = Config.maxRopeLength or Config.MaxRopeLength or 500
+local winchSpeed = Config.ropeLengthSpeed or 75
 
--- Tracks players currently firing a grapple
--- PlayersFiring[playerName] = UserData table
-local PlayersFiring = {}
-
--- Debug flag
-local debugMode = grappleConfig.debugMode
-
--- Templates for ropes and visuals
-local Templates = ReplicatedStorage.Templates
-
--- Initialize template rope constraint properties
-if Templates:FindFirstChild("RopeConstraint") then
-	local templateRope = Templates.RopeConstraint
-	local templateVisual = templateRope:FindFirstChild("RopeVisual")
-	
-	-- Disable template Beam visual
-	if templateVisual then
- 		templateVisual.Enabled = false
-	end
-	
-	-- Set default RopeConstraint visual properties
-	templateRope.Visible = true
-	templateRope.Thickness = 0.1
-	templateRope.Color = BrickColor.new("Black")
+local hitboxFolder = Workspace:FindFirstChild("Hitbox")
+if not hitboxFolder then
+	hitboxFolder = Instance.new("Folder")
+	hitboxFolder.Name = "Hitbox"
+	hitboxFolder.Parent = Workspace
 end
 
--- Sound helper module
-local PlaySound = require(ReplicatedStorage.Modules.PlaySound)
-
--- Sound assets
-local Sounds = ReplicatedStorage.Sounds
-
--- Tracks who is currently grappling a victim
--- victimPlayer.UserId -> grapplerPlayer
-local GrappleOwners = {}
-
--- Per-player wall grapple toggle
--- true  = can grapple walls/objects
--- false = ignores walls/objects and only reacts to humanoids (shoots through walls)
+-- One active projectile/rope per player. Player keys avoid name collisions.
+local Active: {[Player]: {[string]: any}} = {}
+local GrappleOwners: {[number]: Player} = {}
 local WallMode: {[Player]: boolean} = {}
+local lastFire: {[Player]: number} = {}
 
--- Remote to toggle wall mode (press X on client)
-if Remotes:FindFirstChild("ToggleWallMode") then
-	Remotes.ToggleWallMode.OnServerEvent:Connect(function(plr: Player)
-		WallMode[plr] = not (WallMode[plr] == true)
-
-		-- optional: store it on the tool so you can debug/drive UI
-		local char = plr.Character
-		local tool = char and char:FindFirstChild(grappleConfig.toolName)
-		if tool and tool:IsA("Tool") then
-			tool:SetAttribute("WallMode", WallMode[plr])
-		end
-	end)
+local function getTool(player: Player): Tool?
+	local character = player.Character
+	local tool = character and character:FindFirstChild(Config.toolName)
+	return tool and tool:IsA("Tool") and tool or nil
 end
 
-Players.PlayerRemoving:Connect(function(plr: Player)
-	WallMode[plr] = nil
-end)
-
-----------------------------------------------------------------
--- DISCONNECT ROPE FUNCTION
-----------------------------------------------------------------
--- Safely removes a grapple rope and resets the grappler state
--- noCooldown = true means we skip cooldown (used when stealing grapples)
-local disconnectRope = function(plr : Player, noCooldown : boolean)
-	local UserData = PlayersFiring[plr.Name]
-	if not UserData then return end
-
-	local victim = UserData.Victim
-
-	-- Only apply cooldown if explicitly allowed
-	if not noCooldown then
-		UserData.Tool:SetAttribute("InCooldown", true)
-		task.delay(grappleConfig.GrappleCooldown, function()
-			if UserData.Tool then
-				UserData.Tool:SetAttribute("InCooldown", false)
-			end
-		end)
-	end
-	
-	-- Mark grapple as no longer active
-	UserData.Tool:SetAttribute("HasGrappled", false)
-
-	-- Destroy rope constraint if it exists
-	if UserData.RopeConstraint then
-		UserData.RopeConstraint:Destroy()
-	end
-
-	-- Restore humanoid movement if we grabbed someone
-	if UserData.Humanoid then
-		UserData.Humanoid:RemoveTag("Ragdoll")
-		UserData.Humanoid.PlatformStand = false
-		UserData.Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-	end
-
-	-- Disconnect all stored connections (events, remotes, etc.)
-	for _, conn in pairs(UserData.Connections) do
-		conn:Disconnect()
-	end
-
-	-- Clear firing state
-	PlayersFiring[plr.Name] = nil
-
-	-- Notify client that grapple ended
-	Remotes.GrappledPlayer:FireClient(plr)
-	if victim then
-		Remotes.HasBeenGrappled:FireClient(victim)
-	end
-	
-	-- Remove ownership if this player owned a victim
-	for victimId, owner in pairs(GrappleOwners) do
-		if owner == plr then
-			GrappleOwners[victimId] = nil
-		end
-	end
-	
-	-- Restore bolt visibility
-	local grapple : Tool = plr.Character:FindFirstChild(grappleConfig.toolName)
-	if not grapple then return end
-	
-	PlaySound(grapple.Bolt,Sounds.Disconnect)
-	grapple.Bolt.Transparency = 0
+local function getFirePoint(tool: Tool): Attachment?
+	local firePoint = tool:FindFirstChild("FirePoint", true)
+	return firePoint and firePoint:IsA("Attachment") and firePoint or nil
 end
-----------------------------------------------------------------
--- HIT HANDLER
-----------------------------------------------------------------
--- Called when the grapple hitbox collides with something
-local hitPart = function(plr:Player, firePoint : Attachment, hitbox : BasePart, hit:BasePart)
-	-- Position where the hitbox collided
-	local impactPos = hitbox.Position
-	local m = hit:FindFirstAncestorOfClass("Model") or hit.Parent
 
-	-- Create an attachment on the hit object
-	-- This is where the rope will attach
-	local impactAtt = Instance.new("Attachment")
-	impactAtt.Name = plr.Name .. " Impact"
-	impactAtt.Parent = hit
-	impactAtt.WorldPosition = impactPos
-
-	if debugMode then
-		print("[Grapple] Direct-hit on (final):", hit:GetFullName())
-	end
-
-	-- Check if we hit a humanoid (player or NPC)
-	local hum : Humanoid = m:FindFirstChildWhichIsA("Humanoid")
-	if not hum then
-		-- Hit a wall or object
-		
-		PlaySound(impactAtt, Sounds.HitWall)
-		
-		-- If wall grappling is disabled for THIS player, stop here
-		if not (WallMode[plr] == true) then
-			PlayersFiring[plr.Name] = nil
-			return
-		else
-
-			-- Create rope for wall grappling
-			local RopeConstraint = Templates.RopeConstraint:Clone()
-			RopeConstraint.Parent = hit
-
-			-- Set rope length based on distance
-			RopeConstraint.Length = (firePoint.WorldPosition - impactAtt.WorldPosition).Magnitude
-
-			-- Configure winch speed
-			RopeConstraint.WinchSpeed = grappleConfig.ropeLengthSpeed * 3			
-			local UserData = PlayersFiring[plr.Name]
-			
-			-- Listen once for rope length changes
-			UserData.Connections.changeLengthConn =
-				Remotes.ChangeLength.OnServerEvent:Once(function(player, length)
-					if player == plr and RopeConstraint and RopeConstraint.Parent then
-						local minL = grappleConfig.MinRopeLength or 0
-						local maxL = grappleConfig.MaxRopeLength
-							or grappleConfig.maxRopeLength
-							or grappleConfig.MaxDistance
-							or 200
-						local newTarget = math.clamp(tonumber(length) or 0, minL, maxL)
-						if RopeConstraint:FindFirstChild("WinchTarget") then
-							RopeConstraint.WinchTarget.Value = newTarget
-						end
-					end
-				end)
-
-			-- Attach rope visuals
-			local RopeVisual = RopeConstraint:FindFirstChild("RopeVisual")
-			
-			-- Set attachments and constraint properties unconditionally
-			RopeConstraint.Attachment0 = firePoint
-			RopeConstraint.Attachment1 = impactAtt
-			RopeConstraint.Visible = true
-			RopeConstraint.Thickness = 0.1
-			RopeConstraint.Color = BrickColor.new("Black")
-			
-			-- Disable RopeVisual Beam if it exists
-			if RopeVisual then
- 				RopeVisual.Enabled = false
-			end
-			
-			-- Notify client of wall grapple
-			Remotes.GrappledWall:FireClient(plr, impactAtt, RopeConstraint, RopeVisual, hitbox)
-			UserData.Tool:SetAttribute("HasGrappled", true)
-
-			UserData.RopeConstraint = RopeConstraint
-			UserData.RopeVisual = RopeVisual
-			return
-		end
-	end
-	----------------------------------------------------------------
-	-- PLAYER HIT LOGIC
-	----------------------------------------------------------------
-	PlaySound(impactAtt, Sounds.HitPerson)
-
-	local UserData = PlayersFiring[plr.Name]
-	if not UserData then
-		if debugMode then
-			print("[Grapple] No UserData for player", plr.Name)
-		end
-		return
-	end
-
-	local hitPlayer = Players:GetPlayerFromCharacter(m)
-	
-	-- If we hit another player
-	if hitPlayer then
-		-- Check if someone already owns this victim
-		local previousGrappler = GrappleOwners[hitPlayer.UserId]
-
-		if previousGrappler and previousGrappler ~= plr then
-			if debugMode then
-				print("[Grapple] Stealing victim from:", previousGrappler.Name)
-			end
-
-			-- Force old grappler to disconnect WITHOUT cooldown
-			disconnectRope(previousGrappler, true)
-		end
-
-		-- Assign new grappler
-		GrappleOwners[hitPlayer.UserId] = plr
-				
-		PlaySound(UserData.Tool.Handle, Sounds.Grapple)
-		
-		-- Create struggle remote dynamically
-		local RS = game:GetService("ReplicatedStorage")
-		local StruggleFolder = RS:FindFirstChild("Struggle") or Instance.new("Folder", RS)
-		StruggleFolder.Name = "Struggle"
-
-		-- Random ID generator
-		local function randomId(len)
-			local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-			local str = ""
-			for i = 1, len do
-				local idx = math.random(1, #chars)
-				str = str .. chars:sub(idx, idx)
-			end
-			return str
-		end
-
-		local remoteName = randomId(12)
-		local struggleRemote = Instance.new("RemoteEvent")
-		struggleRemote.Name = remoteName
-		struggleRemote.Parent = StruggleFolder
-
-		UserData.struggleRemote = struggleRemote
-
-		-- Send remote name to victim
-		Remotes.HasBeenGrappled:FireClient(hitPlayer, plr, remoteName)
-
-		if debugMode then
-			print("Created struggle event:", struggleRemote.Name)
-		end
-
-		-- Listen for victim struggle success
-		UserData.Connections = UserData.Connections or {}
-		UserData.Connections.struggleConn =
-			struggleRemote.OnServerEvent:Once(function(playerWhoFired)
-				if playerWhoFired == hitPlayer then
-					disconnectRope(plr)
-					if struggleRemote and struggleRemote.Parent then
-						struggleRemote:Destroy()
-					end
+local function setCharacterNetworkOwner(character: Model, owner: Player?)
+	-- The victim must have one simulator. A rope between two client-owned player
+	-- assemblies produces the correction war that makes dragged players jitter.
+	for _, instance in ipairs(character:GetDescendants()) do
+		if instance:IsA("BasePart") then
+			pcall(function()
+				if instance:CanSetNetworkOwnership() then
+					instance:SetNetworkOwner(owner)
 				end
 			end)
+		end
 	end
-	
-	-- Unequips any tool the player has
-	hum:UnequipTools()
-	
-	-- Apply ragdoll to victim
-	UserData.Tool:SetAttribute("HasGrappled", true)
-	hum:AddTag("Ragdoll")
-	hum.PlatformStand = true
-	hum:ChangeState(Enum.HumanoidStateType.Physics)
-
-	-- Create rope constraint for player grapple
-	local RopeConstraint = Templates.RopeConstraint:Clone()
-	RopeConstraint.Parent = hit
-	local dist = (firePoint.WorldPosition - impactAtt.WorldPosition).Magnitude
-
-	RopeConstraint.Length = dist
-	RopeConstraint.WinchTarget = dist  -- start neutral
-	RopeConstraint.WinchSpeed = grappleConfig.ropeLengthSpeed
-
-	-- Handle rope length changes
-	UserData.Connections.changeLengthConn =
-		Remotes.ChangeLength.OnServerEvent:Once(function(player, length)
-			if player == plr and RopeConstraint and RopeConstraint.Parent then
-				local minL = grappleConfig.MinRopeLength or 0
-				local maxL = grappleConfig.MaxRopeLength
-					or grappleConfig.maxRopeLength
-					or grappleConfig.MaxDistance
-					or 200
-				local newTarget = math.clamp(tonumber(length) or 0, minL, maxL)
-				if RopeConstraint:FindFirstChild("WinchTarget") then
-					RopeConstraint.WinchTarget.Value = newTarget
-				end
-			end
-		end)
-
-	local RopeVisual = RopeConstraint:FindFirstChild("RopeVisual")
-	
-	-- Set attachments and constraint properties unconditionally
-	RopeConstraint.Attachment0 = firePoint
-	RopeConstraint.Attachment1 = impactAtt
-	RopeConstraint.Visible = true
-	RopeConstraint.Thickness = 0.1
-	RopeConstraint.Color = BrickColor.new("Black")
-	
-	-- Disable RopeVisual Beam if it exists
-	if RopeVisual then
- 		RopeVisual.Enabled = false
-	end
-
-	-- Notify grappler client
-	Remotes.GrappledPlayer:FireClient(plr, m, RopeConstraint, RopeVisual, hitbox)
-
-	UserData.RopeConstraint = RopeConstraint
-	UserData.RopeVisual = RopeVisual
-	UserData.Humanoid = hum
-	
-	UserData.Victim = hitPlayer
 end
-----------------------------------------------------------------
--- FIRE GRAPPLE EVENT
-----------------------------------------------------------------
--- Called when the client fires the grapple
-Remotes.FireGrapple.OnServerEvent:Connect(function(plr, hitPos, cameraPos)
-	-- Basic validation
-	if not hitPos then return end
-	local char = plr.Character
-	if not char then return end
-	
-	local hum = char:FindFirstChildWhichIsA("Humanoid")
-	if not hum or hum.Health <= 0 or hum:HasTag("Ragdoll") then
-		if debugMode then
-			print("Humanoid is either dead or ragdolled")
+
+local function restoreAutomaticNetworkOwnership(character: Model)
+	for _, instance in ipairs(character:GetDescendants()) do
+		if instance:IsA("BasePart") then
+			pcall(function()
+				if instance:CanSetNetworkOwnership() then
+					instance:SetNetworkOwnershipAuto()
+				end
+			end)
 		end
-		return
+	end
+end
+
+local disconnectRope: (Player, boolean?) -> ()
+
+disconnectRope = function(player: Player, skipCooldown: boolean?)
+	local state = Active[player]
+	if not state then return end
+	-- Clear first so destruction and death callbacks can safely re-enter.
+	Active[player] = nil
+
+	for _, connection in pairs(state.connections) do connection:Disconnect() end
+	if state.rope then state.rope:Destroy() end
+	if state.impactAttachment then state.impactAttachment:Destroy() end
+	if state.struggleRemote then state.struggleRemote:Destroy() end
+	if state.hitbox then state.hitbox:Destroy() end
+	if state.beam and state.beam.Parent then
+		state.beam.Attachment1 = state.originalBeamAttachment
+		state.beam.Enabled = false
 	end
 
-	local grapple : Tool = char:FindFirstChild(grappleConfig.toolName)
-	if not grapple then return end
-
-	-- If already firing, cancel the shot and STOP (next click will fire)
-	if grapple:GetAttribute("InUse") then
-		PlayersFiring[plr.Name] = nil
-		grapple:SetAttribute("InUse", false)
-		return
-	end
-
-	-- Disconnect if already grappling
-	if grapple:GetAttribute("HasGrappled") then
-		if PlayersFiring[plr.Name] then
-			disconnectRope(plr)
+	local victimHumanoid: Humanoid? = state.victimHumanoid
+	if victimHumanoid and victimHumanoid.Parent then
+		victimHumanoid:SetAttribute("GrappledBy", nil)
+		if state.appliedRagdoll then
+			victimHumanoid:RemoveTag("Ragdoll")
+			victimHumanoid.PlatformStand = false
+			if victimHumanoid.Health > 0 then victimHumanoid:ChangeState(Enum.HumanoidStateType.GettingUp) end
 		end
+	end
+	if state.victimCharacter and state.serverOwnedVictim then
+		restoreAutomaticNetworkOwnership(state.victimCharacter)
+	end
+	if state.victimPlayer and GrappleOwners[state.victimPlayer.UserId] == player then
+		GrappleOwners[state.victimPlayer.UserId] = nil
+	end
+
+	local tool: Tool? = state.tool
+	if tool then
+		tool:SetAttribute("InUse", false)
+		tool:SetAttribute("HasGrappled", false)
+		if not skipCooldown then
+			tool:SetAttribute("InCooldown", true)
+			task.delay(Config.GrappleCooldown or 0.1, function()
+				if tool.Parent then tool:SetAttribute("InCooldown", false) end
+			end)
+		end
+		local bolt = tool:FindFirstChild("Bolt")
+		if bolt and bolt:IsA("BasePart") then
+			bolt.Transparency = 0
+			PlaySound(bolt, Sounds:FindFirstChild("Disconnect"))
+		end
+	end
+
+	-- Either the wall or player UI may be active; clear both to avoid stuck input.
+	Remotes.GrappledPlayer:FireClient(player)
+	Remotes.GrappledWall:FireClient(player)
+end
+
+local function createImpactAttachment(player: Player, part: BasePart, position: Vector3): Attachment
+	local attachment = Instance.new("Attachment")
+	attachment.Name = player.Name .. " Impact"
+	attachment.Parent = part
+	attachment.WorldPosition = position
+	return attachment
+end
+
+local function makeRope(state, firePoint: Attachment, impactAttachment: Attachment, length: number): RopeConstraint
+	local rope = Templates:WaitForChild("RopeConstraint"):Clone()
+	rope.Attachment0 = firePoint
+	rope.Attachment1 = impactAttachment
+	rope.Length = length
+	rope.WinchEnabled = true
+	rope.WinchTarget = length
+	rope.WinchSpeed = winchSpeed
+	rope.Visible = true
+	rope.Thickness = 0.1
+	rope.Color = BrickColor.new("Black")
+	rope.Parent = impactAttachment.Parent
+	local visual = rope:FindFirstChild("RopeVisual")
+	if visual and visual:IsA("Beam") then visual.Enabled = false end
+	state.rope = rope
+	state.impactAttachment = impactAttachment
+	return rope
+end
+
+local function createStruggleRemote(state, victim: Player)
+	local folder = ReplicatedStorage:FindFirstChild("Struggle")
+	if not folder then
+		folder = Instance.new("Folder")
+		folder.Name = "Struggle"
+		folder.Parent = ReplicatedStorage
+	end
+	local remote = Instance.new("RemoteEvent")
+	remote.Name = string.format("Grapple_%d_%d", victim.UserId, math.floor(os.clock() * 1000))
+	remote.Parent = folder
+	state.struggleRemote = remote
+	state.connections.struggle = remote.OnServerEvent:Connect(function(sender)
+		if sender == victim and Active[state.owner] == state then disconnectRope(state.owner) end
+	end)
+	Remotes.HasBeenGrappled:FireClient(victim, state.owner, remote.Name)
+end
+
+local function grapplePart(state, firePoint: Attachment, hit: BasePart, position: Vector3)
+	if Active[state.owner] ~= state then return end
+	local hitModel = hit:FindFirstAncestorOfClass("Model")
+	local hitHumanoid = hitModel and hitModel:FindFirstChildWhichIsA("Humanoid")
+	if not hitHumanoid then
+		if not WallMode[state.owner] then disconnectRope(state.owner) return end
+		PlaySound(hit, Sounds:FindFirstChild("HitWall"))
+		local attachment = createImpactAttachment(state.owner, hit, position)
+		local rope = makeRope(state, firePoint, attachment, (firePoint.WorldPosition - position).Magnitude)
+		state.tool:SetAttribute("HasGrappled", true)
+		Remotes.GrappledWall:FireClient(state.owner, attachment, rope, rope:FindFirstChild("RopeVisual"))
 		return
 	end
 
-	if grapple:GetAttribute("InCooldown") then return end
+	local victimPlayer = Players:GetPlayerFromCharacter(hitModel)
+	if victimPlayer == state.owner or hitHumanoid.Health <= 0 then disconnectRope(state.owner) return end
+	if victimPlayer then
+		local previousOwner = GrappleOwners[victimPlayer.UserId]
+		if previousOwner and previousOwner ~= state.owner then disconnectRope(previousOwner, true) end
+		GrappleOwners[victimPlayer.UserId] = state.owner
+	end
 
-	-- Fire origin
-	local FirePoint : Attachment = grapple:FindFirstChild("FirePoint", true)
-	local visualOrigin =
-		(FirePoint and FirePoint.WorldPosition)
-		or (grapple.PrimaryPart and grapple.PrimaryPart.Position)
-		or Vector3.new()
+	-- Pull the root assembly, never an arm/leg. Limb attachments create large
+	-- angular impulses in a ragdoll and were a primary source of twitching.
+	local attachmentPart = hitModel:FindFirstChild("HumanoidRootPart")
+	if not (attachmentPart and attachmentPart:IsA("BasePart")) then attachmentPart = hit end
+	local attachment = createImpactAttachment(state.owner, attachmentPart, position)
+	local rope = makeRope(state, firePoint, attachment, (firePoint.WorldPosition - position).Magnitude)
+	state.victimHumanoid = hitHumanoid
+	state.victimPlayer = victimPlayer
+	state.victimCharacter = hitModel
+	state.appliedRagdoll = not hitHumanoid:HasTag("Ragdoll")
+	if state.appliedRagdoll then
+		hitHumanoid:AddTag("Ragdoll")
+		hitHumanoid.PlatformStand = true
+		hitHumanoid:ChangeState(Enum.HumanoidStateType.Physics)
+	end
+	hitHumanoid:SetAttribute("GrappledBy", state.owner.UserId)
+	if victimPlayer then
+		setCharacterNetworkOwner(hitModel, nil)
+		state.serverOwnedVictim = true
+		createStruggleRemote(state, victimPlayer)
+	end
+	state.connections.victimDied = hitHumanoid.Died:Connect(function()
+		if Active[state.owner] == state then disconnectRope(state.owner, true) end
+	end)
+	state.tool:SetAttribute("HasGrappled", true)
+	PlaySound(state.tool:FindFirstChild("Handle"), Sounds:FindFirstChild("Grapple"))
+	Remotes.GrappledPlayer:FireClient(state.owner, hitModel, rope, rope:FindFirstChild("RopeVisual"))
+end
 
-	local cameraOrigin = cameraPos or visualOrigin
+local function isValidAim(player: Player, hitPosition: any, cameraPosition: any): boolean
+	if typeof(hitPosition) ~= "Vector3" or typeof(cameraPosition) ~= "Vector3" then return false end
+	if hitPosition ~= hitPosition or cameraPosition ~= cameraPosition then return false end
+	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	return root ~= nil and (cameraPosition - root.Position).Magnitude <= MAX_CAMERA_OFFSET
+end
 
-	-- Clamp target distance so it won't go infinitely
-	local requestedVec = hitPos - cameraOrigin
-	local requestedDist = requestedVec.Magnitude
-	if requestedDist == 0 then return end
-	local requestedDir = requestedVec.Unit
-
-	local maxAllowed = grappleConfig.maxRopeLength or requestedDist
-	local finalDist = math.min(requestedDist, maxAllowed)
-	local targetPos = cameraOrigin + requestedDir * finalDist
-
-	-- Prepare states
-	local Rope : Beam = grapple:FindFirstChild("Rope")
-	grapple:SetAttribute("InCooldown", true)
-	grapple:SetAttribute("InUse", true)
-	if Rope then Rope.Enabled = true end
-
-	PlayersFiring[plr.Name] = {
-		Tool = grapple,
-		Connections = {},
-		struggleConn = {},
-	}
-	
-	PlaySound(grapple.Handle, Sounds.Fire)
-
-	-- Create moving hitbox
-	local hitbox = Instance.new("Part")
-	hitbox.Size = grappleConfig.HitboxSize or Vector3.new(1,1,1)
-	hitbox.CanCollide = false
-	hitbox.Anchored = true
-	hitbox.Material = Enum.Material.Neon
-	hitbox.Transparency = debugMode and 0 or 1
-	hitbox.CastShadow = false
-	hitbox.CFrame = CFrame.new(visualOrigin, visualOrigin + requestedDir)
-	hitbox.Name = plr.Name.." Hitbox"
-	hitbox.Parent = workspace.Hitbox
-	-- Tell client to render visual bolt
-	Remotes.FireGrapple:FireClient(plr, hitbox)
-
-	local boltAtt = Instance.new("Attachment")
-	boltAtt.Parent = hitbox
-	Rope.Attachment1 = boltAtt
-	-- Ignore self and tool in collision checks
-	local overlapParams = OverlapParams.new()
-	overlapParams.FilterDescendantsInstances = {grapple, char}
-	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
-
-	local travelled = 0
-	-- Keep existing aim logic, but let the hook keep going to max distance
-	local maxTravel =
-		grappleConfig.maxRopeLength
-		or grappleConfig.MaxRopeLength
-		or grappleConfig.MaxDistance
-		or 500
-
-	local direction = (targetPos - visualOrigin).Unit
-	local totalDist = maxTravel
-	local hitDetected = false
-
-	grapple.Bolt.Transparency = 1
-
-	-- Move hitbox forward step-by-step
-	while PlayersFiring[plr.Name] and not hitDetected and travelled < totalDist do
-		local dt = RunService.Heartbeat:Wait()
-		local step = (grappleConfig.HookSpeed or 80) * dt
-		travelled = math.min(travelled + step, totalDist)
-
-		local curPos = visualOrigin + direction * travelled
-		hitbox.CFrame = CFrame.new(curPos, curPos + direction)
-
-		local parts = workspace:GetPartBoundsInBox(hitbox.CFrame, hitbox.Size, overlapParams)
-
-		local allowWalls = (WallMode[plr] == true)
-		local chosenHit: BasePart? = nil
-
-		for _, hit in ipairs(parts) do
-			if hit ~= hitbox then
-				-- IGNORE ACCESSORIES / TOOLS (hair, hats, etc.)
-				if hit:FindFirstAncestorOfClass("Accessory") then
-					continue
-				end
-				if hit:FindFirstAncestorOfClass("Tool") then
-					continue
-				end
-
-				-- Only stop on humanoids when wall mode is OFF
-				local model = hit:FindFirstAncestorOfClass("Model")
-				local hum = model and model:FindFirstChildWhichIsA("Humanoid")
-
-				if hum then
-					chosenHit = hit
-					break
-				end
-
-				-- If wall mode is ON, allow grappling walls/objects too
-				if allowWalls then
-					chosenHit = hit
-					break
-				end
+local function findCharacterHit(parts: {BasePart}, startPosition: Vector3, direction: Vector3): BasePart?
+	local chosen, nearest = nil, math.huge
+	for _, part in ipairs(parts) do
+		if not part:FindFirstAncestorOfClass("Accessory") and not part:FindFirstAncestorOfClass("Tool") then
+			local model = part:FindFirstAncestorOfClass("Model")
+			if model and model:FindFirstChildWhichIsA("Humanoid") then
+				local distance = math.max(0, (part.Position - startPosition):Dot(direction))
+				if distance < nearest then chosen, nearest = part, distance end
 			end
 		end
-		if chosenHit then
-			hitDetected = true
-			hitPart(plr, FirePoint, hitbox, chosenHit)
-		end
 	end
-	-- Cleanup
-	Remotes.FireGrapple:FireClient(plr, false)
-	if hitbox then hitbox:Destroy() end
+	return chosen
+end
 
-	if not grapple:GetAttribute("HasGrappled") then
-		Rope.Attachment1 = grapple.Bolt.Attachment1
-		grapple.Bolt.Transparency = 0
-	end
+local function createHitbox(state, origin: Vector3, direction: Vector3): BasePart
+	local hitbox = Instance.new("Part")
+	hitbox.Name = state.owner.Name .. " Hitbox"
+	hitbox.Size = Config.HitboxSize or Vector3.new(0.5, 0.5, 0.5)
+	hitbox.Anchored, hitbox.CanCollide, hitbox.CanQuery = true, false, false
+	hitbox.CastShadow = false
+	hitbox.Material = Enum.Material.Neon
+	hitbox.Transparency = Config.debugMode and 0 or 1
+	hitbox.CFrame = CFrame.new(origin, origin + direction)
+	hitbox.Parent = hitboxFolder
+	state.hitbox = hitbox
+	return hitbox
+end
 
-	if Rope then Rope.Enabled = false end
-	grapple:SetAttribute("InUse", false)
-
-	task.delay(grappleConfig.GrappleCooldown or 2, function()
-		grapple:SetAttribute("InCooldown", false)
-	end)
+Remotes.ChangeLength.OnServerEvent:Connect(function(player, requestedLength)
+	local state = Active[player]
+	if not state or not state.rope or typeof(requestedLength) ~= "number" then return end
+	if requestedLength ~= requestedLength or math.abs(requestedLength) == math.huge then return end
+	local now = os.clock()
+	if state.lastLengthChange and now - state.lastLengthChange < LENGTH_INTERVAL then return end
+	state.lastLengthChange = now
+	local length = math.clamp(requestedLength, minRopeLength, maxRopeLength)
+	state.rope.WinchTarget = length
+	-- WinchTarget drives the normal smooth animation. Updating Length too makes
+	-- Q/E reliable on older RopeConstraint templates whose winch settings were
+	-- saved with insufficient force/responsiveness.
+	state.rope.Length = length
 end)
+
+Remotes.ToggleWallMode.OnServerEvent:Connect(function(player)
+	WallMode[player] = not (WallMode[player] == true)
+	local tool = getTool(player)
+	if tool then tool:SetAttribute("WallMode", WallMode[player]) end
+end)
+
+Remotes.FireGrapple.OnServerEvent:Connect(function(player, hitPosition, cameraPosition)
+	local now = os.clock()
+	if lastFire[player] and now - lastFire[player] < FIRE_INTERVAL then return end
+	lastFire[player] = now
+	if Active[player] then disconnectRope(player) return end
+	if not isValidAim(player, hitPosition, cameraPosition) then return end
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildWhichIsA("Humanoid")
+	local tool = getTool(player)
+	local firePoint = tool and getFirePoint(tool)
+	if not character or not humanoid or humanoid.Health <= 0 or humanoid:HasTag("Ragdoll") or not tool or not firePoint then return end
+	if tool:GetAttribute("InCooldown") then return end
+	local aim = hitPosition - cameraPosition
+	if aim.Magnitude < 0.01 then return end
+
+	local origin, direction = firePoint.WorldPosition, aim.Unit
+	local state = { owner = player, tool = tool, character = character, connections = {} }
+	Active[player] = state
+	tool:SetAttribute("InUse", true)
+	tool:SetAttribute("InCooldown", true)
+	local beam = tool:FindFirstChild("Rope")
+	if beam and beam:IsA("Beam") then beam.Enabled = true end
+	local bolt = tool:FindFirstChild("Bolt")
+	if bolt and bolt:IsA("BasePart") then bolt.Transparency = 1 end
+	PlaySound(tool:FindFirstChild("Handle"), Sounds:FindFirstChild("Fire"))
+	state.connections.ownerDied = humanoid.Died:Connect(function() disconnectRope(player, true) end)
+	state.connections.toolUnequipped = tool.Unequipped:Connect(function() disconnectRope(player) end)
+	local hitbox = createHitbox(state, origin, direction)
+	if beam and beam:IsA("Beam") then
+		local flightAttachment = Instance.new("Attachment")
+		flightAttachment.Name = "GrappleFlightAttachment"
+		flightAttachment.Parent = hitbox
+		state.beam = beam
+		state.originalBeamAttachment = beam.Attachment1
+		beam.Attachment1 = flightAttachment
+	end
+	Remotes.FireGrapple:FireClient(player, hitbox)
+
+	local overlapParams = OverlapParams.new()
+	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+	overlapParams.FilterDescendantsInstances = {character, tool, hitboxFolder}
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.FilterDescendantsInstances = {character, tool, hitboxFolder}
+	local travelled, lastPosition, accumulator = 0, origin, 0
+	while Active[player] == state and travelled < maxRopeLength do
+		accumulator += RunService.Heartbeat:Wait()
+		if Active[player] ~= state then break end
+		if accumulator < (1 / 30) then continue end
+		local dt = math.min(accumulator, 0.1)
+		accumulator = 0
+		local nextTravelled = math.min(travelled + (Config.HookSpeed or 80) * dt, maxRopeLength)
+		local nextPosition = origin + direction * nextTravelled
+		hitbox.CFrame = CFrame.new(nextPosition, nextPosition + direction)
+		local hit, impactPosition = nil, nil
+		if WallMode[player] then
+			local result = Workspace:Raycast(lastPosition, nextPosition - lastPosition, rayParams)
+			if result and result.Instance:IsA("BasePart") then hit, impactPosition = result.Instance, result.Position end
+		else
+			local segment = nextPosition - lastPosition
+			local size = hitbox.Size
+			local parts = Workspace:GetPartBoundsInBox(CFrame.new(lastPosition + segment / 2, lastPosition + segment / 2 + direction), Vector3.new(size.X, size.Y, segment.Magnitude + size.Z), overlapParams)
+			hit = findCharacterHit(parts, lastPosition, direction)
+			impactPosition = hit and hit.Position or nil
+		end
+		if hit and impactPosition then grapplePart(state, firePoint, hit, impactPosition) break end
+		travelled, lastPosition = nextTravelled, nextPosition
+	end
+
+	if Active[player] == state and not state.rope then disconnectRope(player) end
+	if Active[player] == state and state.hitbox then state.hitbox:Destroy() state.hitbox = nil end
+	if beam and beam:IsA("Beam") then
+		beam.Attachment1 = state.originalBeamAttachment
+		beam.Enabled = false
+	end
+	tool:SetAttribute("InUse", false)
+	if not state.rope then
+		if bolt and bolt:IsA("BasePart") then bolt.Transparency = 0 end
+		task.delay(Config.GrappleCooldown or 0.1, function()
+			if tool.Parent then tool:SetAttribute("InCooldown", false) end
+		end)
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	disconnectRope(player, true)
+	WallMode[player], lastFire[player] = nil, nil
+end)
+
+local function watchPlayer(player: Player)
+	player.CharacterRemoving:Connect(function() disconnectRope(player, true) end)
+end
+
+Players.PlayerAdded:Connect(watchPlayer)
+for _, player in ipairs(Players:GetPlayers()) do watchPlayer(player) end
