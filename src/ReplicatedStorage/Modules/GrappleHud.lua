@@ -90,6 +90,9 @@ function M.Init()
 		local candidate = player.Character and player.Character:FindFirstChild(Config.toolName)
 		return candidate and candidate:IsA("Tool") and candidate or nil
 	end
+	local function reelStep()
+		return Config.ropeLengthStep
+	end
 	local function change(delta)
 		if not currentRope or not currentRope.Parent then return end
 		local minimum = currentRope:GetAttribute("PlayerGrapple") and Config.playerMinDragDistance or Config.minRopeLength
@@ -106,7 +109,7 @@ function M.Init()
 		b.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				if direction < 0 then shorten = true else lengthen = true end
-				change(direction * Config.ropeLengthStep)
+				change(direction * reelStep())
 			end
 		end)
 		b.InputEnded:Connect(function(input)
@@ -131,7 +134,10 @@ function M.Init()
 	local function struggle()
 		if struggling then Remotes.StruggleInput:FireServer() end
 	end
-	button(escape, "Tap " .. Config.struggleKeybind.Name .. " / click to escape", UDim2.fromOffset(18, 66), UDim2.fromOffset(344, 40), struggle)
+	local escapeButton = button(escape, UIS.TouchEnabled and "Tap here to escape" or "Press Space to escape", UDim2.fromOffset(18, 66), UDim2.fromOffset(344, 40))
+	escapeButton.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch then struggle() end
+	end)
 	local ACTION = "GrappleHUD_Struggle"
 	local function stopStruggle()
 		struggling = false
@@ -149,7 +155,7 @@ function M.Init()
 			if UIS:GetFocusedTextBox() then return Enum.ContextActionResult.Pass end
 			if state == Enum.UserInputState.Begin then struggle() end
 			return Enum.ContextActionResult.Sink
-		end, false, Enum.ContextActionPriority.High.Value + 1, Config.struggleKeybind)
+		end, false, Enum.ContextActionPriority.High.Value + 1, Enum.KeyCode.Space)
 	end)
 	Remotes.StruggleProgress.OnClientEvent:Connect(function(progress, target)
 		if struggling then escapeFill.Size = UDim2.fromScale(math.clamp(progress / math.max(1, target), 0, 1), 1) end
@@ -157,7 +163,7 @@ function M.Init()
 	local function grapple(target, rope)
 		currentRope = rope
 		targetName = target and (target:IsA("Model") and target.Name or "Wall") or nil
-		displayLength = rope and rope.WinchTarget or 0
+		displayLength = rope and rope.Length or 0
 		shorten, lengthen = false, false
 	end
 	Remotes.GrappledPlayer.OnClientEvent:Connect(grapple)
@@ -169,10 +175,9 @@ function M.Init()
 	end, false, Enum.ContextActionPriority.High.Value + 2, Config.toggleWallMode)
 	UIS.InputBegan:Connect(function(input, processed)
 		if processed or UIS:GetFocusedTextBox() then return end
-		if input.UserInputType == Enum.UserInputType.MouseButton1 and struggling then struggle() return end
 		if input.KeyCode == Config.ragdollKeybind then ragdoll()
-		elseif input.KeyCode == Config.shortenRope then shorten = true change(-Config.ropeLengthStep)
-		elseif input.KeyCode == Config.lengthenRope then lengthen = true change(Config.ropeLengthStep) end
+		elseif input.KeyCode == Config.shortenRope then shorten = true change(-reelStep())
+		elseif input.KeyCode == Config.lengthenRope then lengthen = true change(reelStep()) end
 	end)
 	UIS.InputEnded:Connect(function(input)
 		if input.KeyCode == Config.shortenRope then shorten = false end
@@ -207,7 +212,7 @@ function M.Init()
 		accumulator += dt
 		if accumulator >= 1 / 30 then
 			accumulator %= 1 / 30
-			if shorten ~= lengthen then change((shorten and -1 or 1) * Config.ropeLengthStep) end
+			if shorten ~= lengthen then change((shorten and -1 or 1) * reelStep()) end
 		end
 		uiAccumulator += dt
 		if uiAccumulator < 0.1 then return end
@@ -241,11 +246,13 @@ function M.Init()
 		ragdollButton.Text = compactHud and (Config.ragdollKeybind.Name .. "  Rag") or (Config.ragdollKeybind.Name .. "  Ragdoll")
 		if currentRope and not currentRope.Parent then grapple() end
 		panel.Visible = equipped ~= nil or currentRope ~= nil or ragdolled
+		if currentRope and not shorten and not lengthen then displayLength = currentRope.Length end
 		status.Text = targetName and ((compactHud and "Tethered: " or "Connected to ") .. targetName)
-			or ragdolled and (struggling and (compactHud and "Grappled: tap free" or "Grappled / tap to escape") or (compactHud and (Config.ragdollKeybind.Name .. " to recover") or Config.ragdollKeybind.Name .. " / Ragdoll button to recover"))
+			or ragdolled and (struggling and (UIS.TouchEnabled and "Grappled / tap to escape" or "Grappled / press Space to escape") or (compactHud and (Config.ragdollKeybind.Name .. " to recover") or Config.ragdollKeybind.Name .. " / Ragdoll button to recover"))
 			or equipped and equipped:GetAttribute("InUse") and (compactHud and "Firing..." or "Hook in flight...")
 			or (compactHud and "Tap to fire" or "Click to fire / click again to release")
-		length.Text = currentRope and string.format(compactHud and "%.1f studs" or "Rope length  %.1f studs", displayLength) or (compactHud and "Aim at player" or "Aim at a player to grapple")
+		length.Text = currentRope and string.format(compactHud and "%.1f studs" or "Rope length  %.1f studs", displayLength)
+			or (compactHud and "Aim at player" or "Aim at a player to grapple")
 		fill.Size = UDim2.fromScale(math.clamp(displayLength / Config.maxRopeLength, 0, 1), 1)
 	end)
 end

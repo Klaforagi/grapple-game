@@ -43,6 +43,7 @@ return function(sources)
 	local objectMT = {
 		__index = function(object, key)
 			if key == "WorldPosition" then return object.Parent.Position + (object.Position or V.new()) end
+			if key == "AssemblyRootPart" then return object end
 			return methods[key]
 		end,
 		__newindex = function(object, key, value)
@@ -110,6 +111,8 @@ return function(sources)
 	function methods:RemoveTag(tag) self.tags[tag] = nil end
 	function methods:CanSetNetworkOwnership() return not self.Anchored end
 	function methods:SetNetworkOwner(owner) self.NetworkOwner = owner end
+	function methods:GetNetworkOwner() return self.NetworkOwner end
+	function methods:ApplyImpulse(impulse) self.AssemblyLinearVelocity += impulse / self.AssemblyMass end
 	function methods:SetNetworkOwnershipAuto() self.NetworkOwner = "auto" end
 	function methods:GetMass() return 5 end
 	function methods:ChangeState(state) self.State = state end
@@ -130,6 +133,11 @@ return function(sources)
 		end
 	end
 	function methods:LoadCharacter() self.LoadCharacterCount = (self.LoadCharacterCount or 0) + 1 end
+	function methods:LoadCharacterAsync()
+		self.LoadAttempts = (self.LoadAttempts or 0) + 1
+		if self.FailLoad then error("simulated character load failure") end
+		self:LoadCharacter()
+	end
 	function methods:Destroy()
 		self.Destroying:Emit()
 		for _, object in ipairs(self:GetChildren()) do object:Destroy() end
@@ -168,6 +176,7 @@ return function(sources)
 	function world:Raycast() return nil end
 	local services = {Players = players, RunService = runService, ReplicatedStorage = storage, Workspace = world, PhysicsService = {}}
 	local env = setmetatable({
+		warn = function() end,
 		game = {GetService = function(_, name) return assert(services[name], name) end},
 		workspace = world, Vector3 = V, Instance = {new = instance},
 		CFrame = {new = function() return identity end, lookAt = function() return identity end}, BrickColor = {new = function() return {} end},
@@ -231,7 +240,7 @@ return function(sources)
 	handle.Anchored, handle.CanCollide = true, true
 	local firePoint = instance("Attachment", "FirePoint", handle)
 	local function fire()
-		now += 0.2
+		now += 0.4
 		remotes.FireGrapple.OnServerEvent:Emit(attacker, V.new(0, 0, 20), V.new(0, 0, 0))
 	end
 	execute(sources.server)
@@ -257,18 +266,22 @@ return function(sources)
 	assert(not handle.Anchored and not handle.CanCollide and handle.Massless, "gun physics not normalized")
 	assert(victimHumanoid.State == "Ragdoll" and not victimHumanoid:GetStateEnabled("GettingUp"), "victim is not held in ragdoll state")
 	local rope = assert(victimRoot:FindFirstChildWhichIsA("RopeConstraint"))
-	assert(rope.Enabled and rope.WinchEnabled, "player rope is not physically active")
+	assert(rope.Enabled and not rope.WinchEnabled, "player rope must use a fixed length, not a winch")
 	assert(rope:GetAttribute("PlayerGrapple") == true, "player rope is not identified")
-	assert(rope.WinchForce == config.playerWinchForce, "player rope does not use lifting force")
 	assert(rope.Attachment0.Parent == attacker.Character:FindFirstChild("HumanoidRootPart"), "rope still attached to gun limb")
 	assert(rope.Attachment1.Parent == victimRoot, "rope is not attached to victim center")
-	remotes.ChangeLength.OnServerEvent:Emit(attacker, -1e6)
-	assert(rope.WinchTarget >= 16, "rope length teleport accepted")
+	now += 0.1
+	remotes.FireGrapple.OnServerEvent:Emit(attacker, victimRoot.Position, V.zero)
+	assert(not rope.destroyed, "accidental second click released a newly caught player")
+	remotes.ChangeLength.OnServerEvent:Emit(attacker, 12)
+	assert(rope.Length == 12, "reel-in did not immediately set the actual rope length")
 	remotes.ChangeLength.OnServerEvent:Emit(attacker, 0/0)
-	assert(rope.WinchTarget == rope.WinchTarget, "NaN length accepted")
+	assert(rope.Length == 12, "NaN length changed the fixed rope")
 	now += 0.5
 	runService.Heartbeat:Emit(0.1)
-	assert(rope.WinchTarget < rope.Length, "shortening did not reel the physical rope")
+	assert(rope.Length == 12, "rope length changed after input stopped")
+	remotes.ChangeLength.OnServerEvent:Emit(attacker, 25)
+	assert(rope.Length == 25, "reel-out did not permanently increase length")
 	local progressBefore = #(remotes.StruggleProgress.messages or {})
 	remotes.StruggleInput.OnServerEvent:Emit(attacker)
 	assert(#(remotes.StruggleProgress.messages or {}) == progressBefore, "attacker escaped for victim")
@@ -353,6 +366,23 @@ return function(sources)
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
 	assert(gun:GetAttribute("WallMode") == true, "duplicate X handlers cancelled target mode")
+	world.Raycast = function() return {Instance = wall, Position = V.new(0, 0, 100)} end
+	now += 0.2
+	remotes.FireGrapple.OnServerEvent:Emit(attacker, V.new(0, 0, 100), V.new(0, 0, -100))
+	local wallRope = assert(wall:FindFirstChildWhichIsA("RopeConstraint"))
+	attackerRoot.AssemblyLinearVelocity = V.new(12, 0, 0)
+	remotes.ChangeLength.OnServerEvent:Emit(attacker, -1e6)
+	assert(wallRope.Length == config.minRopeLength and not wallRope.WinchEnabled, "wall reel did not immediately set fixed length")
+	runService.Heartbeat:Emit(0.1)
+	assert(attackerRoot.AssemblyLinearVelocity.X == 12, "old wall velocity pull is still running")
+	now += 20
+	runService.Heartbeat:Emit(0.1)
+	assert(not wallRope.destroyed, "wall grapple expired automatically")
+	remotes.ChangeLength.OnServerEvent:Emit(attacker, 80)
+	assert(wallRope.Length == 80, "wall reel-out did not stick")
+	remotes.FireGrapple.OnServerEvent:Emit(attacker, V.new(0, 0, 100), V.new(0, 0, -100))
+	assert(wallRope.destroyed and not wall:FindFirstChildWhichIsA("RopeConstraint"), "wall click should release, not refire")
+	world.Raycast = function() return nil end
 	now += 0.2
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
 	gun:SetAttribute("InCooldown", true)
@@ -472,5 +502,81 @@ return function(sources)
 	attackerRoot.Position = V.new(0, -75, 0)
 	runService.Heartbeat:Emit(0.1)
 	assert(attackerHumanoid.Health == 0, "falling ragdoll was not killed before the void")
-	print("PASS: gameplay regressions, physical body rope, server recovery pose, normal hotbar input, exact aim, ragdoll cooldown")
+	-- Missing root/Humanoid and silent deaths must recover without a Died event.
+	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
+	attackerHumanoid.Health = 100
+	attackerRoot.Parent = nil
+	local loadsBefore = attacker.LoadCharacterCount
+	runService.Heartbeat:Emit(0.1)
+	attacker.FailLoad = true
+	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
+	assert(attacker.LoadCharacterCount == loadsBefore, "failed load was reported as successful")
+	attacker.FailLoad = false
+	runService.Heartbeat:Emit(0.1)
+	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
+	assert(attacker.LoadCharacterCount == loadsBefore + 1, "missing-root respawn was not retried")
+	attackerRoot.Parent = attacker.Character
+	attackerRoot.Position = V.zero
+	attackerHumanoid.Parent = nil
+	runService.Heartbeat:Emit(0.1)
+	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
+	assert(attacker.LoadCharacterCount == loadsBefore + 2, "missing Humanoid blocked respawn")
+	attackerHumanoid.Parent = attacker.Character
+	-- An old watchdog must never reload a healthy replacement character.
+	attackerRoot.Parent = nil
+	runService.Heartbeat:Emit(0.1)
+	attackerRoot.Parent = attacker.Character
+	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
+	assert(attacker.LoadCharacterCount == loadsBefore + 2, "watchdog reloaded a recovered character")
+
+	local bombPhysics = execute(sources.bombPhysics)
+	local up = bombPhysics.Knockback(V.new(0, 2, 0), 8, 150)
+	local right = bombPhysics.Knockback(V.new(5, 2, 0), 8, 150)
+	local left = bombPhysics.Knockback(V.new(-5, 2, 0), 8, 150)
+	assert(up.X == 0 and up.Z == 0 and up.Y > 100, "underfoot blast must launch vertically")
+	assert(right.X > 80 and left.X < -80 and right.Y < right.X, "side blast must launch far, away, at a low angle")
+	assert(bombPhysics.Knockback(V.new(9, 0, 0), 8, 150).Magnitude == 0, "blast exceeded radius")
+	assert(bombPhysics.Knockback(V.zero, 8, 150).Y == 150, "coincident blast produced invalid direction")
+
+	-- Exercise actual throw validation, five-second airborne fuse and explosion.
+	services.Debris = {AddItem = function() end}
+	services.TweenService = {Create = function() return {Play = function() end} end}
+	env.TweenInfo = {new = function() return {} end}
+	env.Enum.PartType = {Ball = "Ball"}
+	env.Enum.SurfaceType = {Smooth = "Smooth"}
+	remotes.ThrowBomb = instance("RemoteEvent", "ThrowBomb")
+	local bombModule = instance("ModuleScript", "BombPhysics", storage.Modules)
+	local previousRequire = env.require
+	env.require = function(module)
+		if module == bombModule then return bombPhysics end
+		return previousRequire(module)
+	end
+	local attackerBackpack = instance("Backpack", "Backpack", attacker)
+	local victimBackpack = instance("Backpack", "Backpack", victim)
+	gun.Parent, reverseGun.Parent = attackerBackpack, victimBackpack
+	attackerHumanoid:SetAttribute("Ragdolled", false)
+	attackerHumanoid:RemoveTag("Ragdoll")
+	attackerRoot.AssemblyLinearVelocity = V.zero
+	execute(sources.bombs)
+	local bombTool = assert(attackerBackpack:FindFirstChild(config.bombToolName))
+	assert(bombTool:FindFirstChild("Handle").Shape == "Ball", "bomb must be a sphere")
+	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(100, 0, 0))
+	assert(not world:FindFirstChild("ThrownBomb"), "unequipped bomb accepted")
+	bombTool.Parent = attacker.Character
+	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(0/0, 0, 0))
+	assert(not world:FindFirstChild("ThrownBomb"), "invalid bomb aim accepted")
+	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(100, 0, 0))
+	local thrown = assert(world:FindFirstChild("ThrownBomb"))
+	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(100, 0, 0))
+	local count = 0
+	for _, child in ipairs(world:GetChildren()) do if child.Name == "ThrownBomb" then count += 1 end end
+	assert(count == 1, "bomb cooldown allowed duplicate throw")
+	thrown.Position = V.new(-5, -2, 0)
+	now += 4.99
+	runService.Heartbeat:Emit(0.1)
+	assert(not thrown.destroyed, "bomb detonated early")
+	now += 0.02
+	runService.Heartbeat:Emit(0.1)
+	assert(thrown.destroyed and attackerRoot.AssemblyLinearVelocity.X > 80, "five-second blast did not knock player away")
+	print("PASS: fixed ropes, release lock, ragdoll/input, void respawn retries, bomb fuse and directional knockback")
 end

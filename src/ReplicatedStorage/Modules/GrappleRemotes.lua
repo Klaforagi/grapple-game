@@ -1,7 +1,7 @@
 -- Server creates the protocol; clients never depend on Studio-authored remotes.
 local RunService = game:GetService("RunService")
 local storage = game:GetService("ReplicatedStorage")
-local names = {"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "StruggleInput", "StruggleProgress"}
+local names = {"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "StruggleInput", "StruggleProgress", "ThrowBomb"}
 local folder
 if RunService:IsServer() then
 	folder = storage:FindFirstChild("Remotes")

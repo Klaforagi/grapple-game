@@ -24,23 +24,38 @@ local GROUP = "GrappleCharacters"
 pcall(function() PhysicsService:RegisterCollisionGroup(GROUP) end)
 PhysicsService:CollisionGroupSetCollidable(GROUP, GROUP, false)
 
+local pendingRespawns = {}
+local function healthy(character)
+	if not character or not character.Parent then return false end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local root = character:FindFirstChild("HumanoidRootPart")
+	return humanoid ~= nil and humanoid.Health > 0 and root ~= nil
+end
+
 local function ensureRespawn(player, deadCharacter)
-	-- BreakJointsOnDeath and RequiresNeck are disabled to preserve ragdoll
-	-- corpses. If automatic character loading misses a custom ragdoll death,
-	-- do not leave the player permanently attached to a dead character.
+	if pendingRespawns[player] then return end
+	local ticket = {}
+	pendingRespawns[player] = ticket
 	local delay = (tonumber(Players.RespawnTime) or 5) + 1
 	task.delay(delay, function()
-		if player.Parent ~= Players or player.Character ~= deadCharacter then return end
-		local humanoid = deadCharacter:FindFirstChildOfClass("Humanoid")
-		if humanoid and humanoid.Health <= 0 then
-			pcall(function() player:LoadCharacter() end)
+		if pendingRespawns[player] ~= ticket then return end
+		if player.Parent == Players and player.Character == deadCharacter and not healthy(deadCharacter) then
+			-- Also handles a removed Humanoid/root and deaths that never emit Died.
+			-- A failed load clears this ticket so the watchdog can retry.
+			local ok, message = pcall(function() player:LoadCharacterAsync() end)
+			if not ok then warn("[Respawn] Retrying failed character load: " .. tostring(message)) end
 		end
+		if pendingRespawns[player] == ticket then pendingRespawns[player] = nil end
 	end)
 end
 
 local function configure(player, character)
-	local humanoid = character:WaitForChild("Humanoid")
-	character:WaitForChild("HumanoidRootPart")
+	local humanoid = character:WaitForChild("Humanoid", 10)
+	local root = character:WaitForChild("HumanoidRootPart", 10)
+	if not humanoid or not root or player.Character ~= character then
+		ensureRespawn(player, character)
+		return
+	end
 	local function collision(instance)
 		if instance:IsA("BasePart") then instance.CollisionGroup = GROUP end
 	end
@@ -52,6 +67,7 @@ local function configure(player, character)
 	Ragdoll.Prepare(humanoid)
 	if humanoid:HasTag("Ragdoll") then Ragdoll.Set(humanoid, true) end
 	humanoid.Died:Connect(function()
+		ensureRespawn(player, character)
 		humanoid:AddTag("Ragdoll")
 		Ragdoll.Set(humanoid, true)
 
@@ -59,7 +75,6 @@ local function configure(player, character)
 		-- Keep the camera's root on the floor in either case.
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if root and root:IsA("BasePart") then root.CanCollide = true end
-		ensureRespawn(player, character)
 	end)
 end
 CollectionService:GetInstanceAddedSignal("Ragdoll"):Connect(function(humanoid)
@@ -69,10 +84,14 @@ CollectionService:GetInstanceRemovedSignal("Ragdoll"):Connect(function(humanoid)
 	if humanoid:IsA("Humanoid") and humanoid.Parent and humanoid.Health > 0 then Ragdoll.Set(humanoid, false) end
 end)
 local function playerAdded(player)
-	player.CharacterAdded:Connect(function(character) configure(player, character) end)
+	player.CharacterAdded:Connect(function(character)
+		pendingRespawns[player] = nil
+		configure(player, character)
+	end)
 	if player.Character then task.spawn(configure, player, player.Character) end
 end
 Players.PlayerAdded:Connect(playerAdded)
+Players.PlayerRemoving:Connect(function(player) pendingRespawns[player] = nil end)
 for _, player in ipairs(Players:GetPlayers()) do playerAdded(player) end
 Remotes.ToggleRagdoll.OnServerEvent:Connect(function(player)
 	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
@@ -93,6 +112,7 @@ end)
 Remotes.ResetCharacter.OnServerEvent:Connect(function(player)
 	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 	if humanoid and humanoid.Health > 0 then humanoid.Health = 0 end
+	ensureRespawn(player, player.Character)
 end)
 
 -- A ragdoll has no required neck, so Roblox cannot always infer death when
@@ -102,14 +122,15 @@ end)
 local VOID_KILL_PADDING = 25
 RunService.Heartbeat:Connect(function()
 	local destroyHeight = Workspace.FallenPartsDestroyHeight
-	if typeof(destroyHeight) ~= "number" or destroyHeight == -math.huge then return end
 	for _, player in ipairs(Players:GetPlayers()) do
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		if humanoid and humanoid.Health > 0 and root and root:IsA("BasePart")
+			and typeof(destroyHeight) == "number" and destroyHeight ~= -math.huge
 			and root.Position.Y <= destroyHeight + VOID_KILL_PADDING then
 			humanoid.Health = 0
 		end
+		if not healthy(character) then ensureRespawn(player, character) end
 	end
 end)

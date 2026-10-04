@@ -15,10 +15,9 @@ local function sound(name)
 end
 
 local FIRE_INTERVAL = 0.05
-local LENGTH_INTERVAL = 1 / 30
+local LENGTH_INTERVAL = 1 / 60
 local minRopeLength = Config.minRopeLength or Config.MinRopeLength or 0.1
 local maxRopeLength = Config.maxRopeLength or Config.MaxRopeLength or 500
-local winchSpeed = Config.ropeLengthSpeed or 75
 
 local hitboxFolder = Workspace:FindFirstChild("Hitbox")
 if not hitboxFolder then
@@ -187,11 +186,7 @@ local function makeRope(state, firePoint: Attachment, impactAttachment: Attachme
 	rope.Attachment0 = firePoint
 	rope.Attachment1 = impactAttachment
 	rope.Length = length
-	rope.WinchEnabled = true
-	rope.WinchTarget = length
-	rope.WinchSpeed = winchSpeed
-	rope.WinchForce = Config.wallWinchForce or 5000
-	rope.WinchResponsiveness = 10
+	rope.WinchEnabled = false
 	rope.Restitution = 0
 	rope.Visible = true
 	rope.Thickness = 0.1
@@ -229,8 +224,14 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	if not hitHumanoid then
 		if not WallMode[state.owner] then disconnectRope(state.owner) return end
 		PlaySound(hit, sound("HitWall"))
+		local root = state.character:FindFirstChild("HumanoidRootPart")
+		if not root then disconnectRope(state.owner) return end
+		local origin = Instance.new("Attachment")
+		origin.Name = "GrappleOrigin"
+		origin.Parent = root
+		state.ownerAttachment = origin
 		local attachment = createImpactAttachment(state.owner, hit, position)
-		local rope = makeRope(state, firePoint, attachment, (firePoint.WorldPosition - position).Magnitude)
+		local rope = makeRope(state, origin, attachment, (root.Position - position).Magnitude)
 		state.tool:SetAttribute("HasGrappled", true)
 		Remotes.GrappledWall:FireClient(state.owner, attachment, rope, rope:FindFirstChild("RopeVisual"))
 		return
@@ -258,14 +259,9 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	state.ownerAttachment = ownerAttachment
 	local attachment = createImpactAttachment(state.owner, attachmentPart, attachmentPart.Position)
 	local rope = makeRope(state, ownerAttachment, attachment, (ownerRoot.Position - attachmentPart.Position).Magnitude)
-	-- This is a real two-body rope. Its native winch shortens the maximum
-	-- separation and applies equal-and-opposite tension to both characters.
+	-- Both modes use a fixed maximum separation with no winch motor.
 	rope:SetAttribute("PlayerGrapple", true)
-	rope.WinchForce = Config.playerWinchForce or 30000
-	rope.WinchResponsiveness = Config.playerWinchResponsiveness or 20
-	-- Keep the native rope as the only pull.  Unlike an AlignPosition drag, this
-	-- applies the same tension to the attacker and victim, so a fast reel can
-	-- recoil the attacker while a grounded attacker normally draws in the victim.
+	state.releaseAllowedAt = os.clock() + (Config.playerReleaseCooldown or 0.3)
 	state.victimHumanoid = hitHumanoid
 	state.victimPlayer = victimPlayer
 	state.victimCharacter = hitModel
@@ -338,18 +334,11 @@ Remotes.ChangeLength.OnServerEvent:Connect(function(player, requestedLength)
 	local previousChange = state.lastLengthChange
 	if previousChange and now - previousChange < LENGTH_INTERVAL then return end
 	state.lastLengthChange = now
-	local length = math.clamp(requestedLength, minRopeLength, maxRopeLength)
-	local previous = state.rope.WinchTarget
-	-- The client submits a target rather than a direction, so enforce the same
-	-- rate as the physical winch here.  This keeps a forged remote from turning
-	-- the rope into an instant positional snap, while still allowing the first
-	-- key press to feel immediate.
-	local elapsed = previousChange and now - previousChange or LENGTH_INTERVAL
-	local maxStep = math.max(Config.ropeLengthStep or 2, winchSpeed * elapsed * 1.1)
-	if not previousChange then maxStep = (Config.ropeLengthStep or 2) * 2 end
-	length = math.clamp(length, previous - maxStep, previous + maxStep)
-	if state.victimHumanoid then length = math.max(Config.playerMinDragDistance or 4, length) end
-	state.rope.WinchTarget = length
+	local minimum = state.victimHumanoid and (Config.playerMinDragDistance or 4) or minRopeLength
+	local length = math.clamp(requestedLength, minimum, maxRopeLength)
+	-- Store the actual constraint length immediately. It cannot unwind when
+	-- input stops and does not depend on winch force or target convergence.
+	state.rope.Length = length
 end)
 
 Remotes.ToggleWallMode.OnServerEvent:Connect(function(player)
@@ -366,7 +355,11 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	local now = os.clock()
 	if lastFire[player] and now - lastFire[player] < FIRE_INTERVAL then return end
 	lastFire[player] = now
-	if Active[player] then disconnectRope(player) return end
+	if Active[player] then
+		if now < (Active[player].releaseAllowedAt or 0) then return end
+		disconnectRope(player)
+		return
+	end
 	if not isValidAim(player, hitPosition, cameraPosition) then return end
 
 	local character = player.Character
@@ -379,7 +372,12 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	if aim.Magnitude < 0.01 then return end
 
 	local origin, direction = firePoint.WorldPosition, aim.Unit
-	local state = { owner = player, tool = tool, character = character, connections = {} }
+	local state = {
+		owner = player,
+		tool = tool,
+		character = character,
+		connections = {},
+	}
 	Active[player] = state
 	tool:SetAttribute("InUse", true)
 	tool:SetAttribute("InCooldown", true)
