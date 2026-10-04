@@ -15,7 +15,7 @@ local function sound(name)
 end
 
 local FIRE_INTERVAL = 0.05
-local LENGTH_INTERVAL = 0.05
+local LENGTH_INTERVAL = 1 / 30
 local minRopeLength = Config.minRopeLength or Config.MinRopeLength or 0.1
 local maxRopeLength = Config.maxRopeLength or Config.MaxRopeLength or 500
 local winchSpeed = Config.ropeLengthSpeed or 75
@@ -99,7 +99,6 @@ disconnectRope = function(player: Player, skipCooldown: boolean?)
 
 	for _, connection in pairs(state.connections) do connection:Disconnect() end
 	if state.rope then state.rope:Destroy() end
-	if state.pull then state.pull:Destroy() end
 	if state.ownerAttachment then state.ownerAttachment:Destroy() end
 	if state.impactAttachment then state.impactAttachment:Destroy() end
 	if state.hitbox then state.hitbox:Destroy() end
@@ -109,16 +108,35 @@ disconnectRope = function(player: Player, skipCooldown: boolean?)
 	end
 
 	local victimHumanoid: Humanoid? = state.victimHumanoid
+	local recoveredVictim = false
 	if victimHumanoid and victimHumanoid.Parent then
 		victimHumanoid:SetAttribute("GrappledBy", nil)
 		if state.appliedRagdoll and victimHumanoid.Health > 0 then
 			victimHumanoid:RemoveTag("Ragdoll")
-			if victimHumanoid.Health > 0 then Ragdoll.Set(victimHumanoid, false) end
+			if victimHumanoid.Health > 0 then
+				-- Stabilize the authoritative pose before returning ownership. This
+				-- prevents remote clients seeing the recovered rig buried sideways.
+				if state.victimCharacter then setCharacterNetworkOwner(state.victimCharacter, nil) end
+				Ragdoll.Set(victimHumanoid, false)
+				recoveredVictim = true
+			end
 		end
 	end
 	if state.victimCharacter and state.ownershipTransferred then
 		if state.victimPlayer and state.victimPlayer.Parent == Players then
-			setCharacterNetworkOwner(state.victimCharacter, state.victimPlayer)
+			local character, victimPlayer = state.victimCharacter, state.victimPlayer
+			if recoveredVictim then
+				-- Give the server a physics step to replicate the upright pose before
+				-- the victim resumes local simulation.
+				task.delay(0.1, function()
+					if character.Parent and victimPlayer.Parent == Players
+						and victimHumanoid.Parent == character and not victimHumanoid:GetAttribute("GrappledBy") then
+						setCharacterNetworkOwner(character, victimPlayer)
+					end
+				end)
+			else
+				setCharacterNetworkOwner(character, victimPlayer)
+			end
 		else
 			restoreAutomaticNetworkOwnership(state.victimCharacter)
 		end
@@ -174,6 +192,7 @@ local function makeRope(state, firePoint: Attachment, impactAttachment: Attachme
 	rope.WinchSpeed = winchSpeed
 	rope.WinchForce = Config.wallWinchForce or 5000
 	rope.WinchResponsiveness = 10
+	rope.Restitution = 0
 	rope.Visible = true
 	rope.Thickness = 0.1
 	rope.Color = BrickColor.new("Black")
@@ -227,8 +246,8 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 		GrappleOwners[victimPlayer.UserId] = state.owner
 	end
 
-	-- Pull the root assembly, never an arm/leg. Limb attachments create large
-	-- angular impulses in a ragdoll and were a primary source of twitching.
+	-- Connect the root assemblies, never an arm/leg. Limb attachments create
+	-- large angular impulses in a ragdoll and make the rope unstable.
 	local attachmentPart = hitModel:FindFirstChild("HumanoidRootPart")
 	if not (attachmentPart and attachmentPart:IsA("BasePart")) then attachmentPart = hit end
 	local ownerRoot = state.character:FindFirstChild("HumanoidRootPart")
@@ -239,17 +258,14 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	state.ownerAttachment = ownerAttachment
 	local attachment = createImpactAttachment(state.owner, attachmentPart, attachmentPart.Position)
 	local rope = makeRope(state, ownerAttachment, attachment, (ownerRoot.Position - attachmentPart.Position).Magnitude)
-	-- Visual only: no equal-and-opposite force on the attacker's gun or arm.
-	rope.Enabled = false
-	rope.Visible = false
-	local visual = Instance.new("Beam")
-	visual.Name = "RopeVisual"
-	visual.Attachment0, visual.Attachment1 = firePoint, attachment
-	visual.Width0, visual.Width1 = 0.08, 0.08
-	visual.FaceCamera = true
-	visual.Color = ColorSequence.new(Color3.fromRGB(40, 45, 55))
-	visual.Parent = rope
-	state.dragLength = math.max(Config.playerMinDragDistance or 4, rope.Length)
+	-- This is a real two-body rope. Its native winch shortens the maximum
+	-- separation and applies equal-and-opposite tension to both characters.
+	rope:SetAttribute("PlayerGrapple", true)
+	rope.WinchForce = Config.playerWinchForce or 30000
+	rope.WinchResponsiveness = Config.playerWinchResponsiveness or 20
+	-- Keep the native rope as the only pull.  Unlike an AlignPosition drag, this
+	-- applies the same tension to the attacker and victim, so a fast reel can
+	-- recoil the attacker while a grounded attacker normally draws in the victim.
 	state.victimHumanoid = hitHumanoid
 	state.victimPlayer = victimPlayer
 	state.victimCharacter = hitModel
@@ -261,28 +277,6 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	hitHumanoid:SetAttribute("GrappledBy", state.owner.UserId)
 	setCharacterNetworkOwner(hitModel, state.owner)
 	state.ownershipTransferred = true
-	local pull = Instance.new("AlignPosition")
-	pull.Name = "GrapplePull"
-	pull.Mode = Enum.PositionAlignmentMode.OneAttachment
-	pull.Attachment0 = attachment
-	pull.ApplyAtCenterOfMass = true
-	pull.ReactionForceEnabled = false
-	pull.RigidityEnabled = false
-	pull.Responsiveness = Config.dragResponsiveness or 12
-	pull.MaxVelocity = Config.dragMaxSpeed or 45
-	local mass = 0
-	for _, part in ipairs(hitModel:GetChildren()) do
-		if part:IsA("BasePart") then mass += part:GetMass() end
-	end
-	pull.MaxForce = math.max(1, mass) * (Workspace.Gravity + (Config.dragAcceleration or 100))
-	pull.ForceLimitMode = Enum.ForceLimitMode.PerAxis
-	pull.ForceRelativeTo = Enum.ActuatorRelativeTo.World
-	-- Drag along the floor; never use the pull to support the victim's weight.
-	pull.MaxAxesForce = Vector3.new(pull.MaxForce, 0, pull.MaxForce)
-	pull.Position = attachmentPart.Position
-	pull.Enabled = false
-	pull.Parent = attachmentPart
-	state.pull = pull
 	if victimPlayer then
 		createStruggleRemote(state, victimPlayer)
 	end
@@ -291,7 +285,7 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	end)
 	state.tool:SetAttribute("HasGrappled", true)
 	PlaySound(state.tool:FindFirstChild("Handle"), sound("Grapple"))
-	Remotes.GrappledPlayer:FireClient(state.owner, hitModel, rope, rope:FindFirstChild("RopeVisual"))
+	Remotes.GrappledPlayer:FireClient(state.owner, hitModel, rope)
 end
 
 local function isValidAim(player: Player, hitPosition: any, cameraPosition: any): boolean
@@ -341,15 +335,21 @@ Remotes.ChangeLength.OnServerEvent:Connect(function(player, requestedLength)
 	if not state or not state.rope or typeof(requestedLength) ~= "number" then return end
 	if requestedLength ~= requestedLength or math.abs(requestedLength) == math.huge then return end
 	local now = os.clock()
-	if state.lastLengthChange and now - state.lastLengthChange < LENGTH_INTERVAL then return end
+	local previousChange = state.lastLengthChange
+	if previousChange and now - previousChange < LENGTH_INTERVAL then return end
 	state.lastLengthChange = now
 	local length = math.clamp(requestedLength, minRopeLength, maxRopeLength)
 	local previous = state.rope.WinchTarget
-	local maxStep = (Config.ropeLengthStep or 2) * 2
+	-- The client submits a target rather than a direction, so enforce the same
+	-- rate as the physical winch here.  This keeps a forged remote from turning
+	-- the rope into an instant positional snap, while still allowing the first
+	-- key press to feel immediate.
+	local elapsed = previousChange and now - previousChange or LENGTH_INTERVAL
+	local maxStep = math.max(Config.ropeLengthStep or 2, winchSpeed * elapsed * 1.1)
+	if not previousChange then maxStep = (Config.ropeLengthStep or 2) * 2 end
 	length = math.clamp(length, previous - maxStep, previous + maxStep)
-	if state.pull then length = math.max(Config.playerMinDragDistance or 4, length) end
+	if state.victimHumanoid then length = math.max(Config.playerMinDragDistance or 4, length) end
 	state.rope.WinchTarget = length
-	if state.pull then state.rope.Length = length end
 end)
 
 Remotes.ToggleWallMode.OnServerEvent:Connect(function(player)
@@ -389,7 +389,13 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	if bolt and bolt:IsA("BasePart") then bolt.Transparency = 1 end
 	PlaySound(tool:FindFirstChild("Handle"), sound("Fire"))
 	state.connections.ownerDied = humanoid.Died:Connect(function() disconnectRope(player, true) end)
-	state.connections.toolUnequipped = tool.Unequipped:Connect(function() disconnectRope(player) end)
+	state.connections.toolUnequipped = tool.Unequipped:Connect(function()
+		disconnectRope(player)
+		-- Studio can emit Unequipped before its hotbar finishes reparenting.
+		task.defer(function()
+			if tool.Parent == character and humanoid.Parent == character then humanoid:UnequipTools() end
+		end)
+	end)
 	state.connections.toolDestroyed = tool.Destroying:Connect(function() disconnectRope(player, true) end)
 	local hitbox = createHitbox(state, origin, direction)
 	if beam and beam:IsA("Beam") then
@@ -497,16 +503,6 @@ RunService.Heartbeat:Connect(function(dt)
 			if not a0 or not a0.Parent or not a1 or not a1.Parent then
 				disconnectRope(owner)
 				continue
-			end
-			if state.pull then
-				local desired = math.max(Config.playerMinDragDistance or 4, state.rope.WinchTarget)
-				local step = winchSpeed * dt
-				state.dragLength += math.clamp(desired - state.dragLength, -step, step)
-				local offset = a1.WorldPosition - a0.WorldPosition
-				state.pull.Enabled = offset.Magnitude > state.dragLength + 0.25
-				if offset.Magnitude > 0.001 then
-					state.pull.Position = a0.WorldPosition + offset.Unit * state.dragLength
-				end
 			end
 			decayStruggle(state, now)
 		end

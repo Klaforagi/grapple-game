@@ -54,7 +54,9 @@ function M.Init(tool)
 	connect(tool.Unequipped, function() if Config.CustomCursorsEnabled then mouse.Icon = "" end end)
 	connect(tool.Activated, function() M.Fire(tool) end)
 	connect(UIS.InputBegan, function(input, processed)
-		if not processed and input.UserInputType == Enum.UserInputType.MouseButton1 then M.Fire(tool) end
+		if not processed and input.UserInputType == Enum.UserInputType.MouseButton1 then
+			M.Fire(tool)
+		end
 	end)
 	for _, attribute in ipairs({"InCooldown", "InUse", "HasGrappled"}) do
 		connect(tool:GetAttributeChangedSignal(attribute), cursor)

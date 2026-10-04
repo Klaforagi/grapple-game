@@ -25,7 +25,7 @@ return {
 	]]
 
 	-- Min Hook distance
-	minRopeLength = 0.1,
+	minRopeLength = 1,
 	-- Max Hook distance
 	maxRopeLength = 500,
 	-- Connected grapples persist until released, escaped, or a character leaves/dies.
@@ -77,17 +77,18 @@ return {
 	
 	grappleGravity = Vector3.new(0,0,0), -- Change the Y axis if you want the hook to be affected by gravity, ex: Vector3.new(0,-50,0)
 	
-	-- A 10,000 stud/s winch creates extreme corrective impulses when the target
-	-- is a ragdoll. Keep this finite so the server can solve the rope smoothly.
-	ropeLengthSpeed = 75, -- Studs per second
-	ropeLengthStep = 2, -- Studs added/removed for each rope-control tick
+	-- This is the speed at which Q/E changes the winch target.  The winch is a
+	-- shared physical constraint, so reeling at this speed can move either body.
+	ropeLengthSpeed = 65, -- Studs per second
+	ropeLengthStep = 2, -- Studs added/removed for each 1/30-second control tick
 	playerMinDragDistance = 4, -- Prevent bodies being forced into the gun
-	dragAcceleration = 100, -- Bounded force per unit of victim mass
-	dragMaxSpeed = 45,
-	dragResponsiveness = 12,
-	wallWinchForce = 5000,
+	-- Deliberately finite.  Very high force/responsiveness makes the rope behave
+	-- like a rigid teleport and hides the equal-and-opposite pull on the shooter.
+	playerWinchForce = 100000, -- Native rope tension; enough to lift another character
+	playerWinchResponsiveness = 50,
+	wallWinchForce = 30000000,
 	
-	ragdollToggle_Cooldown = 0.5, -- Seconds after getting up before ragdoll can start again
+	ragdollToggle_Cooldown = 0.5, -- Seconds required in either ragdoll state before the manual toggle can switch again
 
 
 	--[[

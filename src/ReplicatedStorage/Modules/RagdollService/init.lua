@@ -1,7 +1,40 @@
 -- Supports classic Motor6D and upgraded AnimationConstraint avatar joints.
 local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
 local Service = {}
 local rigs = setmetatable({}, {__mode = "k"})
+
+-- A ragdoll can settle by fractions of a stud for several seconds. Keep the
+-- camera still through that movement; only follow a meaningful displacement.
+local CAMERA_DEADZONE = 0.75
+local CAMERA_FOLLOW_SPEED = 12
+
+function Service.RecoverPose(humanoid)
+	local character = humanoid.Parent
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root or not root:IsA("BasePart") or root.Anchored then return end
+
+	local look = root.CFrame.LookVector
+	local flatLook = Vector3.new(look.X, 0, look.Z)
+	if flatLook.Magnitude < 0.01 then flatLook = Vector3.new(0, 0, -1) end
+	flatLook = flatLook.Unit
+
+	local position = root.Position
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = {character}
+	local floor = workspace:Raycast(position + Vector3.new(0, 4, 0), Vector3.new(0, -12, 0), params)
+	if floor then
+		local standingHeight = math.max(2.5, humanoid.HipHeight + root.Size.Y / 2)
+		position = Vector3.new(position.X, floor.Position.Y + standingHeight, position.Z)
+	else
+		position += Vector3.new(0, 1, 0)
+	end
+
+	root.AssemblyAngularVelocity = Vector3.zero
+	root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z)
+	root.CFrame = CFrame.lookAt(position, position + flatLook)
+end
 
 local function enableJointRagdoll(joint)
 	local motor, socket = joint.motor, joint.socket
@@ -105,7 +138,11 @@ function Service.Set(humanoid, enabled)
 			if part:IsA("BasePart") then
 				rig.parts[part] = {collide = part.CanCollide, properties = part.CustomPhysicalProperties, group = part.CollisionGroup}
 				part.CollisionGroup = "GrappleCharacters"
-				part.CanCollide = part.Name ~= "HumanoidRootPart"
+				-- A living ragdoll keeps its invisible root non-colliding so it
+				-- cannot drag the body around. Once dead, the camera still follows
+				-- that root, so it must collide with the floor instead of falling
+				-- through it independently of the visible corpse.
+				part.CanCollide = part.Name ~= "HumanoidRootPart" or humanoid.Health <= 0
 				if part.Name ~= "HumanoidRootPart" then
 					local p = part.CurrentPhysicalProperties
 					part.CustomPhysicalProperties = PhysicalProperties.new(p.Density, 0.25, 0, 100, 100)
@@ -141,18 +178,54 @@ function Service.Set(humanoid, enabled)
 	if humanoid.Health > 0 then
 		humanoid:ChangeState(enabled and Enum.HumanoidStateType.Ragdoll or Enum.HumanoidStateType.GettingUp)
 	end
-	if enabled then
-		local root = humanoid.Parent:FindFirstChild("HumanoidRootPart")
-		if root and not root.Anchored then
-			-- Break the perfectly upright equilibrium so a standing rig actually falls.
-			root:ApplyAngularImpulse(Vector3.new(1.5, 0, 0) * root.AssemblyMass)
-		end
-	end
+	if not enabled and humanoid.Health > 0 then Service.RecoverPose(humanoid) end
 end
 
 function Service.InitClient()
 	if RunService:IsServer() or Service.clientStarted then return end
 	Service.clientStarted = true
+	local localPlayer = Players.LocalPlayer
+	local cameraAnchor: Part?
+	local cameraRoot: BasePart?
+	local cameraHumanoid: Humanoid?
+	if localPlayer then
+		localPlayer.CharacterAdded:Connect(function(character)
+			cameraRoot, cameraHumanoid = nil, nil
+			local camera = workspace.CurrentCamera
+			if cameraAnchor and camera and camera.CameraSubject == cameraAnchor then
+				camera.CameraSubject = character:WaitForChild("Humanoid")
+			end
+		end)
+	end
+
+	local function updateCameraSubject(humanoid: Humanoid, enabled: boolean)
+		if not localPlayer or humanoid.Parent ~= localPlayer.Character then return end
+		local camera = workspace.CurrentCamera
+		if not camera then return end
+
+		if not enabled then
+			cameraRoot, cameraHumanoid = nil, nil
+			if cameraAnchor and camera.CameraSubject == cameraAnchor then camera.CameraSubject = humanoid end
+			return
+		end
+
+		local root = humanoid.Parent:FindFirstChild("HumanoidRootPart")
+		if not root or not root:IsA("BasePart") then return end
+		if not cameraAnchor then
+			cameraAnchor = Instance.new("Part")
+			cameraAnchor.Name = "RagdollCameraAnchor"
+			cameraAnchor.Anchored = true
+			cameraAnchor.CanCollide = false
+			cameraAnchor.CanQuery = false
+			cameraAnchor.CanTouch = false
+			cameraAnchor.Transparency = 1
+			cameraAnchor.Size = Vector3.new(0.1, 0.1, 0.1)
+			cameraAnchor.Parent = workspace
+		end
+		cameraAnchor.CFrame = CFrame.new(root.Position)
+		cameraRoot, cameraHumanoid = root, humanoid
+		camera.CameraSubject = cameraAnchor
+	end
 	-- Ownership can move to another player. Every client must configure all
 	-- ragdolls it sees, including the victim the local player is now simulating.
 	local watched = setmetatable({}, {__mode = "k"})
@@ -167,6 +240,7 @@ function Service.InitClient()
 			local enabled = humanoid:GetAttribute("Ragdolled") == true
 			if enabled == active then return end
 			active = enabled
+			updateCameraSubject(humanoid, enabled)
 			humanoid.EvaluateStateMachine = not enabled and previousStateMachine
 			humanoid.PlatformStand = enabled
 			humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, not enabled and previousGettingUp)
@@ -180,7 +254,9 @@ function Service.InitClient()
 			activeRigs[humanoid] = enabled and joints or nil
 			if enabled then
 				for _, part in ipairs(humanoid.Parent:GetChildren()) do
-					if part:IsA("BasePart") then part.CanCollide = part.Name ~= "HumanoidRootPart" end
+					if part:IsA("BasePart") then
+						part.CanCollide = part.Name ~= "HumanoidRootPart" or humanoid.Health <= 0
+					end
 				end
 			end
 			if humanoid.Health > 0 then
@@ -192,6 +268,17 @@ function Service.InitClient()
 	end
 	workspace.DescendantAdded:Connect(bind)
 	for _, instance in ipairs(workspace:GetDescendants()) do bind(instance) end
+	RunService:BindToRenderStep("GrappleRagdollCameraAnchor", Enum.RenderPriority.Camera.Value - 1, function(dt)
+		if not cameraAnchor or not cameraRoot or not cameraHumanoid or cameraHumanoid.Health <= 0 then return end
+		if cameraRoot.Parent == nil or cameraHumanoid.Parent == nil then return end
+		local camera = workspace.CurrentCamera
+		if camera and camera.CameraSubject ~= cameraAnchor then camera.CameraSubject = cameraAnchor end
+
+		local offset = cameraRoot.Position - cameraAnchor.Position
+		if offset.Magnitude <= CAMERA_DEADZONE then return end
+		local alpha = math.min(1, dt * CAMERA_FOLLOW_SPEED)
+		cameraAnchor.CFrame = CFrame.new(cameraAnchor.Position + offset * alpha)
+	end)
 	RunService.PreSimulation:Connect(function()
 		for humanoid, joints in pairs(activeRigs) do
 			if not humanoid.Parent then activeRigs[humanoid] = nil continue end
@@ -200,6 +287,10 @@ function Service.InitClient()
 			if humanoid.Health > 0 and humanoid:GetState() ~= Enum.HumanoidStateType.Ragdoll then
 				humanoid:ChangeState(Enum.HumanoidStateType.Ragdoll)
 			end
+			-- The default camera follows HumanoidRootPart. Let the limbs tumble,
+			-- but do not let physics rotate that invisible camera anchor every frame.
+			local root = humanoid.Parent:FindFirstChild("HumanoidRootPart")
+			if root and root:IsA("BasePart") then root.AssemblyAngularVelocity = Vector3.zero end
 			for _, joint in ipairs(joints) do
 				if joint.Parent then joint.Enabled = joint:GetAttribute("GrappleRagdollSocket") == true end
 			end

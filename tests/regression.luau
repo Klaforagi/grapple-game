@@ -23,6 +23,7 @@ return function(sources)
 	local V = {}
 	local vectorMT = {}
 	function V.new(x, y, z) return setmetatable({X = x or 0, Y = y or 0, Z = z or 0, kind = "Vector3"}, vectorMT) end
+	V.zero = V.new()
 	vectorMT.__add = function(a, b) return V.new(a.X + b.X, a.Y + b.Y, a.Z + b.Z) end
 	vectorMT.__sub = function(a, b) return V.new(a.X - b.X, a.Y - b.Y, a.Z - b.Z) end
 	vectorMT.__mul = function(a, b) return V.new(a.X * b, a.Y * b, a.Z * b) end
@@ -32,7 +33,7 @@ return function(sources)
 		if key == "Unit" then return a / a.Magnitude end
 		if key == "Dot" then return function(_, b) return a.X*b.X + a.Y*b.Y + a.Z*b.Z end end
 	end
-	local identity = setmetatable({}, {__mul = function(a) return a end})
+	local identity = setmetatable({LookVector = V.new(0, 0, -1)}, {__mul = function(a) return a end})
 	local function descendant(object, ancestor)
 		local parent = object.Parent
 		while parent do if parent == ancestor then return true end parent = parent.Parent end
@@ -53,7 +54,8 @@ return function(sources)
 		local object = setmetatable({
 			ClassName = class, Name = name or class, Parent = parent, Enabled = true, attributes = {}, tags = {},
 			Position = V.new(), Size = V.new(2, 2, 2), CFrame = identity, C0 = identity, C1 = identity, Transform = identity,
-			Health = 100, EvaluateStateMachine = true, AutoRotate = true, PlatformStand = false, CanCollide = false, Massless = false,
+			Health = 100, HipHeight = 2, EvaluateStateMachine = true, AutoRotate = true, PlatformStand = false, CanCollide = false, Massless = false,
+			AssemblyLinearVelocity = V.new(), AssemblyAngularVelocity = V.new(),
 			CollisionGroup = "Default", CurrentPhysicalProperties = {Density = 1}, AssemblyMass = 5,
 			Died = signal(), Destroying = signal(), Unequipped = signal(), CharacterRemoving = signal(), CharacterAdded = signal(),
 			DescendantAdded = signal(), ChildAdded = signal(), OnServerEvent = signal(),
@@ -118,7 +120,16 @@ return function(sources)
 		self.disabledStates[state] = not enabled
 	end
 	function methods:ApplyAngularImpulse(impulse) self.lastAngularImpulse = impulse end
-	function methods:UnequipTools() self.UnequippedCount = (self.UnequippedCount or 0) + 1 end
+	function methods:UnequipTools()
+		self.UnequippedCount = (self.UnequippedCount or 0) + 1
+		for _, child in ipairs(self.Parent:GetChildren()) do
+			if child:IsA("Tool") then
+				child.Parent = nil
+				child.Unequipped:Emit()
+			end
+		end
+	end
+	function methods:LoadCharacter() self.LoadCharacterCount = (self.LoadCharacterCount or 0) + 1 end
 	function methods:Destroy()
 		self.Destroying:Emit()
 		for _, object in ipairs(self:GetChildren()) do object:Destroy() end
@@ -140,6 +151,10 @@ return function(sources)
 		for _, player in ipairs(playerList) do if player.Character == character then return player end end
 	end
 	local runService = {Heartbeat = signal(), PreSimulation = signal(), IsServer = function() return true end}
+	function runService:BindToRenderStep(name, _, callback)
+		self.renderBindings = self.renderBindings or {}
+		self.renderBindings[name] = callback
+	end
 	local storage = instance("ReplicatedStorage")
 	storage.Modules = instance("Folder", "Modules", storage)
 	local configModule = instance("ModuleScript", "GrappleConfig", storage)
@@ -155,16 +170,17 @@ return function(sources)
 	local env = setmetatable({
 		game = {GetService = function(_, name) return assert(services[name], name) end},
 		workspace = world, Vector3 = V, Instance = {new = instance},
-		CFrame = {new = function() return identity end}, BrickColor = {new = function() return {} end},
+		CFrame = {new = function() return identity end, lookAt = function() return identity end}, BrickColor = {new = function() return {} end},
 		Color3 = {fromRGB = function() return {} end}, ColorSequence = {new = function() return {} end},
 		PhysicalProperties = {new = function(d, f) return {Density = d, Friction = f} end},
 		RaycastParams = {new = function() return {} end}, OverlapParams = {new = function() return {} end},
 		Enum = {HumanoidStateType = {Physics = "Physics", Ragdoll = "Ragdoll", GettingUp = "GettingUp"},
+			RenderPriority = {Camera = {Value = 200}},
 			ForceLimitMode = {PerAxis = "PerAxis"}, ActuatorRelativeTo = {World = "World"},
 			PositionAlignmentMode = {OneAttachment = "OneAttachment"}, RaycastFilterType = {Exclude = "Exclude"},
 			Material = {Neon = "Neon"}, KeyCode = setmetatable({}, {__index = function(_, key) return key end})},
 		os = {clock = function() return now end},
-		task = {delay = function(_, fn) table.insert(delayed, fn) end, spawn = function(fn, ...) fn(...) end},
+		task = {delay = function(_, fn) table.insert(delayed, fn) end, defer = function(fn, ...) fn(...) end, spawn = function(fn, ...) fn(...) end},
 		typeof = function(value) return type(value) == "table" and value.kind or type(value) end,
 	}, {__index = getfenv()})
 	local function execute(source)
@@ -174,7 +190,7 @@ return function(sources)
 	end
 	local config = execute(sources.config)
 	local remotes = {}
-	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "StruggleInput", "StruggleProgress"}) do
+	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "StruggleInput", "StruggleProgress"}) do
 		remotes[name] = instance("RemoteEvent", name)
 	end
 	local ragdoll = execute(sources.ragdoll)
@@ -239,35 +255,39 @@ return function(sources)
 		if object:IsA("BasePart") then assert(object.NetworkOwner == attacker, "split ragdoll ownership") end
 	end
 	assert(not handle.Anchored and not handle.CanCollide and handle.Massless, "gun physics not normalized")
-	local pull = assert(victimRoot:FindFirstChild("GrapplePull"))
-	assert(pull.MaxAxesForce.Y == 0 and pull.ForceRelativeTo == "World", "drag supports victim vertically")
 	assert(victimHumanoid.State == "Ragdoll" and not victimHumanoid:GetStateEnabled("GettingUp"), "victim is not held in ragdoll state")
-	assert(not pull.ReactionForceEnabled and not pull.RigidityEnabled and pull.MaxForce < math.huge, "unbounded/reactive drag")
 	local rope = assert(victimRoot:FindFirstChildWhichIsA("RopeConstraint"))
-	assert(not rope.Enabled, "player rope must be visual only")
+	assert(rope.Enabled and rope.WinchEnabled, "player rope is not physically active")
+	assert(rope:GetAttribute("PlayerGrapple") == true, "player rope is not identified")
+	assert(rope.WinchForce == config.playerWinchForce, "player rope does not use lifting force")
+	assert(rope.Attachment0.Parent == attacker.Character:FindFirstChild("HumanoidRootPart"), "rope still attached to gun limb")
+	assert(rope.Attachment1.Parent == victimRoot, "rope is not attached to victim center")
 	remotes.ChangeLength.OnServerEvent:Emit(attacker, -1e6)
 	assert(rope.WinchTarget >= 16, "rope length teleport accepted")
 	remotes.ChangeLength.OnServerEvent:Emit(attacker, 0/0)
 	assert(rope.WinchTarget == rope.WinchTarget, "NaN length accepted")
 	now += 0.5
 	runService.Heartbeat:Emit(0.1)
-	assert(pull.Enabled, "taut rope should pull")
-	assert(rope.Attachment0.Parent == attacker.Character:FindFirstChild("HumanoidRootPart"), "drag anchored to gun limb")
+	assert(rope.WinchTarget < rope.Length, "shortening did not reel the physical rope")
 	local progressBefore = #(remotes.StruggleProgress.messages or {})
 	remotes.StruggleInput.OnServerEvent:Emit(attacker)
 	assert(#(remotes.StruggleProgress.messages or {}) == progressBefore, "attacker escaped for victim")
+	victimRoot.CFrame = {LookVector = V.new(1, 0.8, 0)}
+	victimRoot.AssemblyAngularVelocity = V.new(4, 3, 2)
 	for _ = 1, config.maxStruggleValue + 10 do
 		now += 0.08
 		remotes.StruggleInput.OnServerEvent:Emit(victim)
 	end
 	assert(victimHumanoid:GetAttribute("GrappledBy") == nil, "escape failed")
 	assert(victimHumanoid:GetAttribute("Ragdolled") == false, "escape failed to recover")
-	assert(pull.destroyed and rope.destroyed, "escape leaked forces")
-	assert(victimRoot.NetworkOwner == victim, "victim ownership not restored")
+	assert(rope.destroyed, "escape leaked physical rope")
+	assert(victimRoot.NetworkOwner == nil, "recovery pose was not server-owned")
+	assert(victimRoot.CFrame == identity and victimRoot.AssemblyAngularVelocity.Magnitude == 0, "server did not straighten released victim")
 	assert(victimRoot.CanCollide == false and victimHumanoid.AutoRotate, "recovery did not restore properties")
 	local messages = remotes.HasBeenGrappled.messages
 	assert(messages[#messages].args.n == 0, "victim never received end event")
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
+	assert(victimRoot.NetworkOwner == victim, "victim ownership not restored after stabilization")
 	-- Manual ragdolls must survive grapple release.
 	victimHumanoid:AddTag("Ragdoll")
 	ragdoll.Set(victimHumanoid, true)
@@ -324,8 +344,11 @@ return function(sources)
 	local attackerHumanoid = attacker.Character:FindFirstChildWhichIsA("Humanoid")
 	assert(attackerHumanoid:GetAttribute("GrappledBy") == victim.UserId and attackerRoot.NetworkOwner == victim, "reverse grapple is asymmetric")
 	attacker.CharacterRemoving:Emit()
-	assert(attackerRoot.NetworkOwner == attacker and not reverseGun:GetAttribute("HasGrappled"), "reverse recovery failed")
+	assert(attackerRoot.NetworkOwner == nil and not reverseGun:GetAttribute("HasGrappled"), "reverse recovery was not stabilized by server")
+	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
+	assert(attackerRoot.NetworkOwner == attacker, "reverse recovery ownership was not restored")
 	-- Duplicate X paths must not toggle twice, and a stale GUI cooldown cannot jam firing.
+	gun.Parent = attacker.Character
 	now += 0.2
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
@@ -338,20 +361,23 @@ return function(sources)
 	remotes.FireGrapple.OnServerEvent:Emit(attacker, victimRoot.Position, V.new(0, 0, -100))
 	assert(victimHumanoid:GetAttribute("GrappledBy") == attacker.UserId, "zoomed camera or stale UI cooldown jammed firing")
 	fire()
-	-- Death must remove the pull but leave the dead character ragdolled.
+	-- Death must remove the physical rope but leave the dead character ragdolled.
 	hitParts = {victimRoot}
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
 	fire()
-	local deathPull = assert(victimRoot:FindFirstChild("GrapplePull"))
+	local deathRope = assert(victimRoot:FindFirstChildWhichIsA("RopeConstraint"))
 	victimHumanoid.Health = 0
 	victimHumanoid.Died:Emit()
-	assert(deathPull.destroyed and victimHumanoid:GetAttribute("Ragdolled"), "death cleanup resurrected or retained forces")
+	assert(deathRope.destroyed and victimHumanoid:GetAttribute("Ragdolled"), "death cleanup resurrected or retained rope")
 	-- The attacker's client must also suppress the remote victim's state machine.
 	runService.IsServer = function() return false end
 	local clientRagdoll = execute(sources.ragdoll)
 	clientRagdoll.InitClient()
 	assert(not victimHumanoid.EvaluateStateMachine, "remote victim retained humanoid forces")
 	assert(attackerHumanoid.EvaluateStateMachine, "healthy character state machine was disabled")
+	victimRoot.AssemblyAngularVelocity = V.new(3, 2, 1)
+	runService.PreSimulation:Emit()
+	assert(victimRoot.AssemblyAngularVelocity.Magnitude == 0, "ragdoll camera root retained angular jitter")
 	hum6:SetAttribute("Ragdolled", true)
 	assert(not hum6.EvaluateStateMachine and hum6.PlatformStand, "client missed newly activated ragdoll")
 	hum6:SetAttribute("Ragdolled", false)
@@ -400,7 +426,11 @@ return function(sources)
 	toolClient.Fire(gun, true)
 	assert(#remotes.FireGrapple.sent == 2, "touch fire did not use shared firing path")
 	assert(aimPixels[1] == 400 and aimPixels[2] == 300, "touch center aim changed")
-	-- Exercise the actual toggle handler: get up immediately, then wait 0.5 seconds.
+	local unequipsBefore = attackerHumanoid.UnequippedCount or 0
+	input.InputBegan:Emit({UserInputType = "Keyboard", KeyCode = "One"}, true)
+	assert(gun.Parent == attacker.Character and (attackerHumanoid.UnequippedCount or 0) == unequipsBefore, "grapple code hijacked the normal hotbar key")
+	-- Exercise the actual toggle handler: both entering and leaving ragdoll have
+	-- the same 0.5-second cooldown.
 	services.CollectionService = {
 		GetInstanceAddedSignal = function() return signal() end,
 		GetInstanceRemovedSignal = function() return signal() end,
@@ -413,15 +443,34 @@ return function(sources)
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid:HasTag("Ragdoll"), "ready player could not ragdoll")
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
-	assert(not attackerHumanoid:HasTag("Ragdoll"), "getting up incorrectly waits for cooldown")
+	assert(attackerHumanoid:HasTag("Ragdoll"), "ragdoll could be cancelled without its cooldown")
+	now += 0.49
+	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
+	assert(attackerHumanoid:HasTag("Ragdoll"), "ragdoll cancellation cooldown ended early")
+	now += 0.01
+	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
+	assert(not attackerHumanoid:HasTag("Ragdoll"), "ragdoll could not recover after its cooldown")
 	local recoveredAt = now
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(not attackerHumanoid:HasTag("Ragdoll"), "immediate re-ragdoll bypassed cooldown")
 	now = recoveredAt + 0.49
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
-	assert(not attackerHumanoid:HasTag("Ragdoll"), "cooldown ended before half a second")
+	assert(not attackerHumanoid:HasTag("Ragdoll"), "re-ragdoll cooldown ended early")
 	now = recoveredAt + 0.5
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid:HasTag("Ragdoll"), "cooldown did not expire after half a second")
-	print("PASS: gameplay regressions, exact mouse pixels/raycast target, touch center, immediate get-up and 0.5-second recovery cooldown")
+	-- A dead ragdoll's camera follows HumanoidRootPart, so that root must not
+	-- pass through the floor even when it was already ragdolled before death.
+	remotes.ResetCharacter.OnServerEvent:Emit(attacker)
+	assert(attackerHumanoid.Health == 0, "reset request did not kill a ragdolled player")
+	attackerHumanoid.Died:Emit()
+	assert(attackerRoot.CanCollide, "dead ragdoll root can fall through the floor")
+	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
+	assert(attacker.LoadCharacterCount == 1, "dead player did not receive respawn fallback")
+	attackerHumanoid.Health = 100
+	world.FallenPartsDestroyHeight = -100
+	attackerRoot.Position = V.new(0, -75, 0)
+	runService.Heartbeat:Emit(0.1)
+	assert(attackerHumanoid.Health == 0, "falling ragdoll was not killed before the void")
+	print("PASS: gameplay regressions, physical body rope, server recovery pose, normal hotbar input, exact aim, ragdoll cooldown")
 end
