@@ -22,7 +22,7 @@ for _, gui in ipairs(starterGui:GetChildren()) do retireGui(gui) end
 starterGui.ChildAdded:Connect(retireGui)
 local GROUP = "GrappleCharacters"
 pcall(function() PhysicsService:RegisterCollisionGroup(GROUP) end)
-PhysicsService:CollisionGroupSetCollidable(GROUP, GROUP, false)
+PhysicsService:CollisionGroupSetCollidable(GROUP, GROUP, Config.playerCollisionsEnabled ~= false)
 
 local pendingRespawns = {}
 local function healthy(character)

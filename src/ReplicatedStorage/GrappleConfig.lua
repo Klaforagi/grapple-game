@@ -72,6 +72,7 @@ return {
 
 	-- Extra (not in the order but thought I'd include it)
 	GrappleToWalls = false,
+	playerCollisionsEnabled = true, -- Players collide even while grappling/ragdolled; false restores pass-through
 
 	-- Uses speed * time to calculate the distance
 	GrapplingTime = 15,

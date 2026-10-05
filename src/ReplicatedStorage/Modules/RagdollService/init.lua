@@ -124,7 +124,26 @@ function Service.Prepare(humanoid)
 	local folder = Instance.new("Folder")
 	folder.Name = "GrappleRagdollJoints"
 	folder.Parent = character
+	-- Players can collide with other players. Suppress only pairs inside this
+	-- character so overlapping ragdoll limbs cannot push their own body apart.
+	local selfCollisions = Instance.new("Folder")
+	selfCollisions.Name = "GrappleSelfCollision"
+	selfCollisions.Parent = character
+	local bodyParts = {}
+	local function ignoreSelfCollision(part)
+		if part.Parent ~= character or bodyParts[part] then return end
+		for other in pairs(bodyParts) do
+			if other.Parent == character then
+				local ignore = Instance.new("NoCollisionConstraint")
+				ignore.Name = part.Name .. "_" .. other.Name
+				ignore.Part0, ignore.Part1 = part, other
+				ignore.Parent = selfCollisions
+			end
+		end
+		bodyParts[part] = true
+	end
 	local function add(motor)
+		if motor:IsA("BasePart") then ignoreSelfCollision(motor) return end
 		local upgraded = motor:IsA("AnimationConstraint")
 		if not motor:IsA("Motor6D") and not upgraded then return end
 		local part0, part1

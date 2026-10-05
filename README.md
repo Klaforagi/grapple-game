@@ -20,7 +20,7 @@ Connected grapples have no timeout. Release, escape, unequip, death, or leaving 
 
 The HUD sits at the bottom left. X switches player/wall target mode while the gun is equipped. Mouse and touch firing share a deduplicated input path and are independent of movement. Camera zoom no longer causes valid shots to be rejected.
 
-The grapple code leaves number-key handling to Roblox's normal Backpack controls; actually unequipping the gun releases the grapple. Automatically ragdolled victims resume Roblox's normal GettingUp behavior after the ownership handoff. Character collision groups prevent inter-player/self collisions while the body retains floor collisions; the invisible root stays non-colliding and gun decorations are massless.
+The grapple code leaves number-key handling to Roblox's normal Backpack controls; actually unequipping the gun releases the grapple. Automatically ragdolled victims resume Roblox's normal GettingUp behavior after the ownership handoff. Player collision is enabled by default, including while grappling and ragdolled. Set `playerCollisionsEnabled = false` in `GrappleConfig.lua` to restore pass-through for comparison, then restart the test. Per-character NoCollisionConstraints prevent a body's own limbs from colliding with each other. Bodies retain floor collisions; the invisible root stays non-colliding while alive and gun decorations are massless. Collision groups are configured by the server script; no manual Studio setup is needed.
 
 Mouse aiming uses raw viewport coordinates without adding the top-bar inset. Ragdoll recovery is immediate when you are not grappled; the 0.5-second cooldown starts when you get up and prevents re-entering ragdoll during that window.
 
