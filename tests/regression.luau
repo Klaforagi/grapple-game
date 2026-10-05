@@ -55,7 +55,7 @@ return function(sources)
 		local object = setmetatable({
 			ClassName = class, Name = name or class, Parent = parent, Enabled = true, attributes = {}, tags = {},
 			Position = V.new(), Size = V.new(2, 2, 2), CFrame = identity, C0 = identity, C1 = identity, Transform = identity,
-			Health = 100, HipHeight = 2, EvaluateStateMachine = true, AutoRotate = true, PlatformStand = false, CanCollide = false, Massless = false,
+			Health = 100, HipHeight = 2, EvaluateStateMachine = true, AutoRotate = true, PlatformStand = false, CanCollide = false, Massless = false, Transparency = 0,
 			AssemblyLinearVelocity = V.new(), AssemblyAngularVelocity = V.new(), RootPriority = 0, MaxFrictionTorque = 0,
 			CollisionGroup = "Default", CurrentPhysicalProperties = {Density = 1}, AssemblyMass = 5,
 			Died = signal(), Destroying = signal(), Unequipped = signal(), CharacterRemoving = signal(), CharacterAdded = signal(),
@@ -117,7 +117,10 @@ return function(sources)
 	end
 	function methods:GetNetworkOwner() return self.NetworkOwner end
 	function methods:GetNetworkOwnershipAuto() return self.OwnershipAuto ~= false end
-	function methods:ApplyImpulse(impulse) self.AssemblyLinearVelocity += impulse / self.AssemblyMass end
+	function methods:ApplyImpulse(impulse)
+		self.ImpulseCount = (self.ImpulseCount or 0) + 1
+		self.AssemblyLinearVelocity += impulse / self.AssemblyMass
+	end
 	function methods:SetNetworkOwnershipAuto() self.NetworkOwner, self.OwnershipAuto = "auto", true end
 	function methods:GetMass() return 5 end
 	function methods:ChangeState(state) self.State = state end
@@ -212,11 +215,12 @@ return function(sources)
 		remotes[name] = instance("RemoteEvent", name)
 	end
 	local ragdoll = execute(sources.ragdoll)
+	local playedSounds = {}
 	env.require = function(module)
 		if module == configModule then return config end
 		if module == remoteModule then return remotes end
 		if module == ragdollModule then return ragdoll end
-		if module == soundModule then return function() end end
+		if module == soundModule then return function(source, sound) table.insert(playedSounds, {source = source, sound = sound}) end end
 		error("Unexpected require")
 	end
 	local function character(name, position, r15)
@@ -761,20 +765,29 @@ return function(sources)
 	end
 	local distant = bombPhysics.ThrowVelocity(V.new(1000, 0, 0), 196.2, 70, 6)
 	assert(math.abs(distant.Magnitude - 70) < 0.001 and distant.X > 0 and distant.Y > 0, "out-of-range bomb did not arc toward aim")
-	local up = bombPhysics.Knockback(V.new(0, 2, 0), 8, 150)
-	local right = bombPhysics.Knockback(V.new(5, 2, 0), 8, 150)
-	local left = bombPhysics.Knockback(V.new(-5, 2, 0), 8, 150)
-	assert(up.X == 0 and up.Z == 0 and up.Y > 100, "underfoot blast must launch vertically")
-	assert(right.X > 80 and left.X < -80 and right.Y < right.X, "side blast must launch far, away, at a low angle")
-	assert(bombPhysics.Knockback(V.new(9, 0, 0), 8, 150).Magnitude == 0, "blast exceeded radius")
-	assert(bombPhysics.Knockback(V.zero, 8, 150).Y == 150, "coincident blast produced invalid direction")
+	local function blastVelocity(offset)
+		return bombPhysics.Knockback(offset, config.bombRadius, world.Gravity, config.bombLaunchHeight, config.bombLaunchDistance)
+	end
+	local up, right, left = blastVelocity(V.new(0, 2, 0)), blastVelocity(V.new(5, 2, 0)), blastVelocity(V.new(-5, 2, 0))
+	assert(up.X == 0 and up.Z == 0, "underfoot blast must launch vertically")
+	assert(right.X > 0 and left.X < 0, "side blasts must launch away from center")
+	assert(blastVelocity(V.new(9, 0, 0)).Magnitude == 0, "blast exceeded radius")
+	for _, offset in ipairs({V.zero, V.new(0, 2, 0), V.new(5, 2, 0), V.new(8, 0, 0), V.new(0, -8, 0)}) do
+		local velocity = blastVelocity(offset)
+		local height = velocity.Y * velocity.Y / (2 * world.Gravity)
+		local range = V.new(velocity.X, 0, velocity.Z).Magnitude * 2 * velocity.Y / world.Gravity
+		assert(height >= 50 and height <= 100 and range <= 100, "blast trajectory exceeded 50-100 stud target")
+	end
 
-	-- Exercise actual throw validation, five-second airborne fuse and explosion.
+	-- Exercise actual throw validation, 3.5-second fuse, cooldown, and explosion.
 	services.Debris = {AddItem = function() end}
 	services.TweenService = {Create = function() return {Play = function() end} end}
 	env.TweenInfo = {new = function() return {} end}
 	env.Enum.PartType = {Ball = "Ball"}
 	env.Enum.SurfaceType = {Smooth = "Smooth"}
+	local soundsFolder = instance("Folder", "Sounds", storage)
+	local explosionSound = instance("Sound", "Explode", soundsFolder)
+	explosionSound.TimeLength = 2
 	remotes.ThrowBomb = instance("RemoteEvent", "ThrowBomb")
 	local bombModule = instance("ModuleScript", "BombPhysics", storage.Modules)
 	local previousRequire = env.require
@@ -800,19 +813,34 @@ return function(sources)
 	assert(not world:FindFirstChild("ThrownBomb"), "invalid bomb aim accepted")
 	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(100, 0, 0))
 	local thrown = assert(world:FindFirstChild("ThrownBomb"))
+	local bombHandle = bombTool:FindFirstChild("Handle")
+	assert(bombHandle.Transparency == 1 and not bombTool.Enabled, "held bomb did not disappear during cooldown")
+	local threwAt = now
 	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(100, 0, 0))
 	local count = 0
 	for _, child in ipairs(world:GetChildren()) do if child.Name == "ThrownBomb" then count += 1 end end
 	assert(count == 1, "bomb cooldown allowed duplicate throw")
 	thrown.Touched:Emit(attackerRoot)
 	assert(not thrown:FindFirstChild("BombStick"), "bomb stuck to thrower before leaving hand")
+	now += 1
+	thrown.Touched:Emit(attackerRoot)
+	thrown.Touched:Emit(bombHandle)
+	thrown.Touched:Emit(handle)
+	local lateAccessory = instance("Part", "LateAccessory", attacker.Character)
+	attacker.Character.DescendantAdded:Emit(lateAccessory)
+	lateAccessory.Parent = world
+	thrown.Touched:Emit(lateAccessory)
+	local ghost = instance("Part", "CameraOrEffect", world)
+	ghost.CanCollide = false
+	thrown.Touched:Emit(ghost)
+	assert(not thrown:FindFirstChild("BombStick"), "bomb stuck to thrower/tools/effect after old grace period")
 	thrown.Touched:Emit(victimRoot)
 	local weld = assert(thrown:FindFirstChild("BombStick"), "bomb did not stick to humanoid part")
 	assert(weld.Part0 == victimRoot and not thrown.Anchored and thrown.Massless, "sticking must follow character without anchoring or weighing it down")
 	thrown.Touched:Emit(wall)
 	assert(weld.Part0 == victimRoot, "second contact replaced the first sticky target")
 	thrown.Position = V.new(-5, -2, 0)
-	now += 4.99
+	now = threwAt + 3.49
 	runService.Heartbeat:Emit(0.1)
 	assert(not thrown.destroyed, "bomb detonated early")
 	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(10, 0, 0))
@@ -821,31 +849,97 @@ return function(sources)
 	assert(count == 1, "bomb allowed a new throw before six seconds")
 	now += 0.02
 	runService.Heartbeat:Emit(0.1)
-	assert(thrown.destroyed and attackerRoot.AssemblyLinearVelocity.X > 800, "blast did not deliver tenfold knockback")
+	assert(thrown.destroyed, "bomb missed 3.5-second fuse")
+	assert(attackerRoot.AssemblyLinearVelocity.Magnitude == 0, "launch ran before the ragdoll assembly rebuild")
+	assert(playedSounds[#playedSounds].sound == explosionSound and playedSounds[#playedSounds].source.Name == "BombBlast", "explosion sound did not play at blast")
+	-- The engine puts an unequipped tool into Backpack; mirror that in this mock.
+	bombTool.Parent = attackerBackpack
+	local splitLimb = attacker.Character:FindFirstChild("Limb1")
+	for _, part in ipairs(attacker.Character:GetChildren()) do
+		if part:IsA("BasePart") and part ~= splitLimb then part.AssemblyRootPart = attackerRoot end
+	end
+	local previousRootImpulses = attackerRoot.ImpulseCount or 0
+	now += 1 / 60
+	runService.Heartbeat:Emit(1 / 60)
+	local launched = attackerRoot.AssemblyLinearVelocity
+	assert(launched.X > 0 and launched.Y^2 / (2 * world.Gravity) >= 50 and launched.Magnitude < 200, "blast was missing or overpowered")
+	assert(attackerRoot.ImpulseCount == previousRootImpulses + 1, "shared assembly received one impulse per part")
+	assert((splitLimb.AssemblyLinearVelocity - launched).Magnitude < 0.001, "newly split ragdoll limb missed launch")
+	for _, part in ipairs(attacker.Character:GetChildren()) do
+		if part:IsA("BasePart") then part.AssemblyRootPart = nil end
+	end
 	ragdoll.RefreshOwnership(attackerHumanoid)
 	assert(attackerRoot.NetworkOwner == nil, "ownership audit stole bomb's temporary server simulation")
 	assert(attackerHumanoid:HasTag("Ragdoll") and attackerHumanoid:GetAttribute("Ragdolled"), "bomb did not ragdoll its target")
 	local lockedUntil = attackerHumanoid:GetAttribute("BombRagdollUntil")
-	assert(math.abs(lockedUntil - now - 5) < 0.001, "bomb lock must last five seconds after impact")
+	assert(math.abs(lockedUntil - (threwAt + 3.51) - 5) < 0.001, "bomb lock must last five seconds after impact")
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid:GetAttribute("Ragdolled"), "manual recovery bypassed bomb lock")
 	attackerHumanoid:RemoveTag("Ragdoll")
 	ragdoll.Set(attackerHumanoid, false)
 	assert(attackerHumanoid:HasTag("Ragdoll") and attackerHumanoid:GetAttribute("Ragdolled"), "another recovery path bypassed bomb lock")
+	now = threwAt + config.bombCooldown - 0.01
+	runService.Heartbeat:Emit(0.1)
+	assert(bombHandle.Transparency == 1 and not bombTool.Enabled, "held bomb returned before cooldown ended")
+	now += 0.02
+	runService.Heartbeat:Emit(0.02)
+	assert(bombHandle.Transparency == 0 and bombTool.Enabled, "held bomb did not return at cooldown end")
 	now = lockedUntil - 0.01
 	ragdoll.RefreshOwnership(attackerHumanoid)
 	assert(attackerRoot.NetworkOwner == attacker, "bomb server hold did not return standalone ragdoll to its player")
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid:GetAttribute("Ragdolled"), "bomb lock ended early")
 	now = lockedUntil + 0.01
-	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
-	assert(not attackerHumanoid:GetAttribute("Ragdolled"), "player could not recover after five seconds")
+	runService.Heartbeat:Emit(0.02)
+	assert(not attackerHumanoid:GetAttribute("Ragdolled") and attackerHumanoid.EvaluateStateMachine, "bomb victim did not automatically recover")
 	bombTool.Parent = attacker.Character
 	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(10, 0, 0))
 	local swept = assert(world:FindFirstChild("ThrownBomb"))
+	local sweptAt = now
 	swept.Position = V.new(10, 0, 0)
+	wall.CanCollide = true
 	world.Raycast = function() return {Instance = wall, Position = V.new(5, 0, 0), Normal = V.new(-1, 0, 0)} end
 	runService.Heartbeat:Emit(0.1)
 	assert(swept:FindFirstChild("BombStick").Part0 == wall, "sweep missed first wall along flight path")
+	-- An explosion must release a grapple, preserve voluntary ragdolls, and
+	-- replace excessive existing velocity instead of adding more energy.
+	world.Raycast = function() return nil end
+	local blastTarget, blastHumanoid, blastRoot = character("GrappledBlastTarget", V.new(4, 0, 0), true)
+	local manualTarget, manualHumanoid = character("ManualBlastTarget", V.new(3, 0, 0), false)
+	manualHumanoid:AddTag("Ragdoll")
+	ragdoll.Set(manualHumanoid, true)
+	bombTool.Parent = attackerBackpack
+	gun.Parent = attacker.Character
+	hitParts = {blastRoot}
+	fire()
+	assert(blastHumanoid:GetAttribute("GrappledBy") == attacker.UserId, "blast test failed to create tether")
+	attackerRoot.AssemblyLinearVelocity = V.new(2000, 2000, 0)
+	now = sweptAt + config.bombFuse + 0.01
+	runService.Heartbeat:Emit(0.02)
+	assert(not gun:GetAttribute("HasGrappled") and not blastRoot:FindFirstChildWhichIsA("RopeConstraint"), "blast retained grapple tether")
+	now += 1 / 60
+	runService.Heartbeat:Emit(1 / 60)
+	assert(attackerRoot.AssemblyLinearVelocity.Magnitude < 200 and blastRoot.AssemblyLinearVelocity.Magnitude > 100, "repeat launch stacked speed or failed to launch grappled NPC")
+	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
+	now += config.bombRagdollDuration + 0.01
+	runService.Heartbeat:Emit(0.1)
+	assert(not blastHumanoid:GetAttribute("Ragdolled"), "grapple-created ragdoll remained stuck after blast stun")
+	assert(manualHumanoid:GetAttribute("Ragdolled"), "blast recovery removed a voluntary ragdoll")
+	-- The client obeys server cooldown state but only debounces unacknowledged
+	-- requests, so a rejected throw does not start a phantom six-second cooldown.
+	bombTool.Parent = attacker.Character
+	execute(sources.bombClient)
+	bombTool.Activated:Emit()
+	assert(#remotes.ThrowBomb.sent == 1, "bomb client did not send equipped throw")
+	bombTool.Activated:Emit()
+	assert(#remotes.ThrowBomb.sent == 1, "bomb client failed to debounce input")
+	now += 0.2
+	bombTool.Activated:Emit()
+	assert(#remotes.ThrowBomb.sent == 2, "unacknowledged throw caused full client cooldown")
+	bombTool.Enabled = false
+	bombTool:SetAttribute("BombCoolingDown", true)
+	now += 0.2
+	bombTool.Activated:Emit()
+	assert(#remotes.ThrowBomb.sent == 2, "bomb client ignored authoritative cooldown")
 	print("PASS: bounded fall camera at 15/30/60/144 FPS, resting camera stability, four-player ownership, ragdolls, handoff/controls, momentum, ropes, bombs")
 end

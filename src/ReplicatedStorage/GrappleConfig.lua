@@ -85,11 +85,12 @@ return {
 	playerMinDragDistance = 4, -- Prevent bodies being forced into the gun
 
 	bombToolName = "Bomb",
-	bombFuse = 5, -- Seconds from throw, including time in flight
+	bombFuse = 3.5, -- Seconds from throw, including time in flight
 	bombCooldown = 6, -- Seconds after throwing before another throw
 	bombRadius = 8, -- Root-to-explosion distance in studs
-	bombKnockback = 1500, -- Added speed; outer hits retain substantial sideways force
-	bombRagdollDuration = 5, -- Each hit restarts the forced-ragdoll lock
+	bombLaunchHeight = 75, -- Studs above impact position in unobstructed flight; edge hits ~52
+	bombLaunchDistance = 85, -- Horizontal studs back to impact height; directly underneath launches vertically
+	bombRagdollDuration = 5, -- Each hit restarts stun; automatic recovery unless already voluntarily ragdolled
 	bombThrowSpeed = 70,
 	bombArcHeight = 6, -- Arc rises this far above the higher of hand and target
 	

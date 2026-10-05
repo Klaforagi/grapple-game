@@ -10,6 +10,7 @@ $sources = @{
     bombPhysics = 'src/ReplicatedStorage/Modules/BombPhysics.lua'
     bombs = 'src/ServerScriptService/Bombs.server.lua'
     victimClient = 'src/StarterPlayer/StarterPlayerScripts/GrappleVictim.client.lua'
+    bombClient = 'src/StarterPlayer/StarterPlayerScripts/BombClient.client.lua'
 }
 $bundle = 'local sources = {}' + [Environment]::NewLine
 foreach ($key in $sources.Keys) {

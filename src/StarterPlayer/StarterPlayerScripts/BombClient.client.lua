@@ -5,17 +5,20 @@ local Config = require(Storage:WaitForChild("GrappleConfig"))
 local Remotes = require(Storage.Modules:WaitForChild("GrappleRemotes"))
 local player = Players.LocalPlayer
 local initialized = setmetatable({}, {__mode = "k"})
-local lastThrow = -math.huge
+local lastRequest = -math.huge
 
 local function fire(tool)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local camera = workspace.CurrentCamera
 	if tool.Parent ~= character or not camera or not humanoid or humanoid.Health <= 0 then return end
+	if not tool.Enabled or tool:GetAttribute("BombCoolingDown") then return end
 	if humanoid:GetAttribute("Ragdolled") or UIS:GetFocusedTextBox() then return end
 	local now = os.clock()
-	if now - lastThrow < Config.bombCooldown then return end
-	lastThrow = now
+	-- Only debounce input locally. The server starts the real cooldown on an
+	-- accepted throw, so a rejected request cannot strand the tool for six seconds.
+	if now - lastRequest < 0.15 then return end
+	lastRequest = now
 	local point = UIS.TouchEnabled and camera.ViewportSize / 2 or UIS:GetMouseLocation()
 	local ray = camera:ViewportPointToRay(point.X, point.Y)
 	local params = RaycastParams.new()

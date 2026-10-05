@@ -87,6 +87,7 @@ local function finishVictimHandoff(state, departingPlayer)
 	local victim = state.victimPlayer
 	if character.Parent and humanoid.Parent == character then
 		humanoid:SetAttribute("GrapplePhysicsOwner", nil)
+		humanoid:SetAttribute("GrappleAppliedRagdoll", nil)
 		-- The rope is already gone. Preserve flight momentum and never teleport
 		-- to the server's possibly older copy of the owner's last position.
 		if victim and victim ~= departingPlayer and victim.Parent == Players and victim.Character == character then
@@ -270,6 +271,7 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	state.victimCharacter = hitModel
 	if victimPlayer then GrappleOwners[victimPlayer.UserId] = state.owner end
 	state.appliedRagdoll = (previousSession and previousSession.appliedRagdoll) or not hitHumanoid:HasTag("Ragdoll")
+	hitHumanoid:SetAttribute("GrappleAppliedRagdoll", state.appliedRagdoll)
 	nextPhysicsSession += 1
 	state.physicsSession = nextPhysicsSession
 	physicsSessions[hitModel] = state
@@ -294,6 +296,9 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 		createStruggleRemote(state, victimPlayer)
 	end
 	state.connections.victimDied = hitHumanoid.Died:Connect(function()
+		if Active[state.owner] == state then disconnectRope(state.owner, true) end
+	end)
+	state.connections.victimBlasted = hitHumanoid:GetAttributeChangedSignal("BombBlastRevision"):Connect(function()
 		if Active[state.owner] == state then disconnectRope(state.owner, true) end
 	end)
 	state.connections.victimDestroyed = hitModel.Destroying:Connect(function()
@@ -407,6 +412,9 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	if bolt and bolt:IsA("BasePart") then bolt.Transparency = 1 end
 	PlaySound(tool:FindFirstChild("Handle"), sound("Fire"))
 	state.connections.ownerDied = humanoid.Died:Connect(function() disconnectRope(player, true) end)
+	state.connections.ownerBlasted = humanoid:GetAttributeChangedSignal("BombBlastRevision"):Connect(function()
+		if Active[player] == state then disconnectRope(player, true) end
+	end)
 	state.connections.toolUnequipped = tool.Unequipped:Connect(function()
 		disconnectRope(player)
 		-- Studio can emit Unequipped before its hotbar finishes reparenting.

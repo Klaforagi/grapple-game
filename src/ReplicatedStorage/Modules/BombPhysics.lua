@@ -16,16 +16,18 @@ function M.ThrowVelocity(offset: Vector3, gravity: number, speed: number, arcHei
 	return (horizontal.Unit + Vector3.new(0, 1, 0)) * (speed / math.sqrt(2))
 end
 
--- Off-center blasts keep their horizontal punch while the launch angle falls
--- naturally with distance. Directly underneath always launches straight up.
-function M.Knockback(offset: Vector3, radius: number, speed: number): Vector3
+-- Specify a trajectory in studs, not an enormous additive speed. This is the
+-- desired final velocity, so repeated blasts do not stack launch energy.
+function M.Knockback(offset: Vector3, radius: number, gravity: number, height: number, range: number): Vector3
 	local distance = offset.Magnitude
 	if distance > radius then return Vector3.zero end
+	local strength = 1 - 0.3 * math.clamp(distance / math.max(radius, 0.001), 0, 1)
+	local g = math.max(gravity, 1)
+	local verticalSpeed = math.sqrt(2 * g * math.max(1, height) * strength)
+	local flightTime = 2 * verticalSpeed / g
 	local horizontal = Vector3.new(offset.X, 0, offset.Z)
-	local direction = Vector3.new(offset.X, math.max(offset.Y, 0.75), offset.Z).Unit
-	if horizontal.Magnitude < 0.001 then direction = Vector3.new(0, 1, 0) end
-	local strength = speed * (1 - 0.35 * math.clamp(distance / radius, 0, 1))
-	return direction * strength
+	local sideways = horizontal.Magnitude > 0.001 and horizontal.Unit * (math.max(0, range) * strength / flightTime) or Vector3.zero
+	return sideways + Vector3.new(0, verticalSpeed, 0)
 end
 
 return M

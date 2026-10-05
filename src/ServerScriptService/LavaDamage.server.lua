@@ -8,7 +8,7 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local DAMAGE = 30
-local DAMAGE_COOLDOWN = 1
+local DAMAGE_COOLDOWN = 2
 local OVERLAP_INTERVAL = 0.1
 
 local lavaFolder = Workspace:WaitForChild("LavaBricks")
