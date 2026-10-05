@@ -91,7 +91,7 @@ function M.Init()
 		return candidate and candidate:IsA("Tool") and candidate or nil
 	end
 	local function reelStep()
-		return Config.ropeLengthStep
+		return displayLength * (Config.ropeLengthFraction or 0.05)
 	end
 	local function change(delta)
 		if not currentRope or not currentRope.Parent then return end

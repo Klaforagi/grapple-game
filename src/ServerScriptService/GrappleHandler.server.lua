@@ -1,4 +1,4 @@
--- Authoritative grapple simulation. Clients only provide aim and UI input.
+-- Server validates grapples; the grappler simulates the connected mechanism.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -34,6 +34,9 @@ local lastFire: {[Player]: number} = {}
 local cooldownUntil: {[Player]: number} = {}
 local lastModeToggle: {[Player]: number} = {}
 local preparedTools = setmetatable({}, {__mode = "k"})
+-- Includes detached victims awaiting handoff. Identity guards invalidate old timers.
+local physicsSessions = {}
+local nextPhysicsSession = 0
 
 local function getTool(player: Player): Tool?
 	local character = player.Character
@@ -65,15 +68,24 @@ end
 
 local function setCharacterNetworkOwner(character: Model, owner: Player?)
 	-- Keep every ragdoll assembly under one simulator during a drag.
+	local seen = {}
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local rootAssigned = false
 	for _, instance in ipairs(character:GetDescendants()) do
 		if instance:IsA("BasePart") then
-			pcall(function()
-				if instance:CanSetNetworkOwnership() then
-					instance:SetNetworkOwner(owner)
+			local assembly = instance.AssemblyRootPart or instance
+			if seen[assembly] then continue end
+			seen[assembly] = true
+			local ok, assigned = pcall(function()
+				if assembly:CanSetNetworkOwnership() then
+					assembly:SetNetworkOwner(owner)
+					return true
 				end
 			end)
+			if root and assembly == (root.AssemblyRootPart or root) then rootAssigned = ok and assigned == true end
 		end
 	end
+	return rootAssigned
 end
 
 local function restoreAutomaticNetworkOwnership(character: Model)
@@ -89,6 +101,33 @@ local function restoreAutomaticNetworkOwnership(character: Model)
 end
 
 local disconnectRope: (Player, boolean?) -> ()
+
+local function finishVictimHandoff(state, departingPlayer)
+	local character, humanoid = state.victimCharacter, state.victimHumanoid
+	if physicsSessions[character] ~= state then return end
+	physicsSessions[character] = nil
+	local victim = state.victimPlayer
+	if character.Parent and humanoid.Parent == character then
+		-- The rope is already gone. Preserve flight momentum and never teleport
+		-- to the server's possibly older copy of the owner's last position.
+		if victim and victim ~= departingPlayer and victim.Parent == Players and victim.Character == character then
+			setCharacterNetworkOwner(character, victim)
+		else
+			restoreAutomaticNetworkOwnership(character)
+		end
+		humanoid:SetAttribute("GrapplePhysicsLocked", nil)
+		humanoid:SetAttribute("GrapplePhysicsSession", nil)
+		if state.appliedRagdoll and humanoid.Health > 0
+			and os.clock() >= (humanoid:GetAttribute("BombRagdollUntil") or 0) then
+			-- Set before removing the tag so its observer cannot run pose recovery.
+			Ragdoll.Set(humanoid, false, true)
+			humanoid:RemoveTag("Ragdoll")
+		end
+	end
+	if victim and victim.Parent == Players then
+		Remotes.GrappleVictimState:FireClient(victim, character, state.physicsSession, false)
+	end
+end
 
 disconnectRope = function(player: Player, skipCooldown: boolean?)
 	local state = Active[player]
@@ -107,37 +146,19 @@ disconnectRope = function(player: Player, skipCooldown: boolean?)
 	end
 
 	local victimHumanoid: Humanoid? = state.victimHumanoid
-	local recoveredVictim = false
-	if victimHumanoid and victimHumanoid.Parent then
-		victimHumanoid:SetAttribute("GrappledBy", nil)
-		if state.appliedRagdoll and victimHumanoid.Health > 0 then
-			victimHumanoid:RemoveTag("Ragdoll")
-			if victimHumanoid.Health > 0 then
-				-- Stabilize the authoritative pose before returning ownership. This
-				-- prevents remote clients seeing the recovered rig buried sideways.
-				if state.victimCharacter then setCharacterNetworkOwner(state.victimCharacter, nil) end
-				Ragdoll.Set(victimHumanoid, false)
-				recoveredVictim = true
-			end
-		end
+	if victimHumanoid and physicsSessions[state.victimCharacter] == state then
+		if victimHumanoid.Parent then victimHumanoid:SetAttribute("GrappledBy", nil) end
+		-- Let the current simulator finish the detached motion before handing
+		-- it back. This is a settling interval, not a network acknowledgement.
+		state.detached = true
+		task.delay(math.clamp(Config.playerOwnershipReleaseDelay or 0.2, 0, 1), function()
+			finishVictimHandoff(state)
+		end)
 	end
-	if state.victimCharacter and state.ownershipTransferred then
-		if state.victimPlayer and state.victimPlayer.Parent == Players then
-			local character, victimPlayer = state.victimCharacter, state.victimPlayer
-			if recoveredVictim then
-				-- Give the server a physics step to replicate the upright pose before
-				-- the victim resumes local simulation.
-				task.delay(0.1, function()
-					if character.Parent and victimPlayer.Parent == Players
-						and victimHumanoid.Parent == character and not victimHumanoid:GetAttribute("GrappledBy") then
-						setCharacterNetworkOwner(character, victimPlayer)
-					end
-				end)
-			else
-				setCharacterNetworkOwner(character, victimPlayer)
-			end
-		else
-			restoreAutomaticNetworkOwnership(state.victimCharacter)
+	if state.ownershipTransferred and state.character.Parent then
+		local ownerHumanoid = state.character:FindFirstChildOfClass("Humanoid")
+		if ownerHumanoid and not ownerHumanoid:GetAttribute("GrapplePhysicsLocked") then
+			restoreAutomaticNetworkOwnership(state.character)
 		end
 	end
 	if state.victimPlayer and GrappleOwners[state.victimPlayer.UserId] == player then
@@ -239,18 +260,21 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 
 	local victimPlayer = Players:GetPlayerFromCharacter(hitModel)
 	if victimPlayer == state.owner or hitHumanoid.Health <= 0 then disconnectRope(state.owner) return end
+	local previousSession = physicsSessions[hitModel]
+	if previousSession and Active[previousSession.owner] == previousSession then
+		disconnectRope(previousSession.owner, true)
+	end
 	if victimPlayer then
 		-- Prevent chains/cycles: a ragdolled attacker cannot keep dragging someone.
 		disconnectRope(victimPlayer, true)
 		local previousOwner = GrappleOwners[victimPlayer.UserId]
 		if previousOwner and previousOwner ~= state.owner then disconnectRope(previousOwner, true) end
-		GrappleOwners[victimPlayer.UserId] = state.owner
 	end
 
 	-- Connect the root assemblies, never an arm/leg. Limb attachments create
 	-- large angular impulses in a ragdoll and make the rope unstable.
 	local attachmentPart = hitModel:FindFirstChild("HumanoidRootPart")
-	if not (attachmentPart and attachmentPart:IsA("BasePart")) then attachmentPart = hit end
+	if not (attachmentPart and attachmentPart:IsA("BasePart")) then disconnectRope(state.owner) return end
 	local ownerRoot = state.character:FindFirstChild("HumanoidRootPart")
 	if not ownerRoot then disconnectRope(state.owner) return end
 	local ownerAttachment = Instance.new("Attachment")
@@ -265,18 +289,34 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	state.victimHumanoid = hitHumanoid
 	state.victimPlayer = victimPlayer
 	state.victimCharacter = hitModel
-	state.appliedRagdoll = not hitHumanoid:HasTag("Ragdoll")
+	if victimPlayer then GrappleOwners[victimPlayer.UserId] = state.owner end
+	state.appliedRagdoll = (previousSession and previousSession.appliedRagdoll) or not hitHumanoid:HasTag("Ragdoll")
+	nextPhysicsSession += 1
+	state.physicsSession = nextPhysicsSession
+	physicsSessions[hitModel] = state
+	hitHumanoid:SetAttribute("GrapplePhysicsSession", state.physicsSession)
+	hitHumanoid:SetAttribute("GrapplePhysicsLocked", true)
+	if victimPlayer then
+		Remotes.GrappleVictimState:FireClient(victimPlayer, hitModel, state.physicsSession, true)
+	end
 	if state.appliedRagdoll then
 		hitHumanoid:AddTag("Ragdoll")
 	end
 	Ragdoll.Set(hitHumanoid, true)
 	hitHumanoid:SetAttribute("GrappledBy", state.owner.UserId)
-	setCharacterNetworkOwner(hitModel, state.owner)
 	state.ownershipTransferred = true
+	if not setCharacterNetworkOwner(hitModel, state.owner) then
+		warn("[Grapple] Victim root cannot be assigned to the grappler; releasing tether")
+		disconnectRope(state.owner, true)
+		return
+	end
 	if victimPlayer then
 		createStruggleRemote(state, victimPlayer)
 	end
 	state.connections.victimDied = hitHumanoid.Died:Connect(function()
+		if Active[state.owner] == state then disconnectRope(state.owner, true) end
+	end)
+	state.connections.victimDestroyed = hitModel.Destroying:Connect(function()
 		if Active[state.owner] == state then disconnectRope(state.owner, true) end
 	end)
 	state.tool:SetAttribute("HasGrappled", true)
@@ -511,15 +551,25 @@ Players.PlayerRemoving:Connect(function(player)
 	disconnectRope(player, true)
 	local owner = GrappleOwners[player.UserId]
 	if owner then disconnectRope(owner, true) end
+	for _, state in pairs(physicsSessions) do
+		if state.detached and (state.owner == player or state.victimPlayer == player) then
+			finishVictimHandoff(state, player)
+		end
+	end
 	WallMode[player], lastFire[player], cooldownUntil[player] = nil, nil, nil
 	lastModeToggle[player] = nil
 end)
 
 local function watchPlayer(player: Player)
-	player.CharacterRemoving:Connect(function()
+	player.CharacterRemoving:Connect(function(character)
 		disconnectRope(player, true)
 		local owner = GrappleOwners[player.UserId]
 		if owner then disconnectRope(owner, true) end
+		for _, state in pairs(physicsSessions) do
+			if state.detached and (state.character == character or state.victimCharacter == character) then
+				finishVictimHandoff(state, state.victimCharacter == character and player or nil)
+			end
+		end
 	end)
 end
 

@@ -34,6 +34,7 @@ return {
 	-- The cooldown after it unhooks
 	GrappleCooldown = 0.1,
 	playerReleaseCooldown = 0.3, -- Ignore shoot-to-release briefly after catching a player
+	playerOwnershipReleaseDelay = 0.2, -- Keep the last simulator and victim controls locked after detaching
 	
 	
 	
@@ -79,15 +80,17 @@ return {
 	grappleGravity = Vector3.new(0,0,0), -- Change the Y axis if you want the hook to be affected by gravity, ex: Vector3.new(0,-50,0)
 	
 	-- Q/E directly changes the permanent rope length in both target modes.
-	ropeLengthStep = 2, -- Studs added/removed for each 1/30-second control tick
+	ropeLengthFraction = 0.05, -- 5% of current length per press / held control tick
 	playerMinDragDistance = 4, -- Prevent bodies being forced into the gun
 
 	bombToolName = "Bomb",
 	bombFuse = 5, -- Seconds from throw, including time in flight
-	bombCooldown = 1,
+	bombCooldown = 6, -- Seconds after throwing before another throw
 	bombRadius = 8, -- Root-to-explosion distance in studs
-	bombKnockback = 150, -- Added speed; outer hits retain substantial sideways force
+	bombKnockback = 1500, -- Added speed; outer hits retain substantial sideways force
+	bombRagdollDuration = 5, -- Each hit restarts the forced-ragdoll lock
 	bombThrowSpeed = 70,
+	bombArcHeight = 6, -- Arc rises this far above the higher of hand and target
 	
 	ragdollToggle_Cooldown = 0.5, -- Seconds required in either ragdoll state before the manual toggle can switch again
 

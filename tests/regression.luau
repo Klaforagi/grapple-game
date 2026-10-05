@@ -59,8 +59,8 @@ return function(sources)
 			AssemblyLinearVelocity = V.new(), AssemblyAngularVelocity = V.new(),
 			CollisionGroup = "Default", CurrentPhysicalProperties = {Density = 1}, AssemblyMass = 5,
 			Died = signal(), Destroying = signal(), Unequipped = signal(), CharacterRemoving = signal(), CharacterAdded = signal(),
-			DescendantAdded = signal(), ChildAdded = signal(), OnServerEvent = signal(),
-			Equipped = signal(), Activated = signal(),
+			DescendantAdded = signal(), ChildAdded = signal(), OnServerEvent = signal(), OnClientEvent = signal(),
+			Equipped = signal(), Activated = signal(), Touched = signal(),
 		}, objectMT)
 		table.insert(objects, object)
 		return object
@@ -68,6 +68,7 @@ return function(sources)
 	function methods:IsA(class)
 		return self.ClassName == class or class == "BasePart" and self.ClassName == "Part"
 	end
+	function methods:IsDescendantOf(ancestor) return descendant(self, ancestor) end
 	function methods:GetChildren()
 		local result = {}
 		for _, object in ipairs(objects) do if object.Parent == self then table.insert(result, object) end end
@@ -116,6 +117,7 @@ return function(sources)
 	function methods:SetNetworkOwnershipAuto() self.NetworkOwner = "auto" end
 	function methods:GetMass() return 5 end
 	function methods:ChangeState(state) self.State = state end
+	function methods:Move(direction) self.MoveDirection = direction end
 	function methods:GetState() return self.State end
 	function methods:GetStateEnabled(state) return not self.disabledStates or not self.disabledStates[state] end
 	function methods:SetStateEnabled(state, enabled)
@@ -199,7 +201,7 @@ return function(sources)
 	end
 	local config = execute(sources.config)
 	local remotes = {}
-	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "StruggleInput", "StruggleProgress"}) do
+	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "StruggleInput", "StruggleProgress"}) do
 		remotes[name] = instance("RemoteEvent", name)
 	end
 	local ragdoll = execute(sources.ragdoll)
@@ -264,7 +266,7 @@ return function(sources)
 		if object:IsA("BasePart") then assert(object.NetworkOwner == attacker, "split ragdoll ownership") end
 	end
 	assert(not handle.Anchored and not handle.CanCollide and handle.Massless, "gun physics not normalized")
-	assert(victimHumanoid.State == "Ragdoll" and not victimHumanoid:GetStateEnabled("GettingUp"), "victim is not held in ragdoll state")
+	assert(victimHumanoid.State == "Physics" and not victimHumanoid:GetStateEnabled("GettingUp"), "victim is not held in passive physics state")
 	local rope = assert(victimRoot:FindFirstChildWhichIsA("RopeConstraint"))
 	assert(rope.Enabled and not rope.WinchEnabled, "player rope must use a fixed length, not a winch")
 	assert(rope:GetAttribute("PlayerGrapple") == true, "player rope is not identified")
@@ -287,29 +289,64 @@ return function(sources)
 	assert(#(remotes.StruggleProgress.messages or {}) == progressBefore, "attacker escaped for victim")
 	victimRoot.CFrame = {LookVector = V.new(1, 0.8, 0)}
 	victimRoot.AssemblyAngularVelocity = V.new(4, 3, 2)
+	victimRoot.AssemblyLinearVelocity = V.new(10, 25, -3)
+	local releasePose = victimRoot.CFrame
 	for _ = 1, config.maxStruggleValue + 10 do
 		now += 0.08
 		remotes.StruggleInput.OnServerEvent:Emit(victim)
 	end
 	assert(victimHumanoid:GetAttribute("GrappledBy") == nil, "escape failed")
-	assert(victimHumanoid:GetAttribute("Ragdolled") == false, "escape failed to recover")
+	assert(victimHumanoid:GetAttribute("Ragdolled") == true and victimHumanoid:GetAttribute("GrapplePhysicsLocked"), "escape resumed simulation before ownership returned")
 	assert(rope.destroyed, "escape leaked physical rope")
-	assert(victimRoot.NetworkOwner == nil, "recovery pose was not server-owned")
-	assert(victimRoot.CFrame == identity and victimRoot.AssemblyAngularVelocity.Magnitude == 0, "server did not straighten released victim")
-	assert(victimRoot.CanCollide == false and victimHumanoid.AutoRotate, "recovery did not restore properties")
+	assert(victimRoot.NetworkOwner == attacker, "release changed simulator before settling")
+	assert(victimRoot.CFrame == releasePose and victimRoot.AssemblyLinearVelocity.Y == 25, "release teleported or erased airborne momentum")
 	local messages = remotes.HasBeenGrappled.messages
 	assert(messages[#messages].args.n == 0, "victim never received end event")
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
 	assert(victimRoot.NetworkOwner == victim, "victim ownership not restored after stabilization")
+	assert(victimHumanoid:GetAttribute("Ragdolled") == false and not victimHumanoid:GetAttribute("GrapplePhysicsLocked"), "escape failed to recover after handoff")
+	assert(victimRoot.CanCollide == false and victimHumanoid.AutoRotate, "recovery did not restore properties")
+	assert(victimRoot.CFrame == releasePose and victimRoot.AssemblyLinearVelocity.Y == 25, "handoff rewrote the released pose or momentum")
+	-- An earlier release timer must not steal a recaptured victim or preserve
+	-- a grapple-created ragdoll as though it were voluntary.
+	fire()
+	fire()
+	local staleRelease = table.clone(delayed)
+	table.clear(delayed)
+	fire()
+	local currentSession = victimHumanoid:GetAttribute("GrapplePhysicsSession")
+	for _, fn in ipairs(staleRelease) do fn() end
+	assert(victimRoot.NetworkOwner == attacker and victimHumanoid:GetAttribute("GrapplePhysicsLocked"), "stale release stole recaptured victim")
+	assert(victimHumanoid:GetAttribute("GrapplePhysicsSession") == currentSession, "stale release cleared new session")
+	fire()
+	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
+	assert(not victimHumanoid:GetAttribute("Ragdolled"), "recapture lost automatic ragdoll recovery")
+	-- Ownership rejection must release the rope and eventually unlock the victim.
+	victimRoot.Anchored = true
+	fire()
+	assert(not victimRoot:FindFirstChildWhichIsA("RopeConstraint"), "unassignable victim retained tether")
+	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
+	assert(not victimHumanoid:GetAttribute("GrapplePhysicsLocked"), "ownership failure left victim locked")
+	victimRoot.Anchored = false
 	-- Manual ragdolls must survive grapple release.
 	victimHumanoid:AddTag("Ragdoll")
 	ragdoll.Set(victimHumanoid, true)
 	fire()
 	fire()
+	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
 	assert(victimHumanoid:GetAttribute("Ragdolled"), "release removed voluntary ragdoll")
 	ragdoll.Set(victimHumanoid, false)
 	victimHumanoid:RemoveTag("Ragdoll")
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
+	fire()
+	victimHumanoid:SetAttribute("BombRagdollUntil", now + 5)
+	fire()
+	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
+	assert(victimRoot.NetworkOwner == victim and victimHumanoid:GetAttribute("Ragdolled"), "grapple release bypassed bomb stun or retained ownership")
+	assert(not victimHumanoid:GetAttribute("GrapplePhysicsLocked"), "bomb stun retained grapple lock")
+	victimHumanoid:SetAttribute("BombRagdollUntil", nil)
+	ragdoll.Set(victimHumanoid, false)
+	victimHumanoid:RemoveTag("Ragdoll")
 	-- Leaving as a victim tears down the attacker's state and restores gun cooldown.
 	fire()
 	players.PlayerRemoving:Emit(victim)
@@ -321,6 +358,7 @@ return function(sources)
 	runService.Heartbeat:Emit(0.1)
 	assert(victimHumanoid:GetAttribute("GrappledBy") == attacker.UserId, "grapple expired automatically")
 	fire()
+	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
 	-- R6 joints must disable and restore as well.
 	local r6, hum6, root6, motor6 = character("R6", V.new(), false)
 	ragdoll.Set(hum6, true)
@@ -356,10 +394,10 @@ return function(sources)
 	remotes.FireGrapple.OnServerEvent:Emit(victim, attackerRoot.Position, victimRoot.Position)
 	local attackerHumanoid = attacker.Character:FindFirstChildWhichIsA("Humanoid")
 	assert(attackerHumanoid:GetAttribute("GrappledBy") == victim.UserId and attackerRoot.NetworkOwner == victim, "reverse grapple is asymmetric")
-	attacker.CharacterRemoving:Emit()
-	assert(attackerRoot.NetworkOwner == nil and not reverseGun:GetAttribute("HasGrappled"), "reverse recovery was not stabilized by server")
+	attacker.CharacterRemoving:Emit(attacker.Character)
+	assert(attackerRoot.NetworkOwner == "auto" and not reverseGun:GetAttribute("HasGrappled"), "removed character retained grapple ownership")
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
-	assert(attackerRoot.NetworkOwner == attacker, "reverse recovery ownership was not restored")
+	assert(attackerRoot.NetworkOwner == "auto", "stale handoff reclaimed removed character")
 	-- Duplicate X paths must not toggle twice, and a stale GUI cooldown cannot jam firing.
 	gun.Parent = attacker.Character
 	now += 0.2
@@ -407,7 +445,7 @@ return function(sources)
 	assert(attackerHumanoid.EvaluateStateMachine, "healthy character state machine was disabled")
 	victimRoot.AssemblyAngularVelocity = V.new(3, 2, 1)
 	runService.PreSimulation:Emit()
-	assert(victimRoot.AssemblyAngularVelocity.Magnitude == 0, "ragdoll camera root retained angular jitter")
+	assert(victimRoot.AssemblyAngularVelocity.Magnitude > 0, "observer rewrote the physics owner's velocity")
 	hum6:SetAttribute("Ragdolled", true)
 	assert(not hum6.EvaluateStateMachine and hum6.PlatformStand, "client missed newly activated ragdoll")
 	hum6:SetAttribute("Ragdolled", false)
@@ -416,10 +454,69 @@ return function(sources)
 	world.DescendantAdded:Emit(lateHumanoid)
 	lateHumanoid:SetAttribute("Ragdolled", true)
 	assert(not lateHumanoid.EvaluateStateMachine, "client missed late spawn")
+	local _, streamedHumanoid = character("StreamedRagdoll", V.zero, false)
+	streamedHumanoid.EvaluateStateMachine = false
+	streamedHumanoid:SetAttribute("Ragdolled", true)
+	streamedHumanoid:SetAttribute("RagdollRestoreStateMachine", true)
+	world.DescendantAdded:Emit(streamedHumanoid)
+	streamedHumanoid:SetAttribute("Ragdolled", false)
+	assert(streamedHumanoid.EvaluateStateMachine, "late observer captured disabled evaluation as recovery default")
 	ragdoll.Set(upgradedHumanoid, true)
 	animatedJoint.Enabled = true
 	runService.PreSimulation:Emit()
 	assert(not animatedJoint.Enabled, "client did not enforce upgraded ragdoll joint")
+	-- Run the real victim LocalScript. Exercise remote/attribute ordering,
+	-- stale releases, an already-disabled controller, death, and respawn.
+	local controls = {controlsEnabled = true}
+	function controls:Disable() self.controlsEnabled = false end
+	function controls:Enable() self.controlsEnabled = true end
+	local playerScripts = instance("Folder", "PlayerScripts", victim)
+	local playerModule = instance("ModuleScript", "PlayerModule", playerScripts)
+	local savedRequire = env.require
+	env.require = function(module)
+		if module == playerModule then return {GetControls = function() return controls end} end
+		if module == ragdollModule then return clientRagdoll end
+		return savedRequire(module)
+	end
+	local clientCharacter, clientHumanoid = character("LocalVictim", V.zero, false)
+	world.DescendantAdded:Emit(clientHumanoid)
+	players.LocalPlayer, victim.Character = victim, clientCharacter
+	execute(sources.victimClient)
+	remotes.GrappleVictimState.OnClientEvent:Emit(clientCharacter, 100, true)
+	assert(not controls.controlsEnabled and clientHumanoid.State == "Physics", "victim did not surrender local controls and state")
+	assert(not clientHumanoid.EvaluateStateMachine, "remote arriving before attributes left local humanoid forces active")
+	clientHumanoid:SetAttribute("GrapplePhysicsLocked", true)
+	remotes.GrappleVictimState.OnClientEvent:Emit(clientCharacter, 101, true)
+	remotes.GrappleVictimState.OnClientEvent:Emit(clientCharacter, 100, false)
+	assert(not controls.controlsEnabled, "stale remote released a newer capture")
+	remotes.GrappleVictimState.OnClientEvent:Emit(clientCharacter, 101, false)
+	assert(not controls.controlsEnabled, "release remote ignored replicated hold")
+	clientHumanoid:SetAttribute("GrapplePhysicsLocked", nil)
+	assert(controls.controlsEnabled and clientHumanoid.EvaluateStateMachine, "victim controls/state were not restored")
+	remotes.GrappleVictimState.OnClientEvent:Emit(clientCharacter, 101, true)
+	assert(controls.controlsEnabled, "duplicate completed start relocked controls")
+	controls.controlsEnabled = false
+	remotes.GrappleVictimState.OnClientEvent:Emit(clientCharacter, 102, true)
+	remotes.GrappleVictimState.OnClientEvent:Emit(clientCharacter, 102, false)
+	assert(not controls.controlsEnabled, "release enabled controls disabled by another system before capture")
+	controls.controlsEnabled = true
+	remotes.GrappleVictimState.OnClientEvent:Emit(clientCharacter, 103, true)
+	clientHumanoid.Health = 0
+	clientHumanoid.Died:Emit()
+	assert(controls.controlsEnabled, "death left controls locked")
+	clientHumanoid.Health = 100
+	remotes.GrappleVictimState.OnClientEvent:Emit(clientCharacter, 104, true)
+	victim.CharacterRemoving:Emit(clientCharacter)
+	assert(controls.controlsEnabled and not clientHumanoid:GetAttribute("GrappleLocalPhysicsLock"), "respawn retained old lock")
+	local newCharacter, newHumanoid = character("NewLocalVictim", V.zero, false)
+	world.DescendantAdded:Emit(newHumanoid)
+	victim.Character = newCharacter
+	victim.CharacterAdded:Emit(newCharacter)
+	remotes.GrappleVictimState.OnClientEvent:Emit(clientCharacter, 105, true)
+	assert(controls.controlsEnabled, "old character remote locked respawn")
+	victim.CharacterRemoving:Emit(newCharacter)
+	victim.Character = victimCharacter
+	env.require = savedRequire
 	-- Firing is independent of movement and legacy Tool.Enabled, with click deduplication.
 	local input = {InputBegan = signal(), GetFocusedTextBox = function() return nil end,
 		GetMouseLocation = function() return {X = 100, Y = 100} end}
@@ -530,6 +627,14 @@ return function(sources)
 	assert(attacker.LoadCharacterCount == loadsBefore + 2, "watchdog reloaded a recovered character")
 
 	local bombPhysics = execute(sources.bombPhysics)
+	for _, offset in ipairs({V.new(10, -1.5, 0), V.new(8, 3, 5), V.new(0, -4, 0)}) do
+		local velocity = bombPhysics.ThrowVelocity(offset, 196.2, 70, 6)
+		local flight = (velocity.Y + math.sqrt(velocity.Y^2 - 2 * 196.2 * offset.Y)) / 196.2
+		local landed = velocity * flight - V.new(0, 196.2 * flight^2 / 2, 0)
+		assert(velocity.Y > 0 and (landed - offset).Magnitude < 0.001, "reachable bomb lob missed clicked point")
+	end
+	local distant = bombPhysics.ThrowVelocity(V.new(1000, 0, 0), 196.2, 70, 6)
+	assert(math.abs(distant.Magnitude - 70) < 0.001 and distant.X > 0 and distant.Y > 0, "out-of-range bomb did not arc toward aim")
 	local up = bombPhysics.Knockback(V.new(0, 2, 0), 8, 150)
 	local right = bombPhysics.Knockback(V.new(5, 2, 0), 8, 150)
 	local left = bombPhysics.Knockback(V.new(-5, 2, 0), 8, 150)
@@ -557,6 +662,8 @@ return function(sources)
 	attackerHumanoid:SetAttribute("Ragdolled", false)
 	attackerHumanoid:RemoveTag("Ragdoll")
 	attackerRoot.AssemblyLinearVelocity = V.zero
+	world.Raycast = function() return nil end
+	ragdoll.Set(attackerHumanoid, false)
 	execute(sources.bombs)
 	local bombTool = assert(attackerBackpack:FindFirstChild(config.bombToolName))
 	assert(bombTool:FindFirstChild("Handle").Shape == "Ball", "bomb must be a sphere")
@@ -571,12 +678,44 @@ return function(sources)
 	local count = 0
 	for _, child in ipairs(world:GetChildren()) do if child.Name == "ThrownBomb" then count += 1 end end
 	assert(count == 1, "bomb cooldown allowed duplicate throw")
+	thrown.Touched:Emit(attackerRoot)
+	assert(not thrown:FindFirstChild("BombStick"), "bomb stuck to thrower before leaving hand")
+	thrown.Touched:Emit(victimRoot)
+	local weld = assert(thrown:FindFirstChild("BombStick"), "bomb did not stick to humanoid part")
+	assert(weld.Part0 == victimRoot and not thrown.Anchored and thrown.Massless, "sticking must follow character without anchoring or weighing it down")
+	thrown.Touched:Emit(wall)
+	assert(weld.Part0 == victimRoot, "second contact replaced the first sticky target")
 	thrown.Position = V.new(-5, -2, 0)
 	now += 4.99
 	runService.Heartbeat:Emit(0.1)
 	assert(not thrown.destroyed, "bomb detonated early")
+	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(10, 0, 0))
+	count = 0
+	for _, child in ipairs(world:GetChildren()) do if child.Name == "ThrownBomb" then count += 1 end end
+	assert(count == 1, "bomb allowed a new throw before six seconds")
 	now += 0.02
 	runService.Heartbeat:Emit(0.1)
-	assert(thrown.destroyed and attackerRoot.AssemblyLinearVelocity.X > 80, "five-second blast did not knock player away")
-	print("PASS: fixed ropes, release lock, ragdoll/input, void respawn retries, bomb fuse and directional knockback")
+	assert(thrown.destroyed and attackerRoot.AssemblyLinearVelocity.X > 800, "blast did not deliver tenfold knockback")
+	assert(attackerHumanoid:HasTag("Ragdoll") and attackerHumanoid:GetAttribute("Ragdolled"), "bomb did not ragdoll its target")
+	local lockedUntil = attackerHumanoid:GetAttribute("BombRagdollUntil")
+	assert(math.abs(lockedUntil - now - 5) < 0.001, "bomb lock must last five seconds after impact")
+	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
+	assert(attackerHumanoid:GetAttribute("Ragdolled"), "manual recovery bypassed bomb lock")
+	attackerHumanoid:RemoveTag("Ragdoll")
+	ragdoll.Set(attackerHumanoid, false)
+	assert(attackerHumanoid:HasTag("Ragdoll") and attackerHumanoid:GetAttribute("Ragdolled"), "another recovery path bypassed bomb lock")
+	now = lockedUntil - 0.01
+	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
+	assert(attackerHumanoid:GetAttribute("Ragdolled"), "bomb lock ended early")
+	now = lockedUntil + 0.01
+	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
+	assert(not attackerHumanoid:GetAttribute("Ragdolled"), "player could not recover after five seconds")
+	bombTool.Parent = attacker.Character
+	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(10, 0, 0))
+	local swept = assert(world:FindFirstChild("ThrownBomb"))
+	swept.Position = V.new(10, 0, 0)
+	world.Raycast = function() return {Instance = wall, Position = V.new(5, 0, 0), Normal = V.new(-1, 0, 0)} end
+	runService.Heartbeat:Emit(0.1)
+	assert(swept:FindFirstChild("BombStick").Part0 == wall, "sweep missed first wall along flight path")
+	print("PASS: ownership handoff/recapture, victim controls/respawn, momentum, ragdoll/input, fixed ropes, void respawn retries, bombs")
 end

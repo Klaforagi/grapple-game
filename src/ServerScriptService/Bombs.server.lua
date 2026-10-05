@@ -5,9 +5,32 @@ local TweenService = game:GetService("TweenService")
 local Config = require(Storage:WaitForChild("GrappleConfig"))
 local Remotes = require(Storage.Modules:WaitForChild("GrappleRemotes"))
 local BombPhysics = require(Storage.Modules:WaitForChild("BombPhysics"))
+local Ragdoll = require(Storage.Modules:WaitForChild("RagdollService"))
 local lastThrow = {}
 local issued = setmetatable({}, {__mode = "k"})
 local liveBombs = {}
+
+local function stick(bomb, state, hit, position)
+	if state.stuck or not bomb.Parent or not hit.Parent then return end
+	if hit == bomb or hit:IsDescendantOf(bomb) then return end
+	if os.clock() < state.ignoreOwnerUntil and hit:IsDescendantOf(state.character) then return end
+	if not hit:IsA("BasePart") and not hit:IsA("Terrain") then return end
+	state.stuck = true
+	state.touchConnection:Disconnect()
+	bomb.AssemblyLinearVelocity = Vector3.zero
+	bomb.AssemblyAngularVelocity = Vector3.zero
+	if position then bomb.Position = position end
+	bomb.CanCollide, bomb.CanTouch, bomb.Massless = false, false, true
+	if hit:IsA("BasePart") then
+		local weld = Instance.new("WeldConstraint")
+		weld.Name = "BombStick"
+		weld.Part0, weld.Part1 = hit, bomb
+		weld.Parent = bomb
+	else
+		bomb.Anchored = true
+	end
+	state.position = bomb.Position
+end
 
 local function sphere(name, size)
 	local part = Instance.new("Part")
@@ -43,6 +66,7 @@ end
 local function knockback(character, humanoid, velocity)
 	local assemblies = {}
 	local grappledBy = humanoid:GetAttribute("GrappledBy")
+	local grappleSession = humanoid:GetAttribute("GrapplePhysicsSession")
 	for _, part in ipairs(character:GetDescendants()) do
 		if part:IsA("BasePart") then
 			local assembly = part.AssemblyRootPart
@@ -57,6 +81,7 @@ local function knockback(character, humanoid, velocity)
 						if not assembly.Parent or humanoid.Parent ~= character then return end
 						-- A new grapple/recovery may have changed ownership in the meantime.
 						if humanoid:GetAttribute("GrappledBy") ~= grappledBy then return end
+						if humanoid:GetAttribute("GrapplePhysicsSession") ~= grappleSession then return end
 						if assembly:CanSetNetworkOwnership() and assembly:GetNetworkOwner() == nil then
 							if previousOwner and previousOwner.Parent == Players then
 								assembly:SetNetworkOwner(previousOwner)
@@ -90,7 +115,15 @@ local function explode(bomb, position)
 			local root = character:FindFirstChild("HumanoidRootPart")
 			if root and root:IsA("BasePart") then
 				local velocity = BombPhysics.Knockback(root.Position - position, radius, Config.bombKnockback)
-				if velocity.Magnitude > 0 then knockback(character, humanoid, velocity) end
+				if velocity.Magnitude > 0 then
+					local now = os.clock()
+					humanoid:SetAttribute("BombRagdollUntil", math.max(humanoid:GetAttribute("BombRagdollUntil") or 0, now + Config.bombRagdollDuration))
+					humanoid:SetAttribute("RagdollActivatedAt", now)
+					humanoid:AddTag("Ragdoll")
+					Ragdoll.Set(humanoid, true)
+					-- Split the rig into ragdoll assemblies before applying the launch.
+					knockback(character, humanoid, velocity)
+				end
 			end
 		end
 	end
@@ -111,8 +144,6 @@ Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 	local now = os.clock()
 	if now - (lastThrow[player] or -math.huge) < Config.bombCooldown then return end
 	lastThrow[player] = now
-	local aim = target - root.Position
-	local direction = aim.Magnitude > 0.01 and aim.Unit or root.CFrame.LookVector
 	local bomb = sphere("ThrownBomb", 1.2)
 	bomb.Position = root.Position + Vector3.new(0, 1.5, 0)
 	bomb.CustomPhysicalProperties = PhysicalProperties.new(1, 0.6, 0.25)
@@ -127,17 +158,37 @@ Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 			Debris:AddItem(ignore, 0.3)
 		end
 	end
-	bomb.AssemblyLinearVelocity = root.AssemblyLinearVelocity + direction * Config.bombThrowSpeed + Vector3.new(0, 12, 0)
-	liveBombs[bomb] = {position = bomb.Position, detonatesAt = now + Config.bombFuse}
+	-- Solve from the hand's world position without inheriting running velocity,
+	-- so a reachable stationary clicked point stays the landing destination.
+	bomb.AssemblyLinearVelocity = BombPhysics.ThrowVelocity(target - bomb.Position, workspace.Gravity, Config.bombThrowSpeed, Config.bombArcHeight)
+	local state = {position = bomb.Position, detonatesAt = now + Config.bombFuse,
+		character = character, ignoreOwnerUntil = now + 0.3}
+	state.touchConnection = bomb.Touched:Connect(function(hit) stick(bomb, state, hit) end)
+	liveBombs[bomb] = state
 	Debris:AddItem(bomb, Config.bombFuse + 1)
 end)
 
 game:GetService("RunService").Heartbeat:Connect(function()
 	local now = os.clock()
 	for bomb, state in pairs(liveBombs) do
-		if bomb.Parent then state.position = bomb.Position end
+		if bomb.Parent then
+			if not state.stuck then
+				-- Sweep the path as well as listening for contacts, so thin surfaces
+				-- and non-colliding character limbs can catch a fast-moving bomb.
+				local travel = bomb.Position - state.position
+				if travel.Magnitude > 0.001 then
+					local params = RaycastParams.new()
+					params.FilterType = Enum.RaycastFilterType.Exclude
+					params.FilterDescendantsInstances = now < state.ignoreOwnerUntil and {bomb, state.character} or {bomb}
+					local result = workspace:Raycast(state.position, travel, params)
+					if result then stick(bomb, state, result.Instance, result.Position + result.Normal * 0.6) end
+				end
+			end
+			state.position = bomb.Position
+		end
 		if now >= state.detonatesAt then
 			liveBombs[bomb] = nil
+			state.touchConnection:Disconnect()
 			explode(bomb, state.position)
 		end
 	end

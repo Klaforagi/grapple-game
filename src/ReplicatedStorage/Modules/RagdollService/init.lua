@@ -125,12 +125,20 @@ function Service.Prepare(humanoid)
 	return rig
 end
 
-function Service.Set(humanoid, enabled)
+function Service.Set(humanoid, enabled, preserveMotion)
+	-- All recovery paths (including grapple escape/tag removal) honor blast stun.
+	if not enabled and (humanoid:GetAttribute("GrapplePhysicsLocked")
+		or os.clock() < (humanoid:GetAttribute("BombRagdollUntil") or 0)) then
+		humanoid:AddTag("Ragdoll")
+		return
+	end
 	local rig = Service.Prepare(humanoid)
 	if rig.active == enabled then return end
 	rig.active = enabled
 	if enabled then
 		rig.autoRotate, rig.platformStand = humanoid.AutoRotate, humanoid.PlatformStand
+		rig.stateMachine = humanoid.EvaluateStateMachine
+		humanoid:SetAttribute("RagdollRestoreStateMachine", rig.stateMachine)
 		rig.gettingUp = humanoid:GetStateEnabled(Enum.HumanoidStateType.GettingUp)
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
 		humanoid:UnequipTools()
@@ -173,12 +181,13 @@ function Service.Set(humanoid, enabled)
 		humanoid:SetAttribute("RagdollRecoveredAt", os.clock())
 	end
 	if enabled then humanoid.AutoRotate = false else humanoid.AutoRotate = rig.autoRotate end
+	humanoid.EvaluateStateMachine = not enabled and rig.stateMachine
 	humanoid.PlatformStand = enabled or rig.platformStand == true
 	humanoid:SetAttribute("Ragdolled", enabled)
 	if humanoid.Health > 0 then
-		humanoid:ChangeState(enabled and Enum.HumanoidStateType.Ragdoll or Enum.HumanoidStateType.GettingUp)
+		humanoid:ChangeState(enabled and Enum.HumanoidStateType.Physics or Enum.HumanoidStateType.GettingUp)
 	end
-	if not enabled and humanoid.Health > 0 then Service.RecoverPose(humanoid) end
+	if not enabled and humanoid.Health > 0 and not preserveMotion then Service.RecoverPose(humanoid) end
 end
 
 function Service.InitClient()
@@ -235,13 +244,18 @@ function Service.InitClient()
 		watched[humanoid] = true
 		local previousStateMachine = humanoid.EvaluateStateMachine
 		local previousGettingUp = humanoid:GetStateEnabled(Enum.HumanoidStateType.GettingUp)
-		local active = false
+		local wasRagdolled, wasLocked = false, false
 		local function update()
-			local enabled = humanoid:GetAttribute("Ragdolled") == true
-			if enabled == active then return end
-			active = enabled
+			local ragdolled = humanoid:GetAttribute("Ragdolled") == true
+			local locked = humanoid:GetAttribute("GrapplePhysicsLocked") == true
+				or humanoid:GetAttribute("GrappleLocalPhysicsLock") == true
+			local enabled = ragdolled or locked
+			if ragdolled == wasRagdolled and locked == wasLocked then return end
+			wasRagdolled, wasLocked = ragdolled, locked
 			updateCameraSubject(humanoid, enabled)
-			humanoid.EvaluateStateMachine = not enabled and previousStateMachine
+			local restoreStateMachine = humanoid:GetAttribute("RagdollRestoreStateMachine")
+			if restoreStateMachine == nil then restoreStateMachine = previousStateMachine end
+			humanoid.EvaluateStateMachine = not enabled and restoreStateMachine
 			humanoid.PlatformStand = enabled
 			humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, not enabled and previousGettingUp)
 			local joints = {}
@@ -260,11 +274,13 @@ function Service.InitClient()
 				end
 			end
 			if humanoid.Health > 0 then
-				humanoid:ChangeState(enabled and Enum.HumanoidStateType.Ragdoll or Enum.HumanoidStateType.GettingUp)
+				humanoid:ChangeState(enabled and Enum.HumanoidStateType.Physics or Enum.HumanoidStateType.GettingUp)
 			end
 		end
 		humanoid:GetAttributeChangedSignal("Ragdolled"):Connect(update)
-		if humanoid:GetAttribute("Ragdolled") then update() end
+		humanoid:GetAttributeChangedSignal("GrapplePhysicsLocked"):Connect(update)
+		humanoid:GetAttributeChangedSignal("GrappleLocalPhysicsLock"):Connect(update)
+		update()
 	end
 	workspace.DescendantAdded:Connect(bind)
 	for _, instance in ipairs(workspace:GetDescendants()) do bind(instance) end
@@ -284,13 +300,11 @@ function Service.InitClient()
 			if not humanoid.Parent then activeRigs[humanoid] = nil continue end
 			humanoid.EvaluateStateMachine = false
 			humanoid.PlatformStand = true
-			if humanoid.Health > 0 and humanoid:GetState() ~= Enum.HumanoidStateType.Ragdoll then
-				humanoid:ChangeState(Enum.HumanoidStateType.Ragdoll)
+			if humanoid.Health > 0 and humanoid:GetState() ~= Enum.HumanoidStateType.Physics then
+				humanoid:ChangeState(Enum.HumanoidStateType.Physics)
 			end
-			-- The default camera follows HumanoidRootPart. Let the limbs tumble,
-			-- but do not let physics rotate that invisible camera anchor every frame.
-			local root = humanoid.Parent:FindFirstChild("HumanoidRootPart")
-			if root and root:IsA("BasePart") then root.AssemblyAngularVelocity = Vector3.zero end
+			-- The separate camera anchor already smooths the view. Do not write
+			-- assembly velocities here: observers must consume the owner's physics.
 			for _, joint in ipairs(joints) do
 				if joint.Parent then joint.Enabled = joint:GetAttribute("GrappleRagdollSocket") == true end
 			end
