@@ -13,7 +13,7 @@ function M.Fire(tool, centerAim)
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local camera = workspace.CurrentCamera
 	if not camera or not tool or tool.Parent ~= character or not humanoid or humanoid.Health <= 0 then return end
-	if humanoid:GetAttribute("Ragdolled") or UIS:GetFocusedTextBox() then return end
+	if humanoid:GetAttribute("GrapplePhysicsLocked") or UIS:GetFocusedTextBox() then return end
 	local now = os.clock()
 	-- Tool.Activated and the mouse fallback can report the same physical click.
 	if now - lastShot < 0.1 then return end

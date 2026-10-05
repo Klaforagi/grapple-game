@@ -232,7 +232,14 @@ function Service.Set(humanoid, enabled, preserveMotion)
 		return
 	end
 	local rig = Service.Prepare(humanoid)
-	if rig.active == enabled then return end
+	local grappleLocked = humanoid:GetAttribute("GrapplePhysicsLocked") == true
+	if enabled and grappleLocked then
+		humanoid:UnequipTools()
+	end
+	if rig.active == enabled then
+		humanoid.PlatformStand = enabled and grappleLocked or rig.platformStand == true
+		return
+	end
 	rig.active = enabled
 	rig.nextOwnershipCheck = 0
 	if enabled then
@@ -241,7 +248,6 @@ function Service.Set(humanoid, enabled, preserveMotion)
 		humanoid:SetAttribute("RagdollRestoreStateMachine", rig.stateMachine)
 		rig.gettingUp = humanoid:GetStateEnabled(Enum.HumanoidStateType.GettingUp)
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
-		humanoid:UnequipTools()
 		for _, part in ipairs(humanoid.Parent:GetChildren()) do
 			if part:IsA("BasePart") then
 				rig.parts[part] = {collide = part.CanCollide, properties = part.CustomPhysicalProperties, group = part.CollisionGroup,
@@ -294,7 +300,7 @@ function Service.Set(humanoid, enabled, preserveMotion)
 	end
 	if enabled then humanoid.AutoRotate = false else humanoid.AutoRotate = rig.autoRotate end
 	humanoid.EvaluateStateMachine = not enabled and rig.stateMachine
-	humanoid.PlatformStand = enabled or rig.platformStand == true
+	humanoid.PlatformStand = enabled and grappleLocked or rig.platformStand == true
 	humanoid:SetAttribute("Ragdolled", enabled)
 	if humanoid.Health > 0 then
 		humanoid:ChangeState(enabled and Enum.HumanoidStateType.Physics or Enum.HumanoidStateType.GettingUp)
@@ -369,7 +375,8 @@ function Service.InitClient()
 			local restoreStateMachine = humanoid:GetAttribute("RagdollRestoreStateMachine")
 			if restoreStateMachine == nil then restoreStateMachine = previousStateMachine end
 			humanoid.EvaluateStateMachine = not enabled and restoreStateMachine
-			humanoid.PlatformStand = enabled
+			-- PlatformStand blocks the native Backpack equip path for free ragdolls.
+			humanoid.PlatformStand = locked
 			humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, not enabled and previousGettingUp)
 			-- Joint/attachment/collision layout is replicated from the server.
 			-- Local rewrites can leave observers using a different assembly graph.
@@ -405,7 +412,8 @@ function Service.InitClient()
 		for humanoid in pairs(activeRigs) do
 			if not humanoid.Parent then activeRigs[humanoid] = nil continue end
 			humanoid.EvaluateStateMachine = false
-			humanoid.PlatformStand = true
+			humanoid.PlatformStand = humanoid:GetAttribute("GrapplePhysicsLocked") == true
+				or humanoid:GetAttribute("GrappleLocalPhysicsLock") == true
 			if humanoid.Health > 0 and humanoid:GetState() ~= Enum.HumanoidStateType.Physics then
 				humanoid:ChangeState(Enum.HumanoidStateType.Physics)
 			end

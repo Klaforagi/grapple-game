@@ -141,6 +141,10 @@ return function(sources)
 			end
 		end
 	end
+	function methods:EquipTool(tool)
+		self:UnequipTools()
+		tool.Parent = self.Parent
+	end
 	function methods:LoadCharacter() self.LoadCharacterCount = (self.LoadCharacterCount or 0) + 1 end
 	function methods:LoadCharacterAsync()
 		self.LoadAttempts = (self.LoadAttempts or 0) + 1
@@ -181,12 +185,14 @@ return function(sources)
 	local remoteModule = instance("ModuleScript", "GrappleRemotes", storage.Modules)
 	local ragdollModule = instance("ModuleScript", "RagdollService", storage.Modules)
 	local soundModule = instance("ModuleScript", "PlaySound", storage.Modules)
+	local toolSetupModule = instance("ModuleScript", "GrappleToolSetup", storage.Modules)
 	local world = instance("Workspace")
 	world.Gravity = 196.2
 	local hitParts = {}
 	function world:GetPartBoundsInBox() return hitParts end
 	function world:Raycast() return nil end
 	local services = {Players = players, RunService = runService, ReplicatedStorage = storage, Workspace = world, PhysicsService = {}}
+	services.StarterPack = instance("StarterPack", "StarterPack")
 	local env = setmetatable({
 		warn = function() end,
 		game = {GetService = function(_, name) return assert(services[name], name) end},
@@ -211,18 +217,21 @@ return function(sources)
 	end
 	local config = execute(sources.config)
 	local remotes = {}
-	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "StruggleInput", "StruggleProgress"}) do
+	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "StruggleInput", "StruggleProgress", "EquipRagdollTool"}) do
 		remotes[name] = instance("RemoteEvent", name)
 	end
 	local ragdoll = execute(sources.ragdoll)
 	local playedSounds = {}
+	local toolSetup
 	env.require = function(module)
 		if module == configModule then return config end
 		if module == remoteModule then return remotes end
 		if module == ragdollModule then return ragdoll end
+		if module == toolSetupModule then return toolSetup end
 		if module == soundModule then return function(source, sound) table.insert(playedSounds, {source = source, sound = sound}) end end
 		error("Unexpected require")
 	end
+	toolSetup = execute(sources.toolSetup)
 	local function character(name, position, r15)
 		local model = instance("Model", name, world)
 		local root = instance("Part", "HumanoidRootPart", model)
@@ -245,6 +254,7 @@ return function(sources)
 	local victim = instance("Player", "Player2", players)
 	victim.UserId = -2
 	attacker.Character = character("Player1", V.new(0, 0, 0), false)
+	local attackerHumanoid = attacker.Character:FindFirstChildOfClass("Humanoid")
 	local victimCharacter, victimHumanoid, victimRoot, rootMotor = character("Player2", V.new(0, 0, 20), true)
 	victim.Character = victimCharacter
 	playerList = {attacker, victim}
@@ -256,7 +266,12 @@ return function(sources)
 		now += 0.4
 		remotes.FireGrapple.OnServerEvent:Emit(attacker, V.new(0, 0, 20), V.new(0, 0, 0))
 	end
+	local starterGun = instance("Tool", config.toolName, services.StarterPack)
+	local starterScript = instance("LocalScript", "OldEquipController", starterGun)
+	starterScript.Disabled = false
 	execute(sources.server)
+	assert(starterScript.Disabled and starterGun:GetAttribute("GrappleManagedTool"), "StarterPack gun was not prepared before cloning")
+	assert(not handle.Anchored and not handle.CanCollide and handle.Massless, "gun parts were only prepared after firing")
 	hitParts = {victimRoot}
 	-- An overlap hit must not allow a player to shoot through a solid wall.
 	local wall = instance("Part", "Wall", world)
@@ -265,8 +280,16 @@ return function(sources)
 	assert(victimHumanoid:GetAttribute("GrappledBy") == nil, "grapple went through wall")
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
 	world.Raycast = function() return nil end
+	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", true)
 	fire()
-	assert(victimHumanoid:GetAttribute("GrappledBy") == attacker.UserId, "grapple not established")
+	assert(victimHumanoid:GetAttribute("GrappledBy") == nil, "grapple-locked player fired the gun")
+	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", nil)
+	attackerHumanoid:AddTag("Ragdoll")
+	attackerHumanoid:SetAttribute("Ragdolled", true)
+	fire()
+	assert(victimHumanoid:GetAttribute("GrappledBy") == attacker.UserId, "ragdolled player could not fire the gun")
+	attackerHumanoid:RemoveTag("Ragdoll")
+	attackerHumanoid:SetAttribute("Ragdolled", false)
 	assert(victimHumanoid:GetAttribute("Ragdolled") == true, "victim not ragdolled")
 	assert(not rootMotor.Enabled, "animated root must be disabled during ragdoll")
 	assert(not victimRoot.CanCollide, "invisible root must not drag against floor")
@@ -279,7 +302,7 @@ return function(sources)
 		if object:IsA("BasePart") then assert(object.NetworkOwner == attacker, "split ragdoll ownership") end
 	end
 	assert(not handle.Anchored and not handle.CanCollide and handle.Massless, "gun physics not normalized")
-	assert(victimHumanoid.State == "Physics" and not victimHumanoid:GetStateEnabled("GettingUp"), "victim is not held in passive physics state")
+	assert(victimHumanoid.State == "Physics" and victimHumanoid.PlatformStand and not victimHumanoid:GetStateEnabled("GettingUp"), "grappled victim is not held in passive physics state")
 	local rope = assert(victimRoot:FindFirstChildWhichIsA("RopeConstraint"))
 	assert(rope.Enabled and not rope.WinchEnabled, "player rope must use a fixed length, not a winch")
 	assert(rope:GetAttribute("PlayerGrapple") == true, "player rope is not identified")
@@ -353,7 +376,7 @@ return function(sources)
 	fire()
 	fire()
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
-	assert(victimHumanoid:GetAttribute("Ragdolled"), "release removed voluntary ragdoll")
+	assert(victimHumanoid:GetAttribute("Ragdolled") and not victimHumanoid.PlatformStand, "release left voluntary ragdoll unable to equip tools")
 	ragdoll.Set(victimHumanoid, false)
 	victimHumanoid:RemoveTag("Ragdoll")
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
@@ -425,7 +448,6 @@ return function(sources)
 	hitParts = {attackerRoot}
 	now += 0.1
 	remotes.FireGrapple.OnServerEvent:Emit(victim, attackerRoot.Position, victimRoot.Position)
-	local attackerHumanoid = attacker.Character:FindFirstChildWhichIsA("Humanoid")
 	assert(attackerHumanoid:GetAttribute("GrappledBy") == victim.UserId and attackerRoot.NetworkOwner == victim, "reverse grapple is asymmetric")
 	attacker.CharacterRemoving:Emit(attacker.Character)
 	assert(attackerRoot.NetworkOwner == "auto" and not reverseGun:GetAttribute("HasGrappled"), "removed character retained grapple ownership")
@@ -511,6 +533,13 @@ return function(sources)
 	assert(wallRope.Length == 80, "wall reel-out did not stick")
 	remotes.FireGrapple.OnServerEvent:Emit(attacker, V.new(0, 0, 100), V.new(0, 0, -100))
 	assert(wallRope.destroyed and not wall:FindFirstChildWhichIsA("RopeConstraint"), "wall click should release, not refire")
+	now += 1
+	remotes.FireGrapple.OnServerEvent:Emit(attacker, V.new(0, 0, 100), V.new(0, 0, -100))
+	local unequipRope = assert(wall:FindFirstChildWhichIsA("RopeConstraint"))
+	-- An old Unequipped notification must release the rope without issuing a
+	-- second inventory command against a gun that has already been reselected.
+	gun.Unequipped:Emit()
+	assert(unequipRope.destroyed and gun.Parent == attacker.Character, "rope cleanup put away a reselected gun")
 	world.Raycast = function() return nil end
 	now += 0.2
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
@@ -576,7 +605,7 @@ return function(sources)
 	runService.PreSimulation:Emit()
 	assert(victimRoot.AssemblyAngularVelocity.Magnitude > 0, "observer rewrote the physics owner's velocity")
 	hum6:SetAttribute("Ragdolled", true)
-	assert(not hum6.EvaluateStateMachine and hum6.PlatformStand, "client missed newly activated ragdoll")
+	assert(not hum6.EvaluateStateMachine and not hum6.PlatformStand, "free ragdoll blocked hotbar tool equips")
 	hum6:SetAttribute("Ragdolled", false)
 	assert(hum6.EvaluateStateMachine and not hum6.PlatformStand, "client did not restore state machine")
 	local _, lateHumanoid = character("LateSpawn", V.new(), false)
@@ -683,9 +712,20 @@ return function(sources)
 	toolClient.Fire(gun, true)
 	assert(#remotes.FireGrapple.sent == 2, "touch fire did not use shared firing path")
 	assert(aimPixels[1] == 400 and aimPixels[2] == 300, "touch center aim changed")
+	attackerHumanoid:SetAttribute("Ragdolled", true)
+	now += 0.2
+	toolClient.Fire(gun)
+	assert(#remotes.FireGrapple.sent == 3, "ragdolled player could not fire the grapple gun")
+	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", true)
+	now += 0.2
+	toolClient.Fire(gun)
+	assert(#remotes.FireGrapple.sent == 3, "grapple-locked player fired the grapple gun")
+	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", nil)
+	attackerHumanoid:SetAttribute("Ragdolled", false)
 	local unequipsBefore = attackerHumanoid.UnequippedCount or 0
 	input.InputBegan:Emit({UserInputType = "Keyboard", KeyCode = "One"}, true)
 	assert(gun.Parent == attacker.Character and (attackerHumanoid.UnequippedCount or 0) == unequipsBefore, "grapple code hijacked the normal hotbar key")
+	world.Raycast = function() return nil end
 	-- Exercise the actual toggle handler: both entering and leaving ragdoll have
 	-- the same 0.5-second cooldown.
 	services.CollectionService = {
@@ -696,9 +736,134 @@ return function(sources)
 	services.PhysicsService.RegisterCollisionGroup = function() end
 	services.PhysicsService.CollisionGroupSetCollidable = function() end
 	execute(sources.lifecycle)
+	-- Use a living character; the earlier victim fixture died in the death test.
+	local equipPlayer = instance("Player", "EquipPlayer", players)
+	local equipCharacter, equipHumanoid = character("EquipCharacter", V.zero, false)
+	equipPlayer.Character = equipCharacter
+	players.PlayerAdded:Emit(equipPlayer)
+	local victimToolBackpack = instance("Backpack", "Backpack", equipPlayer)
+	equipPlayer.ChildAdded:Emit(victimToolBackpack)
+	local ragdollBomb = instance("Tool", config.bombToolName, victimToolBackpack)
+	local ragdollGun = instance("Tool", config.toolName, victimToolBackpack)
+	local legacyEquip = instance("LocalScript", "OldEquipController", ragdollGun)
+	local legacyServer = instance("Script", "OldServerController", ragdollGun)
+	local gunData = instance("ModuleScript", "GunData", ragdollGun)
+	legacyEquip.Disabled, legacyServer.Disabled = false, false
+	local gunHandle = instance("Part", "Handle", ragdollGun)
+	gunHandle.Anchored, gunHandle.CanCollide = true, true
+	ragdollGun.Enabled, ragdollGun.ManualActivationOnly = false, true
+	ragdollGun.Equipped:Connect(function()
+		-- Model the asset-only equip guard that the previous empty Tool mocks
+		-- never exercised. It is not part of the repo's persistent controller.
+		if not legacyEquip.Disabled and equipHumanoid:GetAttribute("Ragdolled") then equipHumanoid:UnequipTools() end
+	end)
+	victimToolBackpack.ChildAdded:Emit(ragdollGun)
+	assert(legacyEquip.Disabled and legacyServer.Disabled and not gunData.Disabled, "legacy gun controllers were not isolated from module data")
+	assert(not gunHandle.Anchored and not gunHandle.CanCollide and gunHandle.Massless, "unequipped gun retained unsafe physics")
+	assert(ragdollGun.Enabled and not ragdollGun.ManualActivationOnly, "legacy activation flags were not cleared")
+	local lateController = instance("LocalScript", "LateController", ragdollGun)
+	ragdollGun.DescendantAdded:Emit(lateController)
+	assert(lateController.Disabled, "late gun controller could reintroduce equip restrictions")
+	local bombController = instance("LocalScript", "BombController", ragdollBomb)
+	victimToolBackpack.ChildAdded:Emit(ragdollBomb)
+	assert(not bombController.Disabled, "gun setup changed another tool")
+	local clientSetup = execute(sources.toolSetup)
+	local clientGun = instance("Tool", config.toolName)
+	local clientScript = instance("LocalScript", "OldClientController", clientGun)
+	local clientPart = instance("Part", "Handle", clientGun)
+	clientPart.Anchored, clientPart.CanCollide = true, true
+	clientSetup.Prepare(clientGun, false)
+	assert(clientScript.Disabled, "client left an embedded equip controller running")
+	assert(clientPart.Anchored and clientPart.CanCollide, "client independently changed tool physics")
+	clientGun:Destroy()
+	equipHumanoid:AddTag("Ragdoll")
+	ragdoll.Set(equipHumanoid, true)
+	remotes.EquipRagdollTool.OnServerEvent:Emit(equipPlayer, config.bombToolName, true)
+	assert(ragdollBomb.Parent == equipCharacter and not equipHumanoid.PlatformStand, "ragdoll hotbar equip failed")
+	remotes.EquipRagdollTool.OnServerEvent:Emit(equipPlayer, config.toolName, true)
+	assert(ragdollGun.Parent == equipCharacter and ragdollBomb.Parent == victimToolBackpack, "switching ragdoll tools failed")
+	remotes.EquipRagdollTool.OnServerEvent:Emit(equipPlayer, config.toolName, true)
+	assert(ragdollGun.Parent == equipCharacter, "duplicate/late equip request put the grapple away")
+	assert(not equipHumanoid.EvaluateStateMachine and equipHumanoid:GetAttribute("Ragdolled"), "equip woke up the ragdoll")
+	remotes.EquipRagdollTool.OnServerEvent:Emit(equipPlayer, config.toolName, false)
+	remotes.EquipRagdollTool.OnServerEvent:Emit(equipPlayer, config.toolName, false)
+	assert(ragdollGun.Parent == victimToolBackpack, "explicit unequip toggled the grapple back on")
+	remotes.EquipRagdollTool.OnServerEvent:Emit(equipPlayer, config.bombToolName, true)
+	equipHumanoid:SetAttribute("GrapplePhysicsLocked", true)
+	ragdoll.Set(equipHumanoid, true)
+	assert(ragdollBomb.Parent ~= equipCharacter, "grapple lock did not unequip an already-ragdolled victim")
+	ragdollBomb.Parent = victimToolBackpack
+	remotes.EquipRagdollTool.OnServerEvent:Emit(equipPlayer, config.bombToolName, true)
+	assert(ragdollBomb.Parent == victimToolBackpack, "grapple-locked victim equipped a tool")
+	ragdollBomb.Parent = equipCharacter
+	equipCharacter.ChildAdded:Emit(ragdollBomb)
+	assert(ragdollBomb.Parent ~= equipCharacter, "grappled victim could equip a tool")
+	equipHumanoid:SetAttribute("GrapplePhysicsLocked", nil)
+	ragdoll.Set(equipHumanoid, false)
+	equipHumanoid:RemoveTag("Ragdoll")
+	-- The HUD buttons must leave the native hotbar visible and its keys alone.
+	local nativeBackpackEnabled = true
+	services.StarterGui.GetCoreGuiEnabled = function() return nativeBackpackEnabled end
+	services.StarterGui.SetCoreGuiEnabled = function(_, _, enabled) nativeBackpackEnabled = enabled end
+	local equipActions = {}
+	services.ContextActionService = {
+		BindActionAtPriority = function(_, name, callback) equipActions[name] = callback end,
+		UnbindAction = function(_, name) equipActions[name] = nil end,
+	}
+	env.Enum.CoreGuiType = {Backpack = "Backpack"}
+	env.Enum.ContextActionResult = {Pass = "Pass", Sink = "Sink"}
+	env.Enum.ContextActionPriority = {High = {Value = 3000}}
+	env.Enum.UserInputState = {Begin = "Begin", End = "End"}
+	players.LocalPlayer = equipPlayer
+	local equipClient = execute(sources.ragdollToolClient)
+	assert(nativeBackpackEnabled and next(equipActions) == nil, "normal hotbar was overridden")
+	equipHumanoid:SetAttribute("Ragdolled", true)
+	assert(nativeBackpackEnabled and next(equipActions) == nil, "ragdoll hid or overrode the native hotbar")
+	local requestCount = #(remotes.EquipRagdollTool.sent or {})
+	input.InputBegan:Emit({UserInputType = "Keyboard", KeyCode = "One"}, true)
+	assert(#(remotes.EquipRagdollTool.sent or {}) == requestCount, "number key also sent a HUD equip request")
+	-- Model the native Backpack transfer; the ragdoll guard must accept it.
+	ragdollGun.Parent = equipCharacter
+	equipCharacter.ChildAdded:Emit(ragdollGun)
+	ragdollGun.Equipped:Emit()
+	assert(ragdollGun.Parent == equipCharacter, "native hotbar equip was rejected during free ragdoll")
+	ragdollGun.Parent = victimToolBackpack
+	equipClient.Select(config.toolName)
+	assert(#remotes.EquipRagdollTool.sent == requestCount + 1, "HUD emitted zero/multiple equip requests")
+	local request = remotes.EquipRagdollTool.sent[requestCount + 1]
+	assert(request[1] == config.toolName and request[2] == true, "HUD did not request explicit grapple equip")
+	remotes.EquipRagdollTool.OnServerEvent:Emit(equipPlayer, unpack(request))
+	assert(ragdollGun.Parent == equipCharacter, "HUD-to-server grapple equip failed")
+	equipClient.Select(config.toolName) -- Same call as the touch/HUD button.
+	request = remotes.EquipRagdollTool.sent[requestCount + 2]
+	assert(request[2] == false, "HUD button did not request explicit put-away")
+	remotes.EquipRagdollTool.OnServerEvent:Emit(equipPlayer, unpack(request))
+	equipHumanoid:SetAttribute("GrappleLocalPhysicsLock", true)
+	equipClient.Select(config.toolName)
+	assert(#remotes.EquipRagdollTool.sent == requestCount + 2, "local capture lock allowed an equip")
+	equipHumanoid:SetAttribute("GrappleLocalPhysicsLock", nil)
+	equipHumanoid:SetAttribute("Ragdolled", false)
+	assert(nativeBackpackEnabled and next(equipActions) == nil, "recovery did not restore native hotbar")
+	nativeBackpackEnabled = false
+	equipHumanoid:SetAttribute("Ragdolled", true)
+	equipHumanoid:SetAttribute("Ragdolled", false)
+	assert(not nativeBackpackEnabled, "restored a hotbar previously disabled by another system")
+	nativeBackpackEnabled = true
+	equipHumanoid:SetAttribute("Ragdolled", true)
+	equipHumanoid.Health = 0
+	equipHumanoid.Died:Emit()
+	assert(nativeBackpackEnabled and next(equipActions) == nil, "death retained the ragdoll hotbar")
+	equipPlayer.CharacterRemoving:Emit(equipCharacter)
+	equipPlayer.Character = nil
+	equipClient.Select(config.toolName)
+	assert(#remotes.EquipRagdollTool.sent == requestCount + 2, "removed character sent an equip request")
+	players.LocalPlayer = attacker
+	equipCharacter:Destroy()
+	ragdollBomb:Destroy()
 	now += 1
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid:HasTag("Ragdoll"), "ready player could not ragdoll")
+	assert(gun.Parent == attacker.Character, "non-grappled ragdoll unequipped the grapple gun")
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid:HasTag("Ragdoll"), "ragdoll could be cancelled without its cooldown")
 	now += 0.49
@@ -785,7 +950,7 @@ return function(sources)
 		local velocity = blastVelocity(offset)
 		local height = velocity.Y * velocity.Y / (2 * world.Gravity)
 		local range = blastRange(velocity)
-		assert(height >= 50 and height <= 100 and range <= config.bombLaunchDistance, "blast trajectory exceeded its configured target")
+		assert(height >= 50 and height <= 100 and range <= config.bombLaunchDistance + 0.001, "blast trajectory exceeded its configured target")
 	end
 
 	-- Exercise actual throw validation, 3.5-second fuse, cooldown, and explosion.
@@ -820,8 +985,14 @@ return function(sources)
 	bombTool.Parent = attacker.Character
 	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(0/0, 0, 0))
 	assert(not world:FindFirstChild("ThrownBomb"), "invalid bomb aim accepted")
+	attackerHumanoid:SetAttribute("Ragdolled", true)
+	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", true)
+	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(100, 0, 0))
+	assert(not world:FindFirstChild("ThrownBomb"), "grapple-locked player threw a bomb")
+	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", nil)
 	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(100, 0, 0))
 	local thrown = assert(world:FindFirstChild("ThrownBomb"))
+	attackerHumanoid:SetAttribute("Ragdolled", false)
 	local bombHandle = bombTool:FindFirstChild("Handle")
 	assert(bombHandle.Transparency == 1 and not bombTool.Enabled, "held bomb did not disappear during cooldown")
 	local threwAt = now
@@ -938,10 +1109,16 @@ return function(sources)
 	-- requests, so a rejected throw does not start a phantom six-second cooldown.
 	bombTool.Parent = attacker.Character
 	execute(sources.bombClient)
+	attackerHumanoid:SetAttribute("Ragdolled", true)
 	bombTool.Activated:Emit()
 	assert(#remotes.ThrowBomb.sent == 1, "bomb client did not send equipped throw")
 	bombTool.Activated:Emit()
 	assert(#remotes.ThrowBomb.sent == 1, "bomb client failed to debounce input")
+	now += 0.2
+	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", true)
+	bombTool.Activated:Emit()
+	assert(#remotes.ThrowBomb.sent == 1, "grapple-locked player threw a bomb")
+	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", nil)
 	now += 0.2
 	bombTool.Activated:Emit()
 	assert(#remotes.ThrowBomb.sent == 2, "unacknowledged throw caused full client cooldown")

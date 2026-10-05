@@ -189,7 +189,7 @@ Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	local tool = character and character:FindFirstChild(Config.bombToolName)
-	if not root or not humanoid or humanoid.Health <= 0 or humanoid:GetAttribute("Ragdolled") then return end
+	if not root or not humanoid or humanoid.Health <= 0 or humanoid:GetAttribute("GrapplePhysicsLocked") then return end
 	if not tool or not tool:IsA("Tool") or not tool:GetAttribute("BombTool") then return end
 	local now = os.clock()
 	if now - (lastThrow[player] or -math.huge) < Config.bombCooldown then return end

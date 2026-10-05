@@ -7,6 +7,8 @@ local RunService = game:GetService("RunService")
 local Config = require(storage:WaitForChild("GrappleConfig"))
 local Remotes = require(script.Parent:WaitForChild("GrappleRemotes"))
 local ToolClient = require(script.Parent:WaitForChild("GrappleToolClient"))
+local ToolSetup = require(script.Parent:WaitForChild("GrappleToolSetup"))
+local RagdollToolClient = require(script.Parent:WaitForChild("RagdollToolClient"))
 local M = {}
 
 function M.Init()
@@ -50,7 +52,7 @@ function M.Init()
 	end
 	local panel = make("Frame", screen, {
 		Name = "Controls", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 18, 1, -24),
-		Size = UDim2.fromOffset(380, 214), BackgroundColor3 = Color3.fromRGB(18, 23, 32), BackgroundTransparency = 0.08,
+		Size = UDim2.fromOffset(380, 250), BackgroundColor3 = Color3.fromRGB(18, 23, 32), BackgroundTransparency = 0.08,
 	})
 	rounded(panel)
 	make("UIStroke", panel, {Color = Color3.fromRGB(61, 76, 90), Thickness = 1})
@@ -103,6 +105,9 @@ function M.Init()
 		if tool() and not struggling then Remotes.ToggleWallMode:FireServer() end
 	end
 	local function ragdoll() Remotes.ToggleRagdoll:FireServer() end
+	local function equipRagdollTool(toolName)
+		RagdollToolClient.Select(toolName)
+	end
 	local shortButton = button(panel, Config.shortenRope.Name .. "  Reel in", UDim2.fromOffset(18, 110), UDim2.fromOffset(167, 36))
 	local longButton = button(panel, Config.lengthenRope.Name .. "  Let out", UDim2.fromOffset(195, 110), UDim2.fromOffset(167, 36))
 	local function hold(b, direction)
@@ -122,6 +127,13 @@ function M.Init()
 	hold(longButton, 1)
 	local modeButton = button(panel, Config.toggleWallMode.Name .. "  Target mode", UDim2.fromOffset(18, 154), UDim2.fromOffset(167, 36), toggleMode)
 	local ragdollButton = button(panel, Config.ragdollKeybind.Name .. "  Ragdoll", UDim2.fromOffset(195, 154), UDim2.fromOffset(167, 36), ragdoll)
+	local grappleEquipButton = button(panel, "Equip Grapple Gun", UDim2.fromOffset(18, 198), UDim2.fromOffset(167, 36), function()
+		equipRagdollTool(Config.toolName)
+	end)
+	local bombEquipButton = button(panel, "Equip Bomb", UDim2.fromOffset(195, 198), UDim2.fromOffset(167, 36), function()
+		equipRagdollTool(Config.bombToolName)
+	end)
+	grappleEquipButton.Visible, bombEquipButton.Visible = false, false
 	local escape = make("Frame", screen, {
 		Name = "Escape", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 26),
 		Size = UDim2.fromOffset(380, 124), BackgroundColor3 = Color3.fromRGB(39, 22, 30), Visible = false,
@@ -186,11 +198,21 @@ function M.Init()
 	end)
 	UIS.WindowFocusReleased:Connect(function() shorten, lengthen = false, false end)
 	local function watchTool(instance)
-		if instance:IsA("Tool") and instance.Name == Config.toolName then ToolClient.Init(instance) end
+		if instance:IsA("Tool") and instance.Name == Config.toolName then
+			ToolSetup.Prepare(instance, false)
+			ToolClient.Init(instance)
+		end
 	end
-	local backpack = player:WaitForChild("Backpack")
-	for _, instance in ipairs(backpack:GetChildren()) do watchTool(instance) end
-	backpack.ChildAdded:Connect(watchTool)
+	local backpackConnection
+	local function watchBackpack(backpack)
+		if backpackConnection then backpackConnection:Disconnect() end
+		backpackConnection = backpack.ChildAdded:Connect(watchTool)
+		for _, instance in ipairs(backpack:GetChildren()) do watchTool(instance) end
+	end
+	player.ChildAdded:Connect(function(child)
+		if child:IsA("Backpack") then watchBackpack(child) end
+	end)
+	watchBackpack(player:WaitForChild("Backpack"))
 	local characterConnection
 	local function characterAdded(character)
 		stopStruggle()
@@ -227,7 +249,7 @@ function M.Init()
 			-- On phones, make the panel roughly 40% of the viewport width. Larger
 			-- touch devices retain the desktop layout.
 			local touchWidthScale = isPhone and math.clamp(viewport.X * 0.4 / 380, 0.4, 0.55) or 1
-			local heightScale = math.clamp(viewport.Y * 0.4 / 214, 0.5, 1)
+			local heightScale = math.clamp(viewport.Y * 0.4 / 250, 0.5, 1)
 			s = math.min(widthScale, touchWidthScale, heightScale)
 		end
 		scale.Scale, escapeScale.Scale = s, s
@@ -239,6 +261,17 @@ function M.Init()
 		local equipped = tool()
 		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 		local ragdolled = humanoid ~= nil and humanoid:GetAttribute("Ragdolled") == true
+		local canEquipRagdollTools = ragdolled and humanoid.Health > 0
+			and humanoid:GetAttribute("GrapplePhysicsLocked") ~= true
+			and humanoid:GetAttribute("GrappleLocalPhysicsLock") ~= true
+		local backpack = player:FindFirstChildOfClass("Backpack")
+		grappleEquipButton.Visible = canEquipRagdollTools and backpack ~= nil
+			and (backpack:FindFirstChild(Config.toolName) ~= nil or equipped ~= nil)
+		bombEquipButton.Visible = canEquipRagdollTools and backpack ~= nil
+			and (backpack:FindFirstChild(Config.bombToolName) ~= nil or player.Character:FindFirstChild(Config.bombToolName) ~= nil)
+		grappleEquipButton.Text = equipped and "Put away Grapple" or "Equip Grapple"
+		bombEquipButton.Text = player.Character and player.Character:FindFirstChild(Config.bombToolName) and "Put away Bomb" or "Equip Bomb"
+		panel.Size = UDim2.fromOffset(380, canEquipRagdollTools and 250 or 214)
 		mode.Text = equipped and (equipped:GetAttribute("WallMode") and (compactHud and "WALL" or "WALL MODE") or (compactHud and "PLAYER" or "PLAYER MODE")) or (compactHud and "OFF" or "UNEQUIPPED")
 		shortButton.Text = compactHud and (Config.shortenRope.Name .. "  In") or (Config.shortenRope.Name .. "  Reel in")
 		longButton.Text = compactHud and (Config.lengthenRope.Name .. "  Out") or (Config.lengthenRope.Name .. "  Let out")

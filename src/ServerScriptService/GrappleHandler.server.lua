@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage:WaitForChild("GrappleConfig"))
 local Remotes = require(ReplicatedStorage.Modules:WaitForChild("GrappleRemotes"))
 local Ragdoll = require(ReplicatedStorage.Modules:WaitForChild("RagdollService"))
+local ToolSetup = require(ReplicatedStorage.Modules:WaitForChild("GrappleToolSetup"))
 local Sounds = ReplicatedStorage:FindFirstChild("Sounds")
 local PlaySound = require(ReplicatedStorage.Modules:WaitForChild("PlaySound"))
 local function sound(name)
@@ -43,12 +44,7 @@ local function getTool(player: Player): Tool?
 	local tool = character and character:FindFirstChild(Config.toolName)
 	if tool and tool:IsA("Tool") and not preparedTools[tool] then
 		preparedTools[tool] = true
-		-- Decorative gun pieces must not add weight, scrape the floor, or anchor a player.
-		for _, part in ipairs(tool:GetDescendants()) do
-			if part:IsA("BasePart") then
-				part.Anchored, part.CanCollide, part.Massless = false, false, true
-			end
-		end
+		ToolSetup.Prepare(tool, true)
 		tool:SetAttribute("WallMode", WallMode[player] == true)
 	end
 	return tool and tool:IsA("Tool") and tool or nil
@@ -97,6 +93,7 @@ local function finishVictimHandoff(state, departingPlayer)
 		end
 		humanoid:SetAttribute("GrapplePhysicsLocked", nil)
 		humanoid:SetAttribute("GrapplePhysicsSession", nil)
+		if humanoid:HasTag("Ragdoll") then Ragdoll.Set(humanoid, true) end
 		if state.appliedRagdoll and humanoid.Health > 0
 			and os.clock() >= (humanoid:GetAttribute("BombRagdollUntil") or 0) then
 			-- Set before removing the tag so its observer cannot run pose recovery.
@@ -391,7 +388,8 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	local humanoid = character and character:FindFirstChildWhichIsA("Humanoid")
 	local tool = getTool(player)
 	local firePoint = tool and getFirePoint(tool)
-	if not character or not humanoid or humanoid.Health <= 0 or humanoid:HasTag("Ragdoll") or not tool or not firePoint then return end
+	if not character or not humanoid or humanoid.Health <= 0 or humanoid:GetAttribute("GrapplePhysicsLocked")
+		or not tool or not firePoint then return end
 	if os.clock() < (cooldownUntil[player] or 0) then return end
 	local aim = hitPosition - firePoint.WorldPosition
 	if aim.Magnitude < 0.01 then return end
@@ -417,10 +415,8 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	end)
 	state.connections.toolUnequipped = tool.Unequipped:Connect(function()
 		disconnectRope(player)
-		-- Studio can emit Unequipped before its hotbar finishes reparenting.
-		task.defer(function()
-			if tool.Parent == character and humanoid.Parent == character then humanoid:UnequipTools() end
-		end)
+		-- The Backpack owns tool selection. A delayed UnequipTools here could
+		-- put away a newly re-equipped gun after this old rope was released.
 	end)
 	state.connections.toolDestroyed = tool.Destroying:Connect(function() disconnectRope(player, true) end)
 	local hitbox = createHitbox(state, origin, direction)
@@ -549,6 +545,20 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 local function watchPlayer(player: Player)
+	local watched = setmetatable({}, {__mode = "k"})
+	local function watchInventory(container)
+		if watched[container] then return end
+		watched[container] = true
+		container.ChildAdded:Connect(function(tool) ToolSetup.Prepare(tool, true) end)
+		for _, tool in ipairs(container:GetChildren()) do ToolSetup.Prepare(tool, true) end
+	end
+	player.ChildAdded:Connect(function(child)
+		if child:IsA("Backpack") then watchInventory(child) end
+	end)
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if backpack then watchInventory(backpack) end
+	player.CharacterAdded:Connect(watchInventory)
+	if player.Character then watchInventory(player.Character) end
 	player.CharacterRemoving:Connect(function(character)
 		disconnectRope(player, true)
 		local owner = GrappleOwners[player.UserId]
@@ -561,5 +571,9 @@ local function watchPlayer(player: Player)
 	end)
 end
 
+-- Prepare the template too, before a Backpack clone can start its old scripts.
+local starterPack = game:GetService("StarterPack")
+starterPack.ChildAdded:Connect(function(tool) ToolSetup.Prepare(tool, true) end)
+for _, tool in ipairs(starterPack:GetChildren()) do ToolSetup.Prepare(tool, true) end
 Players.PlayerAdded:Connect(watchPlayer)
 for _, player in ipairs(Players:GetPlayers()) do watchPlayer(player) end

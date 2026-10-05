@@ -62,7 +62,7 @@ local function configure(player, character)
 	for _, instance in ipairs(character:GetDescendants()) do collision(instance) end
 	character.DescendantAdded:Connect(collision)
 	character.ChildAdded:Connect(function(instance)
-		if instance:IsA("Tool") and humanoid:HasTag("Ragdoll") then humanoid:UnequipTools() end
+		if instance:IsA("Tool") and humanoid:GetAttribute("GrapplePhysicsLocked") == true then humanoid:UnequipTools() end
 	end)
 	Ragdoll.Prepare(humanoid)
 	if humanoid:HasTag("Ragdoll") then Ragdoll.Set(humanoid, true) end
@@ -109,6 +109,31 @@ Remotes.ToggleRagdoll.OnServerEvent:Connect(function(player)
 		humanoid:AddTag("Ragdoll")
 		Ragdoll.Set(humanoid, true)
 	end
+end)
+Remotes.EquipRagdollTool.OnServerEvent:Connect(function(player, toolName, shouldEquip)
+	if type(toolName) ~= "string" or (toolName ~= Config.toolName and toolName ~= Config.bombToolName) then return end
+	if type(shouldEquip) ~= "boolean" then return end
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not character or not humanoid or humanoid.Health <= 0
+		or humanoid:GetAttribute("Ragdolled") ~= true
+		or humanoid:GetAttribute("GrapplePhysicsLocked") == true then return end
+	local equipped = character:FindFirstChild(toolName)
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if not backpack then return end
+	if not shouldEquip then
+		if equipped and equipped:IsA("Tool") then equipped.Parent = backpack end
+		return
+	end
+	if equipped and equipped:IsA("Tool") then return end
+	local tool = backpack:FindFirstChild(toolName)
+	if not tool or not tool:IsA("Tool") then return end
+	-- Transfer tools directly while the humanoid state machine is suspended.
+	-- Do not call EquipTool/UnequipTools and then toggle again on a duplicate.
+	for _, child in ipairs(character:GetChildren()) do
+		if child:IsA("Tool") then child.Parent = backpack end
+	end
+	tool.Parent = character
 end)
 Remotes.ResetCharacter.OnServerEvent:Connect(function(player)
 	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
