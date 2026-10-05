@@ -8,6 +8,7 @@ local rigs = setmetatable({}, {__mode = "k"})
 -- camera still through that movement; only follow a meaningful displacement.
 local CAMERA_DEADZONE = 0.75
 local CAMERA_FOLLOW_SPEED = 12
+local CAMERA_MAX_LAG = 1.25 -- Studs; fast falls must not outrun the camera subject
 local OWNERSHIP_CHECK_INTERVAL = 0.25
 
 -- Ownership must be checked again after the engine rebuilds assemblies from
@@ -392,8 +393,13 @@ function Service.InitClient()
 
 		local offset = cameraRoot.Position - cameraAnchor.Position
 		if offset.Magnitude <= CAMERA_DEADZONE then return end
-		local alpha = math.min(1, dt * CAMERA_FOLLOW_SPEED)
-		cameraAnchor.CFrame = CFrame.new(cameraAnchor.Position + offset * alpha)
+		-- Smooth small movements consistently across frame rates, but bound the
+		-- remaining distance. Unbounded easing trails fast falls by many studs.
+		local remaining = offset * math.exp(-math.max(0, dt) * CAMERA_FOLLOW_SPEED)
+		if remaining.Magnitude > CAMERA_MAX_LAG then
+			remaining = remaining.Unit * CAMERA_MAX_LAG
+		end
+		cameraAnchor.CFrame = CFrame.new(cameraRoot.Position - remaining)
 	end)
 	RunService.PreSimulation:Connect(function()
 		for humanoid in pairs(activeRigs) do

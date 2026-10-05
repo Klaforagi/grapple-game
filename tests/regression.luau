@@ -526,10 +526,48 @@ return function(sources)
 	assert(deathRope.destroyed and victimHumanoid:GetAttribute("Ragdolled"), "death cleanup resurrected or retained rope")
 	-- The attacker's client must also suppress the remote victim's state machine.
 	runService.IsServer = function() return false end
+	players.LocalPlayer = attacker
 	local clientRagdoll = execute(sources.ragdoll)
 	clientRagdoll.InitClient()
 	assert(not victimHumanoid.EvaluateStateMachine, "remote victim retained humanoid forces")
 	assert(attackerHumanoid.EvaluateStateMachine, "healthy character state machine was disabled")
+	-- Exercise the real camera callback during accelerating falls, including
+	-- a slow/mobile frame rate. Only the visual anchor may move.
+	local previousCFrameNew = env.CFrame.new
+	env.CFrame.new = function(position) return {Position = position, LookVector = identity.LookVector} end
+	world.CurrentCamera = {CameraSubject = attackerHumanoid}
+	local cameraStep = runService.renderBindings.GrappleRagdollCameraAnchor
+	local originalRootPosition = attackerRoot.Position
+	local originalRootVelocity = attackerRoot.AssemblyLinearVelocity
+	local originalRootFrame = attackerRoot.CFrame
+	for _, fps in ipairs({15, 30, 60, 144}) do
+		attackerRoot.Position = V.new(0, 2000, 0)
+		attackerHumanoid:SetAttribute("Ragdolled", true)
+		local anchor = assert(world:FindFirstChild("RagdollCameraAnchor"))
+		anchor.Position = anchor.CFrame.Position -- Mirror Roblox's CFrame -> Position property update.
+		for frame = 1, fps * 4 do
+			local t = frame / fps
+			attackerRoot.Position = V.new(30 * t, 2000 - 100 * t - 0.5 * world.Gravity * t * t, 0)
+			attackerRoot.AssemblyLinearVelocity = V.new(30, -100 - world.Gravity * t, 0)
+			local velocity = attackerRoot.AssemblyLinearVelocity
+			cameraStep(1 / fps)
+			anchor.Position = anchor.CFrame.Position
+			assert((attackerRoot.Position - anchor.Position).Magnitude <= 1.25001, "fast fall escaped the camera at " .. fps .. " FPS")
+			assert(attackerRoot.AssemblyLinearVelocity == velocity and attackerRoot.CFrame == originalRootFrame, "camera follow modified body physics")
+		end
+		-- Resting sub-stud motion should still be filtered out.
+		local restingAnchor = anchor.CFrame
+		for frame = 1, fps do
+			attackerRoot.Position = anchor.Position + V.new(0.2 * math.sin(frame), 0.1, 0)
+			cameraStep(1 / fps)
+			assert(anchor.CFrame == restingAnchor, "resting jitter moved the camera")
+		end
+		attackerHumanoid:SetAttribute("Ragdolled", false)
+		assert(world.CurrentCamera.CameraSubject == attackerHumanoid, "recovery did not restore normal camera")
+	end
+	attackerRoot.Position, attackerRoot.AssemblyLinearVelocity = originalRootPosition, originalRootVelocity
+	env.CFrame.new = previousCFrameNew
+	world.CurrentCamera = nil
 	victimRoot.AssemblyAngularVelocity = V.new(3, 2, 1)
 	runService.PreSimulation:Emit()
 	assert(victimRoot.AssemblyAngularVelocity.Magnitude > 0, "observer rewrote the physics owner's velocity")
@@ -809,5 +847,5 @@ return function(sources)
 	world.Raycast = function() return {Instance = wall, Position = V.new(5, 0, 0), Normal = V.new(-1, 0, 0)} end
 	runService.Heartbeat:Emit(0.1)
 	assert(swept:FindFirstChild("BombStick").Part0 == wall, "sweep missed first wall along flight path")
-	print("PASS: four-player ownership/split repairs, rigid ragdoll roots, observer isolation, handoff/recapture, controls/respawn, momentum, ropes, bombs")
+	print("PASS: bounded fall camera at 15/30/60/144 FPS, resting camera stability, four-player ownership, ragdolls, handoff/controls, momentum, ropes, bombs")
 end
