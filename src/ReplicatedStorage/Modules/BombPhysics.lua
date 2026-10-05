@@ -26,7 +26,8 @@ function M.Knockback(offset: Vector3, radius: number, gravity: number, height: n
 	local verticalSpeed = math.sqrt(2 * g * math.max(1, height) * strength)
 	local flightTime = 2 * verticalSpeed / g
 	local horizontal = Vector3.new(offset.X, 0, offset.Z)
-	local sideways = horizontal.Magnitude > 0.001 and horizontal.Unit * (math.max(0, range) * strength / flightTime) or Vector3.zero
+	local horizontalRange = math.max(0, range) * math.clamp(distance / math.max(radius, 0.001), 0, 1)
+	local sideways = horizontal.Magnitude > 0.001 and horizontal.Unit * (horizontalRange / flightTime) or Vector3.zero
 	return sideways + Vector3.new(0, verticalSpeed, 0)
 end
 

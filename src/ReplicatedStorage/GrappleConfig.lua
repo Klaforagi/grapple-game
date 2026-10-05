@@ -88,8 +88,8 @@ return {
 	bombFuse = 3.5, -- Seconds from throw, including time in flight
 	bombCooldown = 6, -- Seconds after throwing before another throw
 	bombRadius = 8, -- Root-to-explosion distance in studs
-	bombLaunchHeight = 75, -- Studs above impact position in unobstructed flight; edge hits ~52
-	bombLaunchDistance = 85, -- Horizontal studs back to impact height; directly underneath launches vertically
+	bombLaunchHeight = 82, -- Studs above impact position in unobstructed flight; edge hits ~57
+	bombLaunchDistance = 125, -- Horizontal studs back to impact height; directly underneath launches vertically
 	bombRagdollDuration = 5, -- Each hit restarts stun; automatic recovery unless already voluntarily ragdolled
 	bombThrowSpeed = 70,
 	bombArcHeight = 6, -- Arc rises this far above the higher of hand and target

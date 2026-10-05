@@ -772,11 +772,20 @@ return function(sources)
 	assert(up.X == 0 and up.Z == 0, "underfoot blast must launch vertically")
 	assert(right.X > 0 and left.X < 0, "side blasts must launch away from center")
 	assert(blastVelocity(V.new(9, 0, 0)).Magnitude == 0, "blast exceeded radius")
+	local function blastRange(velocity)
+		return V.new(velocity.X, 0, velocity.Z).Magnitude * 2 * velocity.Y / world.Gravity
+	end
+	local centerRange = blastRange(blastVelocity(V.zero))
+	local middleRange = blastRange(blastVelocity(V.new(config.bombRadius / 2, 0, 0)))
+	local edgeRange = blastRange(blastVelocity(V.new(config.bombRadius, 0, 0)))
+	assert(centerRange == 0, "blast at center must have no horizontal travel")
+	assert(math.abs(middleRange - config.bombLaunchDistance / 2) < 0.001, "mid-radius blast must launch halfway")
+	assert(math.abs(edgeRange - config.bombLaunchDistance) < 0.001, "edge blast must launch the full configured distance")
 	for _, offset in ipairs({V.zero, V.new(0, 2, 0), V.new(5, 2, 0), V.new(8, 0, 0), V.new(0, -8, 0)}) do
 		local velocity = blastVelocity(offset)
 		local height = velocity.Y * velocity.Y / (2 * world.Gravity)
-		local range = V.new(velocity.X, 0, velocity.Z).Magnitude * 2 * velocity.Y / world.Gravity
-		assert(height >= 50 and height <= 100 and range <= 100, "blast trajectory exceeded 50-100 stud target")
+		local range = blastRange(velocity)
+		assert(height >= 50 and height <= 100 and range <= config.bombLaunchDistance, "blast trajectory exceeded its configured target")
 	end
 
 	-- Exercise actual throw validation, 3.5-second fuse, cooldown, and explosion.
