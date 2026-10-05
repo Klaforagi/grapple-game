@@ -56,7 +56,7 @@ return function(sources)
 			ClassName = class, Name = name or class, Parent = parent, Enabled = true, attributes = {}, tags = {},
 			Position = V.new(), Size = V.new(2, 2, 2), CFrame = identity, C0 = identity, C1 = identity, Transform = identity,
 			Health = 100, HipHeight = 2, EvaluateStateMachine = true, AutoRotate = true, PlatformStand = false, CanCollide = false, Massless = false,
-			AssemblyLinearVelocity = V.new(), AssemblyAngularVelocity = V.new(),
+			AssemblyLinearVelocity = V.new(), AssemblyAngularVelocity = V.new(), RootPriority = 0, MaxFrictionTorque = 0,
 			CollisionGroup = "Default", CurrentPhysicalProperties = {Density = 1}, AssemblyMass = 5,
 			Died = signal(), Destroying = signal(), Unequipped = signal(), CharacterRemoving = signal(), CharacterAdded = signal(),
 			DescendantAdded = signal(), ChildAdded = signal(), OnServerEvent = signal(), OnClientEvent = signal(),
@@ -111,10 +111,14 @@ return function(sources)
 	function methods:AddTag(tag) self.tags[tag] = true end
 	function methods:RemoveTag(tag) self.tags[tag] = nil end
 	function methods:CanSetNetworkOwnership() return not self.Anchored end
-	function methods:SetNetworkOwner(owner) self.NetworkOwner = owner end
+	function methods:SetNetworkOwner(owner)
+		self.NetworkOwner, self.OwnershipAuto = owner, false
+		self.OwnershipWrites = (self.OwnershipWrites or 0) + 1
+	end
 	function methods:GetNetworkOwner() return self.NetworkOwner end
+	function methods:GetNetworkOwnershipAuto() return self.OwnershipAuto ~= false end
 	function methods:ApplyImpulse(impulse) self.AssemblyLinearVelocity += impulse / self.AssemblyMass end
-	function methods:SetNetworkOwnershipAuto() self.NetworkOwner = "auto" end
+	function methods:SetNetworkOwnershipAuto() self.NetworkOwner, self.OwnershipAuto = "auto", true end
 	function methods:GetMass() return 5 end
 	function methods:ChangeState(state) self.State = state end
 	function methods:Move(direction) self.MoveDirection = direction end
@@ -157,6 +161,9 @@ return function(sources)
 	players.PlayerAdded, players.PlayerRemoving = signal(), signal()
 	local playerList = {}
 	function players:GetPlayers() return playerList end
+	function players:GetPlayerByUserId(id)
+		for _, player in ipairs(playerList) do if player.UserId == id then return player end end
+	end
 	function players:GetPlayerFromCharacter(character)
 		for _, player in ipairs(playerList) do if player.Character == character then return player end end
 	end
@@ -257,10 +264,12 @@ return function(sources)
 	fire()
 	assert(victimHumanoid:GetAttribute("GrappledBy") == attacker.UserId, "grapple not established")
 	assert(victimHumanoid:GetAttribute("Ragdolled") == true, "victim not ragdolled")
-	assert(rootMotor.Enabled, "root must remain attached to torso")
+	assert(not rootMotor.Enabled, "animated root must be disabled during ragdoll")
 	assert(not victimRoot.CanCollide, "invisible root must not drag against floor")
 	local jointFolder = assert(victimCharacter:FindFirstChild("GrappleRagdollJoints"))
-	assert(#jointFolder:GetChildren() == 14, "all R15 limb joints must be constrained")
+	assert(#jointFolder:GetChildren() == 15, "R15 needs 14 limb sockets and one rigid root weld")
+	local rootWeld = assert(jointFolder:FindFirstChild("RagdollRootWeld"))
+	assert(rootWeld.Enabled and rootWeld.Part0 == victimRoot and rootWeld.Part1 == rootMotor.Part1, "root lost rigid torso connection")
 	for _, object in ipairs(victimCharacter:GetDescendants()) do
 		if object:IsA("Motor6D") and object ~= rootMotor then assert(not object.Enabled, "stiff limb motor") end
 		if object:IsA("BasePart") then assert(object.NetworkOwner == attacker, "split ragdoll ownership") end
@@ -306,6 +315,7 @@ return function(sources)
 	assert(victimRoot.NetworkOwner == victim, "victim ownership not restored after stabilization")
 	assert(victimHumanoid:GetAttribute("Ragdolled") == false and not victimHumanoid:GetAttribute("GrapplePhysicsLocked"), "escape failed to recover after handoff")
 	assert(victimRoot.CanCollide == false and victimHumanoid.AutoRotate, "recovery did not restore properties")
+	assert(rootMotor.Enabled and not rootWeld.Enabled and victimRoot.RootPriority == 0, "recovery failed to restore animated root/priority")
 	assert(victimRoot.CFrame == releasePose and victimRoot.AssemblyLinearVelocity.Y == 25, "handoff rewrote the released pose or momentum")
 	-- An earlier release timer must not steal a recaptured victim or preserve
 	-- a grapple-created ragdoll as though it were voluntary.
@@ -331,6 +341,11 @@ return function(sources)
 	-- Manual ragdolls must survive grapple release.
 	victimHumanoid:AddTag("Ragdoll")
 	ragdoll.Set(victimHumanoid, true)
+	local looseLimb = victimCharacter:FindFirstChild("Limb1")
+	assert(looseLimb.NetworkOwner == victim and not looseLimb:GetNetworkOwnershipAuto(), "voluntary ragdoll left limbs on automatic ownership")
+	looseLimb.NetworkOwner, looseLimb.OwnershipAuto = attacker, true
+	runService.Heartbeat:Emit(0.016)
+	assert(looseLimb.NetworkOwner == victim and not looseLimb:GetNetworkOwnershipAuto(), "voluntary ragdoll ownership drift was not repaired")
 	fire()
 	fire()
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
@@ -361,9 +376,13 @@ return function(sources)
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
 	-- R6 joints must disable and restore as well.
 	local r6, hum6, root6, motor6 = character("R6", V.new(), false)
+	root6.Massless, root6.RootPriority = true, -10
 	ragdoll.Set(hum6, true)
-	assert(#r6:FindFirstChild("GrappleRagdollJoints"):GetChildren() == 5 and motor6.Enabled and not root6.CanCollide)
+	assert(#r6:FindFirstChild("GrappleRagdollJoints"):GetChildren() == 6 and not motor6.Enabled and not root6.CanCollide)
+	assert(not root6.Massless and root6.RootPriority == 127 and not root6:GetNetworkOwnershipAuto(), "NPC root was not stable/server-owned")
+	assert(r6:FindFirstChild("GrappleRagdollJoints"):FindFirstChild("Neck").MaxFrictionTorque > 0, "ragdoll joints have no settling friction")
 	ragdoll.Set(hum6, false)
+	assert(root6.Massless and root6.RootPriority == -10, "ragdoll recovery lost original mass/root settings")
 	assert(config.ragdollToggle_Cooldown == 0.5, "ragdoll recovery cooldown should be half a second")
 	assert(hum6:GetAttribute("RagdollRecoveredAt") == now, "cooldown did not start on recovery")
 	for _, object in ipairs(r6:GetDescendants()) do if object:IsA("Motor6D") then assert(object.Enabled) end end
@@ -371,6 +390,11 @@ return function(sources)
 	local upgradedRig = instance("Model", "UpgradedR15", world)
 	local upgradedHumanoid = instance("Humanoid", "Humanoid", upgradedRig)
 	local upgradedTorso = instance("Part", "UpperTorso", upgradedRig)
+	local upgradedRoot = instance("Part", "HumanoidRootPart", upgradedRig)
+	local root0 = instance("Attachment", "Root", upgradedRoot)
+	local root1 = instance("Attachment", "Root", upgradedTorso)
+	local animatedRoot = instance("AnimationConstraint", "RootJoint", upgradedTorso)
+	animatedRoot.Attachment0, animatedRoot.Attachment1 = root0, root1
 	local upgradedArm = instance("Part", "LeftUpperArm", upgradedRig)
 	local shoulder0 = instance("Attachment", "Shoulder", upgradedTorso)
 	local shoulder1 = instance("Attachment", "Shoulder", upgradedArm)
@@ -378,11 +402,16 @@ return function(sources)
 	animatedJoint.Attachment0, animatedJoint.Attachment1 = shoulder0, shoulder1
 	local nativeSocket = instance("BallSocketConstraint", "LeftShoulderSocket", upgradedTorso)
 	nativeSocket.Attachment0, nativeSocket.Attachment1 = shoulder0, shoulder1
+	nativeSocket.MaxFrictionTorque = 2
 	ragdoll.Set(upgradedHumanoid, true)
 	assert(not animatedJoint.Enabled and nativeSocket.Enabled, "upgraded avatar remained animated/stiff")
-	assert(#upgradedRig:FindFirstChild("GrappleRagdollJoints"):GetChildren() == 0, "native avatar sockets duplicated")
+	local upgradedFolder = upgradedRig:FindFirstChild("GrappleRagdollJoints")
+	assert(#upgradedFolder:GetChildren() == 1, "native avatar sockets duplicated")
+	assert(not animatedRoot.Enabled and upgradedFolder:FindFirstChild("RagdollRootWeld").Enabled, "upgraded root remained animated")
+	assert(nativeSocket.MaxFrictionTorque == 5, "native socket lacked settling friction")
 	ragdoll.Set(upgradedHumanoid, false)
 	assert(animatedJoint.Enabled and nativeSocket.Enabled, "native rig recovery changed socket defaults")
+	assert(animatedRoot.Enabled and not upgradedFolder:FindFirstChild("RagdollRootWeld").Enabled and nativeSocket.MaxFrictionTorque == 2, "upgraded root/friction failed to restore")
 	-- Swap Player1/Player2 roles: the same ownership and recovery rules must apply.
 	local reverseGun = instance("Tool", config.toolName, victimCharacter)
 	local reverseHandle = instance("Part", "Handle", reverseGun)
@@ -398,6 +427,64 @@ return function(sources)
 	assert(attackerRoot.NetworkOwner == "auto" and not reverseGun:GetAttribute("HasGrappled"), "removed character retained grapple ownership")
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
 	assert(attackerRoot.NetworkOwner == "auto", "stale handoff reclaimed removed character")
+	-- Four-player role matrix, including Player3 -> Player1 and Player4 -> Player2.
+	-- Model a limb split being discovered only AFTER the initial ownership call.
+	local third = instance("Player", "Player3", players)
+	third.UserId = -3
+	third.Character = character("Player3", V.new(0, 0, 40), true)
+	local fourth = instance("Player", "Player4", players)
+	fourth.UserId = -4
+	fourth.Character = character("Player4", V.new(0, 0, 60), false)
+	playerList = {attacker, victim, third, fourth}
+	players.PlayerAdded:Emit(third)
+	players.PlayerAdded:Emit(fourth)
+	for _, shooter in ipairs(playerList) do
+		for _, target in ipairs(playerList) do
+			if shooter == target then continue end
+			local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
+			local targetHumanoid = target.Character:FindFirstChildOfClass("Humanoid")
+			local shooterRoot = shooter.Character:FindFirstChild("HumanoidRootPart")
+			local testGun = instance("Tool", config.toolName, shooter.Character)
+			local testHandle = instance("Part", "Handle", testGun)
+			testHandle.Position = shooterRoot.Position
+			instance("Attachment", "FirePoint", testHandle)
+			for _, part in ipairs(target.Character:GetChildren()) do
+				if part:IsA("BasePart") then
+					part.AssemblyRootPart = targetRoot
+					part.NetworkOwner, part.OwnershipAuto = attacker, true
+				end
+			end
+			hitParts = {targetRoot}
+			now += 0.4
+			remotes.FireGrapple.OnServerEvent:Emit(shooter, targetRoot.Position, shooterRoot.Position)
+			assert(targetHumanoid:GetAttribute("GrappledBy") == shooter.UserId, "role matrix missed capture")
+			for _, part in ipairs(target.Character:GetChildren()) do
+				if part:IsA("BasePart") then part.AssemblyRootPart = nil end
+			end
+			runService.Heartbeat:Emit(0.016)
+			for _, part in ipairs(target.Character:GetChildren()) do
+				if part:IsA("BasePart") then
+					assert(part.NetworkOwner == shooter and not part:GetNetworkOwnershipAuto(), "split limb picked Player1 instead of grappler")
+				end
+			end
+			local limb = target.Character:FindFirstChild("Limb1")
+			limb.NetworkOwner, limb.OwnershipAuto = target, true
+			now += 0.3
+			runService.Heartbeat:Emit(0.3)
+			assert(limb.NetworkOwner == shooter and not limb:GetNetworkOwnershipAuto(), "ownership audit missed drift")
+			local writes = limb.OwnershipWrites
+			now += 0.3
+			runService.Heartbeat:Emit(0.3)
+			assert(limb.OwnershipWrites == writes, "stable ownership was unnecessarily rewritten")
+			remotes.FireGrapple.OnServerEvent:Emit(shooter, targetRoot.Position, shooterRoot.Position)
+			for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
+			assert(targetRoot.NetworkOwner == target and not targetHumanoid:GetAttribute("Ragdolled"), "role matrix release failed")
+			testGun:Destroy()
+		end
+	end
+	players.PlayerRemoving:Emit(third)
+	players.PlayerRemoving:Emit(fourth)
+	playerList = {attacker, victim}
 	-- Duplicate X paths must not toggle twice, and a stale GUI cooldown cannot jam firing.
 	gun.Parent = attacker.Character
 	now += 0.2
@@ -464,7 +551,8 @@ return function(sources)
 	ragdoll.Set(upgradedHumanoid, true)
 	animatedJoint.Enabled = true
 	runService.PreSimulation:Emit()
-	assert(not animatedJoint.Enabled, "client did not enforce upgraded ragdoll joint")
+	assert(animatedJoint.Enabled, "observer independently rewrote server joint layout")
+	animatedJoint.Enabled = false -- Restore the server's ragdoll state in this shared mock.
 	-- Run the real victim LocalScript. Exercise remote/attribute ordering,
 	-- stale releases, an already-disabled controller, death, and respawn.
 	local controls = {controlsEnabled = true}
@@ -696,6 +784,8 @@ return function(sources)
 	now += 0.02
 	runService.Heartbeat:Emit(0.1)
 	assert(thrown.destroyed and attackerRoot.AssemblyLinearVelocity.X > 800, "blast did not deliver tenfold knockback")
+	ragdoll.RefreshOwnership(attackerHumanoid)
+	assert(attackerRoot.NetworkOwner == nil, "ownership audit stole bomb's temporary server simulation")
 	assert(attackerHumanoid:HasTag("Ragdoll") and attackerHumanoid:GetAttribute("Ragdolled"), "bomb did not ragdoll its target")
 	local lockedUntil = attackerHumanoid:GetAttribute("BombRagdollUntil")
 	assert(math.abs(lockedUntil - now - 5) < 0.001, "bomb lock must last five seconds after impact")
@@ -705,6 +795,8 @@ return function(sources)
 	ragdoll.Set(attackerHumanoid, false)
 	assert(attackerHumanoid:HasTag("Ragdoll") and attackerHumanoid:GetAttribute("Ragdolled"), "another recovery path bypassed bomb lock")
 	now = lockedUntil - 0.01
+	ragdoll.RefreshOwnership(attackerHumanoid)
+	assert(attackerRoot.NetworkOwner == attacker, "bomb server hold did not return standalone ragdoll to its player")
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid:GetAttribute("Ragdolled"), "bomb lock ended early")
 	now = lockedUntil + 0.01
@@ -717,5 +809,5 @@ return function(sources)
 	world.Raycast = function() return {Instance = wall, Position = V.new(5, 0, 0), Normal = V.new(-1, 0, 0)} end
 	runService.Heartbeat:Emit(0.1)
 	assert(swept:FindFirstChild("BombStick").Part0 == wall, "sweep missed first wall along flight path")
-	print("PASS: ownership handoff/recapture, victim controls/respawn, momentum, ragdoll/input, fixed ropes, void respawn retries, bombs")
+	print("PASS: four-player ownership/split repairs, rigid ragdoll roots, observer isolation, handoff/recapture, controls/respawn, momentum, ropes, bombs")
 end

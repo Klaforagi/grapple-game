@@ -65,6 +65,9 @@ end
 
 local function knockback(character, humanoid, velocity)
 	local assemblies = {}
+	-- The ragdoll ownership audit must honor this short authoritative impulse.
+	local serverUntil = os.clock() + 0.2
+	humanoid:SetAttribute("PhysicsServerUntil", serverUntil)
 	local grappledBy = humanoid:GetAttribute("GrappledBy")
 	local grappleSession = humanoid:GetAttribute("GrapplePhysicsSession")
 	for _, part in ipairs(character:GetDescendants()) do
@@ -82,8 +85,11 @@ local function knockback(character, humanoid, velocity)
 						-- A new grapple/recovery may have changed ownership in the meantime.
 						if humanoid:GetAttribute("GrappledBy") ~= grappledBy then return end
 						if humanoid:GetAttribute("GrapplePhysicsSession") ~= grappleSession then return end
+						if os.clock() < (humanoid:GetAttribute("PhysicsServerUntil") or 0) then return end
 						if assembly:CanSetNetworkOwnership() and assembly:GetNetworkOwner() == nil then
-							if previousOwner and previousOwner.Parent == Players then
+							if humanoid:GetAttribute("Ragdolled") then
+								Ragdoll.RefreshOwnership(humanoid)
+							elseif previousOwner and previousOwner.Parent == Players then
 								assembly:SetNetworkOwner(previousOwner)
 							else
 								assembly:SetNetworkOwnershipAuto()

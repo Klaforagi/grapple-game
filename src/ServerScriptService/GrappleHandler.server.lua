@@ -66,28 +66,6 @@ local function getFirePoint(tool: Tool): Attachment?
 	return firePoint
 end
 
-local function setCharacterNetworkOwner(character: Model, owner: Player?)
-	-- Keep every ragdoll assembly under one simulator during a drag.
-	local seen = {}
-	local root = character:FindFirstChild("HumanoidRootPart")
-	local rootAssigned = false
-	for _, instance in ipairs(character:GetDescendants()) do
-		if instance:IsA("BasePart") then
-			local assembly = instance.AssemblyRootPart or instance
-			if seen[assembly] then continue end
-			seen[assembly] = true
-			local ok, assigned = pcall(function()
-				if assembly:CanSetNetworkOwnership() then
-					assembly:SetNetworkOwner(owner)
-					return true
-				end
-			end)
-			if root and assembly == (root.AssemblyRootPart or root) then rootAssigned = ok and assigned == true end
-		end
-	end
-	return rootAssigned
-end
-
 local function restoreAutomaticNetworkOwnership(character: Model)
 	for _, instance in ipairs(character:GetDescendants()) do
 		if instance:IsA("BasePart") then
@@ -108,10 +86,11 @@ local function finishVictimHandoff(state, departingPlayer)
 	physicsSessions[character] = nil
 	local victim = state.victimPlayer
 	if character.Parent and humanoid.Parent == character then
+		humanoid:SetAttribute("GrapplePhysicsOwner", nil)
 		-- The rope is already gone. Preserve flight momentum and never teleport
 		-- to the server's possibly older copy of the owner's last position.
 		if victim and victim ~= departingPlayer and victim.Parent == Players and victim.Character == character then
-			setCharacterNetworkOwner(character, victim)
+			Ragdoll.RefreshOwnership(humanoid)
 		else
 			restoreAutomaticNetworkOwnership(character)
 		end
@@ -294,6 +273,7 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	nextPhysicsSession += 1
 	state.physicsSession = nextPhysicsSession
 	physicsSessions[hitModel] = state
+	hitHumanoid:SetAttribute("GrapplePhysicsOwner", state.owner.UserId)
 	hitHumanoid:SetAttribute("GrapplePhysicsSession", state.physicsSession)
 	hitHumanoid:SetAttribute("GrapplePhysicsLocked", true)
 	if victimPlayer then
@@ -305,7 +285,7 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	Ragdoll.Set(hitHumanoid, true)
 	hitHumanoid:SetAttribute("GrappledBy", state.owner.UserId)
 	state.ownershipTransferred = true
-	if not setCharacterNetworkOwner(hitModel, state.owner) then
+	if not Ragdoll.RefreshOwnership(hitHumanoid) then
 		warn("[Grapple] Victim root cannot be assigned to the grappler; releasing tether")
 		disconnectRope(state.owner, true)
 		return
