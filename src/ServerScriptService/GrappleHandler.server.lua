@@ -236,14 +236,10 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	if not hitHumanoid then
 		if not WallMode[state.owner] then disconnectRope(state.owner) return end
 		PlaySound(hit, sound("HitWall"))
-		local root = state.character:FindFirstChild("HumanoidRootPart")
-		if not root then disconnectRope(state.owner) return end
-		local origin = Instance.new("Attachment")
-		origin.Name = "GrappleOrigin"
-		origin.Parent = root
-		state.ownerAttachment = origin
 		local attachment = createImpactAttachment(state.owner, hit, position)
-		local rope = makeRope(state, origin, attachment, (root.Position - position).Magnitude)
+		-- Wall ropes originate at the gun itself. FirePoint is part of the tool
+		-- rig, so do not register it for session cleanup.
+		local rope = makeRope(state, firePoint, attachment, (firePoint.WorldPosition - position).Magnitude)
 		state.tool:SetAttribute("HasGrappled", true)
 		Remotes.GrappledWall:FireClient(state.owner, attachment, rope, rope:FindFirstChild("RopeVisual"))
 		return
@@ -462,8 +458,23 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 		hitbox.CFrame = CFrame.new(nextPosition, nextPosition + direction)
 		local hit, impactPosition = nil, nil
 		if WallMode[player] then
-			local result = Workspace:Raycast(lastPosition, nextPosition - lastPosition, rayParams)
-			if result and result.Instance:IsA("BasePart") then hit, impactPosition = result.Instance, result.Position end
+			-- Wall mode treats characters as transparent: continue the same segment
+			-- after every humanoid model until a real world part is found.
+			local excluded = {character, tool, hitboxFolder}
+			for _ = 1, 16 do
+				rayParams.FilterDescendantsInstances = excluded
+				local result = Workspace:Raycast(lastPosition, nextPosition - lastPosition, rayParams)
+				if not result then break end
+				local _, humanoid = characterFromPart(result.Instance)
+				if humanoid then
+					table.insert(excluded, humanoid.Parent)
+				elseif result.Instance:IsA("BasePart") then
+					hit, impactPosition = result.Instance, result.Position
+					break
+				else
+					break
+				end
+			end
 		else
 			local segment = nextPosition - lastPosition
 			local size = hitbox.Size

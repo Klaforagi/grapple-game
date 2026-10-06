@@ -576,10 +576,23 @@ return function(sources)
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
 	assert(gun:GetAttribute("WallMode") == true, "duplicate X handlers cancelled target mode")
-	world.Raycast = function() return {Instance = wall, Position = V.new(0, 0, 100)} end
+	local function excludes(filter, object)
+		for _, item in ipairs(filter or {}) do if item == object then return true end end
+		return false
+	end
+	world.Raycast = function(_, _, _, params)
+		-- A humanoid in the flight path must be transparent in wall mode.
+		if not excludes(params.FilterDescendantsInstances, victimCharacter) then
+			return {Instance = victimRoot, Position = victimRoot.Position}
+		end
+		return {Instance = wall, Position = V.new(0, 0, 100)}
+	end
 	now += 0.2
 	remotes.FireGrapple.OnServerEvent:Emit(attacker, V.new(0, 0, 100), V.new(0, 0, -100))
 	local wallRope = assert(wall:FindFirstChildWhichIsA("RopeConstraint"))
+	local firePoint = assert(gun:FindFirstChild("FirePoint", true))
+	assert(wallRope.Attachment0 == firePoint, "wall rope did not originate at the gun")
+	assert(not victimHumanoid:GetAttribute("GrappledBy"), "wall mode attached to a player in its path")
 	attackerRoot.AssemblyLinearVelocity = V.new(12, 0, 0)
 	remotes.ChangeLength.OnServerEvent:Emit(attacker, -1e6)
 	assert(wallRope.Length == config.minRopeLength and not wallRope.WinchEnabled, "wall reel did not immediately set fixed length")
