@@ -133,9 +133,9 @@ local function launch(humanoid, state, now)
 	humanoid:SetAttribute("PhysicsServerUntil", now + SERVER_HOLD)
 	Ragdoll.RefreshOwnership(humanoid)
 	local assemblies = {}
+	local bodies = {}
 	local root = character:FindFirstChild("HumanoidRootPart")
 	local rootAssembly = root and (root.AssemblyRootPart or root)
-	local tumble = BombPhysics.TumbleVelocity(state.velocity, Config.bombTumbleSpeed or 2.5)
 	if Config.bombDebugRagdoll then
 		Ragdoll.ReportBombRig(humanoid, "before launch")
 		local revision = humanoid:GetAttribute("BombBlastRevision")
@@ -153,18 +153,17 @@ local function launch(humanoid, state, now)
 		if not assembly.Anchored and assembly:CanSetNetworkOwnership() then
 			local mass = assembly.AssemblyMass
 			if mass > 0 and mass < math.huge then
-				-- Correct to one desired velocity; do not stack launch energy or
-				-- multiply the impulse by the number of welded body parts.
-				assembly:ApplyImpulse((state.velocity - assembly.AssemblyLinearVelocity) * mass)
-				-- A standing ragdoll with equal limb velocities stays standing in
-				-- free fall. Start a small relative rotation AFTER joints split,
-				-- while the server owns them, so it visibly folds before landing.
-				-- Set once rather than accumulate spin or drive it every frame.
-				if tumble.Magnitude > 0 then
-					assembly.AssemblyAngularVelocity = tumble * (assembly == rootAssembly and 1 or -0.5)
-				end
+				table.insert(bodies, {assembly = assembly, mass = mass,
+					position = assembly.AssemblyCenterOfMass or assembly.Position, isRoot = assembly == rootAssembly})
 			end
 		end
+	end
+	BombPhysics.LaunchMotion(bodies, state.velocity, Config.bombTumbleSpeed or 3.5, Config.bombLimbKickSpeed or 3)
+	for _, body in ipairs(bodies) do
+		-- One bounded launch per assembly, under server ownership. No persistent
+		-- mover fights the joint limits/collisions or keeps spinning after landing.
+		body.assembly:ApplyImpulse((body.velocity - body.assembly.AssemblyLinearVelocity) * body.mass)
+		body.assembly.AssemblyAngularVelocity = body.angular
 	end
 end
 

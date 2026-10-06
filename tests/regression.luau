@@ -1021,6 +1021,31 @@ return function(sources)
 	assert(rightTumble.Z < 0 and leftTumble.Z > 0, "blast tumble does not pitch away from explosion")
 	assert(bombPhysics.TumbleVelocity(V.zero, 1000).Magnitude == 4, "tumble configuration can create excessive spin")
 	assert(bombPhysics.TumbleVelocity(V.zero, 0).Magnitude == 0, "tumble cannot be disabled")
+	local motionVelocity = V.new(20, 160, 0)
+	for _, extent in ipairs({1, 1000}) do
+		local bodies = {
+			{position = V.zero, mass = 30, isRoot = true},
+			{position = V.new(-3, 1, 0) * extent, mass = 2},
+			{position = V.new(1, -3, 1) * extent, mass = 4},
+		}
+		bombPhysics.LaunchMotion(bodies, motionVelocity, 3.5, 3)
+		local momentum = V.zero
+		for _, body in ipairs(bodies) do
+			momentum += body.velocity * body.mass
+			assert((body.velocity - motionVelocity).Magnitude <= 12.001, "limb kick is unbounded on large avatars")
+			assert(body.angular.Magnitude <= 5.001, "limb spin is unbounded")
+		end
+		assert((momentum / 36 - motionVelocity).Magnitude < 0.001, "tumble changed the center-of-mass launch trajectory")
+		assert((bodies[2].velocity - bodies[3].velocity).Magnitude > 0.1, "limbs still receive identical travel velocities")
+		assert(bodies[1].angular:Dot(bodies[2].angular) > 0, "limb spin cancels the torso's tumble")
+	end
+	local orbitBodies = {{position = V.new(0, 3, 0), mass = 5}, {position = V.new(0, -3, 0), mass = 5}}
+	bombPhysics.LaunchMotion(orbitBodies, V.new(0, 150, 0), 3, 0)
+	assert(orbitBodies[1].velocity.Z == 9 and orbitBodies[2].velocity.Z == -9, "tumble lacks compatible orbital limb velocity")
+	bombPhysics.LaunchMotion(orbitBodies, motionVelocity, 0, 0)
+	for _, body in ipairs(orbitBodies) do
+		assert((body.velocity - motionVelocity).Magnitude == 0 and body.angular.Magnitude == 0, "disabled launch motion still adds tumble")
+	end
 	for _, offset in ipairs({V.new(10, -1.5, 0), V.new(8, 3, 5), V.new(0, -4, 0)}) do
 		local velocity = bombPhysics.ThrowVelocity(offset, 196.2, 70, 6)
 		local flight = (velocity.Y + math.sqrt(velocity.Y^2 - 2 * 196.2 * offset.Y)) / 196.2
@@ -1154,7 +1179,7 @@ return function(sources)
 	assert((splitLimb.AssemblyLinearVelocity - launched).Magnitude < 0.001, "newly split ragdoll limb missed launch")
 	local expectedTumble = bombPhysics.TumbleVelocity(launched, config.bombTumbleSpeed)
 	assert((attackerRoot.AssemblyAngularVelocity - expectedTumble).Magnitude < 0.001, "torso did not start a bounded tumble during launch")
-	assert((splitLimb.AssemblyAngularVelocity + expectedTumble * 0.5).Magnitude < 0.001, "limbs retained the torso's rigid airborne pose")
+	assert((splitLimb.AssemblyAngularVelocity - expectedTumble).Magnitude < 0.001, "co-located mock assemblies received opposing spin")
 	attackerRoot.AssemblyAngularVelocity = V.new(0.2, 0.3, 0.4)
 	runService.Heartbeat:Emit(1 / 60)
 	assert((attackerRoot.AssemblyAngularVelocity - V.new(0.2, 0.3, 0.4)).Magnitude < 0.001, "bomb continuously forced ragdoll spin")
