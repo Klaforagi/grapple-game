@@ -38,6 +38,36 @@ local preparedTools = setmetatable({}, {__mode = "k"})
 -- Includes detached victims awaiting handoff. Identity guards invalidate old timers.
 local physicsSessions = {}
 local nextPhysicsSession = 0
+local cosmeticColors = {
+	Black = Color3.fromRGB(20, 20, 20), White = Color3.fromRGB(255, 255, 255), Red = Color3.fromRGB(220, 55, 55),
+	Orange = Color3.fromRGB(242, 143, 43), Yellow = Color3.fromRGB(245, 220, 55), Green = Color3.fromRGB(65, 180, 90),
+	Blue = Color3.fromRGB(55, 125, 230), Purple = Color3.fromRGB(145, 82, 210), Pink = Color3.fromRGB(240, 105, 175),
+	Cyan = Color3.fromRGB(35, 210, 225), Teal = Color3.fromRGB(35, 155, 145), Lime = Color3.fromRGB(150, 225, 55),
+}
+
+local function applyCosmetics(player: Player, tool: Tool?)
+	if not tool then return end
+	local gunColor = cosmeticColors[player:GetAttribute("GrappleGunColor")]
+	if gunColor then
+		for _, instance in ipairs(tool:GetDescendants()) do
+			if instance:IsA("BasePart") then instance.Color = gunColor end
+		end
+		local bolt = tool:FindFirstChild("Bolt", true)
+		if bolt and bolt:IsA("BasePart") then bolt.Color = gunColor end
+	end
+	local ropeColor = cosmeticColors[player:GetAttribute("GrappleRopeColor")]
+	local beam = tool:FindFirstChild("Rope")
+	if ropeColor and beam and beam:IsA("Beam") then beam.Color = ColorSequence.new(ropeColor) end
+	local state = Active[player]
+	if ropeColor and state and state.rope then state.rope.Color = BrickColor.new(ropeColor) end
+end
+
+local function findInventoryTool(player: Player, name: string): Tool?
+	local character = player.Character
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	local tool = (character and character:FindFirstChild(name)) or (backpack and backpack:FindFirstChild(name))
+	return tool and tool:IsA("Tool") and tool or nil
+end
 
 local function getTool(player: Player): Tool?
 	local character = player.Character
@@ -47,6 +77,7 @@ local function getTool(player: Player): Tool?
 		ToolSetup.Prepare(tool, true)
 		tool:SetAttribute("WallMode", WallMode[player] == true)
 	end
+	if tool and tool:IsA("Tool") then applyCosmetics(player, tool) end
 	return tool and tool:IsA("Tool") and tool or nil
 end
 
@@ -245,6 +276,12 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 		return
 	end
 
+	-- A player hit always uses the normal grapple behavior. Leaving wall mode
+	-- here keeps the next shot aimed at players unless the owner enables it again.
+	if WallMode[state.owner] then
+		WallMode[state.owner] = false
+		state.tool:SetAttribute("WallMode", false)
+	end
 	local victimPlayer = Players:GetPlayerFromCharacter(hitModel)
 	if victimPlayer == state.owner or hitHumanoid.Health <= 0 then disconnectRope(state.owner) return end
 	local previousSession = physicsSessions[hitModel]
@@ -383,6 +420,19 @@ Remotes.ToggleWallMode.OnServerEvent:Connect(function(player)
 	if tool then tool:SetAttribute("WallMode", WallMode[player]) end
 end)
 
+Remotes.SetGrappleColor.OnServerEvent:Connect(function(player, target, colorName)
+	if (target ~= "Gun" and target ~= "Rope" and target ~= "Bomb") or typeof(colorName) ~= "string" or not cosmeticColors[colorName] then return end
+	if target == "Bomb" then
+		player:SetAttribute("BombColor", colorName)
+		local bomb = findInventoryTool(player, Config.bombToolName)
+		local handle = bomb and bomb:FindFirstChild("Handle")
+		if handle and handle:IsA("BasePart") then handle.Color = cosmeticColors[colorName] end
+		return
+	end
+	player:SetAttribute(target == "Gun" and "GrappleGunColor" or "GrappleRopeColor", colorName)
+	applyCosmetics(player, findInventoryTool(player, Config.toolName))
+end)
+
 local function fireGrapple(player, hitPosition, cameraPosition)
 	local now = os.clock()
 	if lastFire[player] and now - lastFire[player] < FIRE_INTERVAL then return end
@@ -416,7 +466,7 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	tool:SetAttribute("InCooldown", true)
 	local beam = tool:FindFirstChild("Rope")
 	if beam and beam:IsA("Beam") then beam.Enabled = true end
-	local bolt = tool:FindFirstChild("Bolt")
+	local bolt = tool:FindFirstChild("Bolt", true)
 	if bolt and bolt:IsA("BasePart") then bolt.Transparency = 1 end
 	PlaySound(tool:FindFirstChild("Handle"), sound("Fire"))
 	state.connections.ownerDied = humanoid.Died:Connect(function() disconnectRope(player, true) end)
@@ -430,6 +480,12 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	end)
 	state.connections.toolDestroyed = tool.Destroying:Connect(function() disconnectRope(player, true) end)
 	local hitbox = createHitbox(state, origin, direction)
+	local boltColor = cosmeticColors[player:GetAttribute("GrappleGunColor")]
+	if boltColor then
+		hitbox:SetAttribute("BoltColor", boltColor)
+	elseif bolt and bolt:IsA("BasePart") then
+		hitbox:SetAttribute("BoltColor", bolt.Color)
+	end
 	if beam and beam:IsA("Beam") then
 		local flightAttachment = Instance.new("Attachment")
 		flightAttachment.Name = "GrappleFlightAttachment"
@@ -458,23 +514,8 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 		hitbox.CFrame = CFrame.new(nextPosition, nextPosition + direction)
 		local hit, impactPosition = nil, nil
 		if WallMode[player] then
-			-- Wall mode treats characters as transparent: continue the same segment
-			-- after every humanoid model until a real world part is found.
-			local excluded = {character, tool, hitboxFolder}
-			for _ = 1, 16 do
-				rayParams.FilterDescendantsInstances = excluded
-				local result = Workspace:Raycast(lastPosition, nextPosition - lastPosition, rayParams)
-				if not result then break end
-				local _, humanoid = characterFromPart(result.Instance)
-				if humanoid then
-					table.insert(excluded, humanoid.Parent)
-				elseif result.Instance:IsA("BasePart") then
-					hit, impactPosition = result.Instance, result.Position
-					break
-				else
-					break
-				end
-			end
+			local result = Workspace:Raycast(lastPosition, nextPosition - lastPosition, rayParams)
+			if result and result.Instance:IsA("BasePart") then hit, impactPosition = result.Instance, result.Position end
 		else
 			local segment = nextPosition - lastPosition
 			local size = hitbox.Size
@@ -571,10 +612,20 @@ end)
 
 local function watchPlayer(player: Player)
 	local watched = setmetatable({}, {__mode = "k"})
+	local function refreshCosmetics()
+		applyCosmetics(player, findInventoryTool(player, Config.toolName))
+		local bomb = findInventoryTool(player, Config.bombToolName)
+		local handle = bomb and bomb:FindFirstChild("Handle")
+		local color = cosmeticColors[player:GetAttribute("BombColor")]
+		if color and handle and handle:IsA("BasePart") then handle.Color = color end
+	end
+	for _, key in ipairs({"GrappleGunColor", "GrappleRopeColor", "BombColor"}) do
+		player:GetAttributeChangedSignal(key):Connect(refreshCosmetics)
+	end
 	local function watchInventory(container)
 		if watched[container] then return end
 		watched[container] = true
-		container.ChildAdded:Connect(function(tool) ToolSetup.Prepare(tool, true) end)
+		container.ChildAdded:Connect(function(tool) ToolSetup.Prepare(tool, true) refreshCosmetics() end)
 		for _, tool in ipairs(container:GetChildren()) do ToolSetup.Prepare(tool, true) end
 	end
 	player.ChildAdded:Connect(function(child)

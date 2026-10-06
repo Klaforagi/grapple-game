@@ -14,13 +14,19 @@ local issued = setmetatable({}, {__mode = "k"})
 local SERVER_HOLD = 0.3
 local bombCaster = FastCast.new()
 
-local function sphere(name, size)
+local bombColors = {
+	Black = Color3.fromRGB(20, 20, 20), White = Color3.fromRGB(255, 255, 255), Red = Color3.fromRGB(220, 55, 55), Orange = Color3.fromRGB(242, 143, 43),
+	Yellow = Color3.fromRGB(245, 220, 55), Green = Color3.fromRGB(65, 180, 90), Blue = Color3.fromRGB(55, 125, 230), Purple = Color3.fromRGB(145, 82, 210),
+	Pink = Color3.fromRGB(240, 105, 175), Cyan = Color3.fromRGB(35, 210, 225), Teal = Color3.fromRGB(35, 155, 145), Lime = Color3.fromRGB(150, 225, 55),
+}
+
+local function sphere(name, size, color)
 	local part = Instance.new("Part")
 	part.Name = name
 	part.Shape = Enum.PartType.Ball
 	part.Size = Vector3.new(size, size, size)
 	part.Material = Enum.Material.Neon
-	part.Color = Color3.fromRGB(0, 255, 255)
+	part.Color = color or Color3.fromRGB(0, 255, 255)
 	part.TopSurface, part.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
 	return part
 end
@@ -50,7 +56,7 @@ local function giveBomb(player, character)
 	tool.ToolTip = "Throw a bomb / " .. Config.bombFuse .. " second fuse"
 	tool.CanBeDropped = false
 	tool:SetAttribute("BombTool", true)
-	local handle = sphere("Handle", 1.2)
+	local handle = sphere("Handle", 1.2, bombColors[player:GetAttribute("BombColor")])
 	handle.CanCollide, handle.CanTouch, handle.CanQuery, handle.Massless = false, false, false, true
 	handle.Parent = tool
 	tool.Parent = backpack
@@ -228,9 +234,10 @@ end
 
 local function explode(bomb, position)
 	-- Remove the sticky weld before any victim is ragdolled/launched.
+	local bombColor = bomb.Color
 	bomb:Destroy()
 	local radius = Config.bombRadius
-	local flash = sphere("BombBlast", 1)
+	local flash = sphere("BombBlast", 1, bombColor)
 	flash.Anchored, flash.CanCollide, flash.CanTouch, flash.CanQuery = true, false, false, false
 	flash.Position, flash.Transparency = position, 0.35
 	flash.Parent = workspace
@@ -272,7 +279,7 @@ Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 	local now = os.clock()
 	if now - (lastThrow[player] or -math.huge) < Config.bombCooldown then return end
 	lastThrow[player] = now
-	local bomb = sphere("ThrownBomb", 1.2)
+	local bomb = sphere("ThrownBomb", 1.2, bombColors[player:GetAttribute("BombColor")])
 	local handle = tool:FindFirstChild("Handle")
 	bomb.Position = handle and handle:IsA("BasePart") and handle.Position or root.Position + Vector3.new(0, 1.5, 0)
 	-- This is a cosmetic shell driven by FastCast, never a competing physics body.

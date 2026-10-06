@@ -217,7 +217,7 @@ return function(sources)
 	end
 	local config = execute(sources.config)
 	local remotes = {}
-	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "StruggleInput", "StruggleProgress", "EquipRagdollTool"}) do
+	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "StruggleInput", "StruggleProgress", "EquipRagdollTool", "SetGrappleColor", "ServerRestartNotice"}) do
 		remotes[name] = instance("RemoteEvent", name)
 	end
 	local ragdoll = execute(sources.ragdoll)
@@ -576,23 +576,12 @@ return function(sources)
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
 	assert(gun:GetAttribute("WallMode") == true, "duplicate X handlers cancelled target mode")
-	local function excludes(filter, object)
-		for _, item in ipairs(filter or {}) do if item == object then return true end end
-		return false
-	end
-	world.Raycast = function(_, _, _, params)
-		-- A humanoid in the flight path must be transparent in wall mode.
-		if not excludes(params.FilterDescendantsInstances, victimCharacter) then
-			return {Instance = victimRoot, Position = victimRoot.Position}
-		end
-		return {Instance = wall, Position = V.new(0, 0, 100)}
-	end
+	world.Raycast = function() return {Instance = wall, Position = V.new(0, 0, 100)} end
 	now += 0.2
 	remotes.FireGrapple.OnServerEvent:Emit(attacker, V.new(0, 0, 100), V.new(0, 0, -100))
 	local wallRope = assert(wall:FindFirstChildWhichIsA("RopeConstraint"))
 	local firePoint = assert(gun:FindFirstChild("FirePoint", true))
 	assert(wallRope.Attachment0 == firePoint, "wall rope did not originate at the gun")
-	assert(not victimHumanoid:GetAttribute("GrappledBy"), "wall mode attached to a player in its path")
 	attackerRoot.AssemblyLinearVelocity = V.new(12, 0, 0)
 	remotes.ChangeLength.OnServerEvent:Emit(attacker, -1e6)
 	assert(wallRope.Length == config.minRopeLength and not wallRope.WinchEnabled, "wall reel did not immediately set fixed length")
@@ -612,14 +601,13 @@ return function(sources)
 	-- second inventory command against a gun that has already been reselected.
 	gun.Unequipped:Emit()
 	assert(unequipRope.destroyed and gun.Parent == attacker.Character, "rope cleanup put away a reselected gun")
-	world.Raycast = function() return nil end
+	world.Raycast = function() return {Instance = victimRoot, Position = victimRoot.Position} end
 	now += 0.2
-	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
 	gun:SetAttribute("InCooldown", true)
 	hitParts = {victimRoot}
 	now += 0.2
 	remotes.FireGrapple.OnServerEvent:Emit(attacker, victimRoot.Position, V.new(0, 0, -100))
-	assert(victimHumanoid:GetAttribute("GrappledBy") == attacker.UserId, "zoomed camera or stale UI cooldown jammed firing")
+	assert(victimHumanoid:GetAttribute("GrappledBy") == attacker.UserId and not gun:GetAttribute("WallMode"), "wall mode player hit did not become a normal grapple and disable wall mode")
 	fire()
 	-- Death must remove the physical rope but leave the dead character ragdolled.
 	hitParts = {victimRoot}

@@ -15,6 +15,15 @@ local function add(hitbox)
 	visual.Size = Vector3.new(0.3, 0.3, 1)
 	visual.Anchored, visual.CanCollide, visual.CanQuery, visual.CanTouch = true, false, false, false
 	visual.CastShadow, visual.Transparency = false, 0
+	local boltColor = hitbox:GetAttribute("BoltColor")
+	if typeof(boltColor) == "Color3" then
+		visual.Color = boltColor
+		visual.Material = Enum.Material.Neon
+		if visual:IsA("MeshPart") then visual.TextureID = "" end
+		for _, instance in ipairs(visual:GetDescendants()) do
+			if instance:IsA("SpecialMesh") then instance.TextureId = "" end
+		end
+	end
 	visual.CFrame = hitbox.CFrame
 	visual.Parent = workspace
 	visuals[hitbox] = visual
