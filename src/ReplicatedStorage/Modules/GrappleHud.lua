@@ -8,7 +8,6 @@ local Config = require(storage:WaitForChild("GrappleConfig"))
 local Remotes = require(script.Parent:WaitForChild("GrappleRemotes"))
 local ToolClient = require(script.Parent:WaitForChild("GrappleToolClient"))
 local ToolSetup = require(script.Parent:WaitForChild("GrappleToolSetup"))
-local RagdollToolClient = require(script.Parent:WaitForChild("RagdollToolClient"))
 local M = {}
 
 function M.Init()
@@ -46,45 +45,27 @@ function M.Init()
 	local screen = make("ScreenGui", playerGui, {
 		Name = "GrappleHUD", ResetOnSpawn = false, DisplayOrder = 20, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	})
-	local accent = Color3.fromRGB(104, 231, 206)
 	local function rounded(frame)
 		make("UICorner", frame, {CornerRadius = UDim.new(0, 12)})
 	end
-	local panel = make("Frame", screen, {
-		Name = "Controls", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 18, 1, -24),
-		Size = UDim2.fromOffset(380, 250), BackgroundColor3 = Color3.fromRGB(18, 23, 32), BackgroundTransparency = 0.08,
-	})
-	rounded(panel)
-	make("UIStroke", panel, {Color = Color3.fromRGB(61, 76, 90), Thickness = 1})
-	local scale = make("UIScale", panel, {Scale = 1})
-	local responsiveText = {}
 	local function label(parent, text, position, size, color)
 		local instance = make("TextLabel", parent, {
 			Text = text, Position = position, Size = size, BackgroundTransparency = 1,
 			TextColor3 = color or Color3.fromRGB(232, 240, 247), TextSize = 15, Font = Enum.Font.GothamMedium,
 			TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
 		})
-		table.insert(responsiveText, {instance = instance, size = 15})
 		return instance
 	end
-	label(panel, "GRAPPLE", UDim2.fromOffset(18, 10), UDim2.fromOffset(170, 24), accent)
-	local mode = label(panel, "", UDim2.fromOffset(196, 10), UDim2.fromOffset(166, 24))
-	mode.TextXAlignment = Enum.TextXAlignment.Right
-	local status = label(panel, "", UDim2.fromOffset(18, 39), UDim2.fromOffset(344, 22))
-	local length = label(panel, "", UDim2.fromOffset(18, 67), UDim2.fromOffset(344, 20))
-	local track = make("Frame", panel, {Position = UDim2.fromOffset(18, 93), Size = UDim2.fromOffset(344, 5), BackgroundColor3 = Color3.fromRGB(45, 57, 70), BorderSizePixel = 0})
-	local fill = make("Frame", track, {Size = UDim2.fromScale(0, 1), BackgroundColor3 = accent, BorderSizePixel = 0})
 	local function button(parent, text, position, size, callback)
 		local b = make("TextButton", parent, {
 			Text = text, Position = position, Size = size, BackgroundColor3 = Color3.fromRGB(39, 51, 65),
 			TextColor3 = Color3.fromRGB(234, 244, 250), TextSize = 13, Font = Enum.Font.GothamMedium, AutoButtonColor = true,
 		})
-		table.insert(responsiveText, {instance = b, size = 13})
 		rounded(b)
 		if callback then b.Activated:Connect(callback) end
 		return b
 	end
-	local currentRope, targetName
+	local currentRope
 	local displayLength = 0
 	local shorten, lengthen = false, false
 	local struggling = false
@@ -101,15 +82,32 @@ function M.Init()
 		displayLength = math.clamp(displayLength + delta, minimum, Config.maxRopeLength)
 		Remotes.ChangeLength:FireServer(displayLength)
 	end
-	local function toggleMode()
-		if tool() and not struggling then Remotes.ToggleWallMode:FireServer() end
-	end
 	local function ragdoll() Remotes.ToggleRagdoll:FireServer() end
-	local function equipRagdollTool(toolName)
-		RagdollToolClient.Select(toolName)
+	-- A compact touch-only reel replaces the former full-screen grapple panel.
+	-- Its normalized position keeps it at 75% across and 95% down on any screen.
+	local reelControls = make("Frame", screen, {
+		Name = "ReelControls", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.75, 0, 0.95, 0),
+		Size = UDim2.fromOffset(78, 36), BackgroundTransparency = 1, Visible = false,
+	})
+	local reelScale = make("UIScale", reelControls, {Scale = 1})
+	local function styleReelLabel(textLabel)
+		textLabel.Font = Enum.Font.GothamBold
+		textLabel.TextColor3 = Color3.fromRGB(27, 42, 53)
+		textLabel.BackgroundTransparency = 1
+		make("UIStroke", textLabel, {Color = Color3.fromRGB(255, 255, 255), Thickness = 2})
 	end
-	local shortButton = button(panel, Config.shortenRope.Name .. "  Reel in", UDim2.fromOffset(18, 110), UDim2.fromOffset(167, 36))
-	local longButton = button(panel, Config.lengthenRope.Name .. "  Let out", UDim2.fromOffset(195, 110), UDim2.fromOffset(167, 36))
+	local ropeLength = label(reelControls, "", UDim2.fromOffset(-36, -22), UDim2.fromOffset(150, 18))
+	ropeLength.TextSize, ropeLength.TextXAlignment = 11, Enum.TextXAlignment.Center
+	styleReelLabel(ropeLength)
+	local shortButton = button(reelControls, "−", UDim2.fromOffset(0, 0), UDim2.fromOffset(34, 36))
+	shortButton.Font, shortButton.TextSize = Enum.Font.GothamBold, 22
+	make("UIStroke", shortButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
+	local longButton = button(reelControls, "+", UDim2.fromOffset(44, 0), UDim2.fromOffset(34, 36))
+	longButton.Font, longButton.TextSize = Enum.Font.GothamBold, 22
+	make("UIStroke", longButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
+	local reelHint = label(reelControls, "Hold to adjust length", UDim2.fromOffset(-36, 39), UDim2.fromOffset(150, 18))
+	reelHint.TextSize, reelHint.TextXAlignment = 11, Enum.TextXAlignment.Center
+	styleReelLabel(reelHint)
 	local function hold(b, direction)
 		b.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -125,15 +123,6 @@ function M.Init()
 	end
 	hold(shortButton, -1)
 	hold(longButton, 1)
-	local modeButton = button(panel, Config.toggleWallMode.Name .. "  Target mode", UDim2.fromOffset(18, 154), UDim2.fromOffset(167, 36), toggleMode)
-	local ragdollButton = button(panel, Config.ragdollKeybind.Name .. "  Ragdoll", UDim2.fromOffset(195, 154), UDim2.fromOffset(167, 36), ragdoll)
-	local grappleEquipButton = button(panel, "Equip Grapple Gun", UDim2.fromOffset(18, 198), UDim2.fromOffset(167, 36), function()
-		equipRagdollTool(Config.toolName)
-	end)
-	local bombEquipButton = button(panel, "Equip Bomb", UDim2.fromOffset(195, 198), UDim2.fromOffset(167, 36), function()
-		equipRagdollTool(Config.bombToolName)
-	end)
-	grappleEquipButton.Visible, bombEquipButton.Visible = false, false
 	local escape = make("Frame", screen, {
 		Name = "Escape", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 26),
 		Size = UDim2.fromOffset(380, 124), BackgroundColor3 = Color3.fromRGB(39, 22, 30), Visible = false,
@@ -174,7 +163,6 @@ function M.Init()
 	end)
 	local function grapple(target, rope)
 		currentRope = rope
-		targetName = target and (target:IsA("Model") and target.Name or "Wall") or nil
 		displayLength = rope and rope.Length or 0
 		shorten, lengthen = false, false
 	end
@@ -182,7 +170,7 @@ function M.Init()
 	Remotes.GrappledWall.OnClientEvent:Connect(grapple)
 	CAS:BindActionAtPriority("GrappleHUD_TargetMode", function(_, state)
 		if UIS:GetFocusedTextBox() or not tool() or struggling then return Enum.ContextActionResult.Pass end
-		if state == Enum.UserInputState.Begin then toggleMode() end
+		if state == Enum.UserInputState.Begin then Remotes.ToggleWallMode:FireServer() end
 		return Enum.ContextActionResult.Sink
 	end, false, Enum.ContextActionPriority.High.Value + 2, Config.toggleWallMode)
 	UIS.InputBegan:Connect(function(input, processed)
@@ -241,53 +229,14 @@ function M.Init()
 		if uiAccumulator < 0.1 then return end
 		uiAccumulator = 0
 		local camera = workspace.CurrentCamera
-		local s = 1
-		local isPhone = false
 		if camera then
 			local viewport = camera.ViewportSize
-			local widthScale = math.clamp((viewport.X - 32) / 380, 0.5, 1)
-			isPhone = UIS.TouchEnabled and math.min(viewport.X, viewport.Y) < 600
-			-- On phones, make the panel roughly 40% of the viewport width. Larger
-			-- touch devices retain the desktop layout.
-			local touchWidthScale = isPhone and math.clamp(viewport.X * 0.4 / 380, 0.4, 0.55) or 1
-			local heightScale = math.clamp(viewport.Y * 0.4 / 250, 0.5, 1)
-			s = math.min(widthScale, touchWidthScale, heightScale)
+			reelScale.Scale = math.clamp(math.min(viewport.X / 800, viewport.Y / 450), 0.7, 1.2)
 		end
-		scale.Scale, escapeScale.Scale = s, s
-		local compactHud = isPhone
-		local textScale = compactHud and math.min(2.25, 1 / s) or 1
-		for _, text in ipairs(responsiveText) do
-			text.instance.TextSize = math.round(text.size * textScale)
-		end
-		local equipped = tool()
-		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-		local ragdolled = humanoid ~= nil and humanoid:GetAttribute("Ragdolled") == true
-		local canEquipRagdollTools = ragdolled and humanoid.Health > 0
-			and humanoid:GetAttribute("GrapplePhysicsLocked") ~= true
-			and humanoid:GetAttribute("GrappleLocalPhysicsLock") ~= true
-		local backpack = player:FindFirstChildOfClass("Backpack")
-		grappleEquipButton.Visible = canEquipRagdollTools and backpack ~= nil
-			and (backpack:FindFirstChild(Config.toolName) ~= nil or equipped ~= nil)
-		bombEquipButton.Visible = canEquipRagdollTools and backpack ~= nil
-			and (backpack:FindFirstChild(Config.bombToolName) ~= nil or player.Character:FindFirstChild(Config.bombToolName) ~= nil)
-		grappleEquipButton.Text = equipped and "Put away Grapple" or "Equip Grapple"
-		bombEquipButton.Text = player.Character and player.Character:FindFirstChild(Config.bombToolName) and "Put away Bomb" or "Equip Bomb"
-		panel.Size = UDim2.fromOffset(380, canEquipRagdollTools and 250 or 214)
-		mode.Text = equipped and (equipped:GetAttribute("WallMode") and (compactHud and "WALL" or "WALL MODE") or (compactHud and "PLAYER" or "PLAYER MODE")) or (compactHud and "OFF" or "UNEQUIPPED")
-		shortButton.Text = compactHud and (Config.shortenRope.Name .. "  In") or (Config.shortenRope.Name .. "  Reel in")
-		longButton.Text = compactHud and (Config.lengthenRope.Name .. "  Out") or (Config.lengthenRope.Name .. "  Let out")
-		modeButton.Text = compactHud and (Config.toggleWallMode.Name .. "  Mode") or (Config.toggleWallMode.Name .. "  Target mode")
-		ragdollButton.Text = compactHud and (Config.ragdollKeybind.Name .. "  Rag") or (Config.ragdollKeybind.Name .. "  Ragdoll")
 		if currentRope and not currentRope.Parent then grapple() end
-		panel.Visible = equipped ~= nil or currentRope ~= nil or ragdolled
+		reelControls.Visible = UIS.TouchEnabled and currentRope ~= nil and tool() ~= nil
 		if currentRope and not shorten and not lengthen then displayLength = currentRope.Length end
-		status.Text = targetName and ((compactHud and "Tethered: " or "Connected to ") .. targetName)
-			or ragdolled and (struggling and (UIS.TouchEnabled and "Grappled / tap to escape" or "Grappled / press Space to escape") or (compactHud and (Config.ragdollKeybind.Name .. " to recover") or Config.ragdollKeybind.Name .. " / Ragdoll button to recover"))
-			or equipped and equipped:GetAttribute("InUse") and (compactHud and "Firing..." or "Hook in flight...")
-			or (compactHud and "Tap to fire" or "Click to fire / click again to release")
-		length.Text = currentRope and string.format(compactHud and "%.1f studs" or "Rope length  %.1f studs", displayLength)
-			or (compactHud and "Aim at player" or "Aim at a player to grapple")
-		fill.Size = UDim2.fromScale(math.clamp(displayLength / Config.maxRopeLength, 0, 1), 1)
+		ropeLength.Text = currentRope and string.format("%.1f studs", displayLength) or ""
 	end)
 end
 return M
