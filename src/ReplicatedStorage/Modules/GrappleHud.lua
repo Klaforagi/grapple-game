@@ -232,8 +232,9 @@ function M.Init()
 	local accumulator, uiAccumulator = 0, 0
 	RunService.Heartbeat:Connect(function(dt)
 		accumulator += dt
-		if accumulator >= 1 / 30 then
-			accumulator %= 1 / 30
+		local reelInterval = Config.ropeReelInterval or 1 / 15
+		if accumulator >= reelInterval then
+			accumulator %= reelInterval
 			if shorten ~= lengthen then change((shorten and -1 or 1) * reelStep()) end
 		end
 		uiAccumulator += dt

@@ -16,7 +16,7 @@ local function sound(name)
 end
 
 local FIRE_INTERVAL = 0.05
-local LENGTH_INTERVAL = 1 / 60
+local LENGTH_INTERVAL = Config.ropeReelInterval or 1 / 15
 local minRopeLength = Config.minRopeLength or Config.MinRopeLength or 0.1
 local maxRopeLength = Config.maxRopeLength or Config.MaxRopeLength or 500
 
@@ -179,6 +179,20 @@ local function createImpactAttachment(player: Player, part: BasePart, position: 
 	return attachment
 end
 
+local function ropeColorFromTool(tool: Tool?): BrickColor
+	local beam = tool and tool:FindFirstChild("Rope")
+	if beam and beam:IsA("Beam") then
+		local keypoints = beam.Color.Keypoints
+		if #keypoints > 0 then
+			-- RopeConstraint has a single BrickColor while Beam supports a color
+			-- sequence. Use the beam's leading color (or the whole color when it
+			-- is solid), converted to the closest supported rope color.
+			return BrickColor.new(keypoints[1].Value)
+		end
+	end
+	return BrickColor.new("Black")
+end
+
 local function makeRope(state, firePoint: Attachment, impactAttachment: Attachment, length: number): RopeConstraint
 	local rope = Instance.new("RopeConstraint")
 	rope.Attachment0 = firePoint
@@ -188,7 +202,7 @@ local function makeRope(state, firePoint: Attachment, impactAttachment: Attachme
 	rope.Restitution = 0
 	rope.Visible = true
 	rope.Thickness = 0.1
-	rope.Color = BrickColor.new("Black")
+	rope.Color = ropeColorFromTool(state.tool)
 	rope.Parent = impactAttachment.Parent
 	local visual = rope:FindFirstChild("RopeVisual")
 	if visual and visual:IsA("Beam") then visual.Enabled = false end

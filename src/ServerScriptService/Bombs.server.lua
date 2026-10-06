@@ -6,11 +6,13 @@ local TweenService = game:GetService("TweenService")
 local Config = require(Storage:WaitForChild("GrappleConfig"))
 local Remotes = require(Storage.Modules:WaitForChild("GrappleRemotes"))
 local BombPhysics = require(Storage.Modules:WaitForChild("BombPhysics"))
+local FastCast = require(Storage.Modules:WaitForChild("FastCastRedux"))
 local Ragdoll = require(Storage.Modules:WaitForChild("RagdollService"))
 local PlaySound = require(Storage.Modules:WaitForChild("PlaySound"))
 local lastThrow, liveBombs, coolingTools, pendingLaunches, stunned = {}, {}, {}, {}, {}
 local issued = setmetatable({}, {__mode = "k"})
 local SERVER_HOLD = 0.3
+local bombCaster = FastCast.new()
 
 local function sphere(name, size)
 	local part = Instance.new("Part")
@@ -57,9 +59,23 @@ local function giveBomb(player, character)
 end
 
 local function cleanupBomb(bomb, state)
+	if state.cleaned then return end
+	state.cleaned = true
 	liveBombs[bomb] = nil
+	if state.cast then
+		state.cast:Terminate()
+		state.cast = nil
+	end
 	for _, connection in ipairs(state.connections) do connection:Disconnect() end
 	table.clear(state.connections)
+end
+
+local function refreshCastFilter(state)
+	if state.raycastParams then
+		-- FastCast snapshots this property between pierce tests, so assign the
+		-- growing table again whenever respawned tools/parts are excluded.
+		state.raycastParams.FilterDescendantsInstances = state.filter
+	end
 end
 
 local function protectThrower(bomb, state, container)
@@ -67,17 +83,19 @@ local function protectThrower(bomb, state, container)
 		if not part:IsA("BasePart") or state.ignored[part] then return end
 		state.ignored[part] = true
 		table.insert(state.filter, part) -- Still ignore equipment if it is reparented later.
+		refreshCastFilter(state)
 		local constraint = Instance.new("NoCollisionConstraint")
 		constraint.Part0, constraint.Part1 = bomb, part
 		constraint.Parent = bomb -- Lasts for the entire fuse, not just the first 0.3 seconds.
 	end
 	table.insert(state.filter, container)
+	refreshCastFilter(state)
 	for _, part in ipairs(container:GetDescendants()) do ignore(part) end
 	table.insert(state.connections, container.DescendantAdded:Connect(ignore))
 end
 
-local function stick(bomb, state, hit, position)
-	if state.stuck or not bomb.Parent or not hit.Parent then return false end
+local function canStick(state, bomb, hit)
+	if state.stuck or not bomb.Parent or not hit or not hit.Parent then return false end
 	if hit == bomb or hit:IsDescendantOf(bomb) or state.ignored[hit] then return false end
 	if hit:IsDescendantOf(state.character)
 		or (state.player.Character and hit:IsDescendantOf(state.player.Character)) then return false end
@@ -88,21 +106,62 @@ local function stick(bomb, state, hit, position)
 		local model = hit:FindFirstAncestorOfClass("Model")
 		if not hit.CanCollide and not (model and model:FindFirstChildOfClass("Humanoid")) then return false end
 	end
+	return true
+end
+
+local function stick(bomb, state, hit, position)
+	if not canStick(state, bomb, hit) then return false end
 	state.stuck = true
-	state.touchConnection:Disconnect()
 	bomb.AssemblyLinearVelocity, bomb.AssemblyAngularVelocity = Vector3.zero, Vector3.zero
 	if position then bomb.Position = position end
 	bomb.CanCollide, bomb.CanTouch, bomb.Massless = false, false, true
 	if hit:IsA("Terrain") then
 		bomb.Anchored = true
 	else
+		bomb.Anchored = false
 		local weld = Instance.new("WeldConstraint")
 		weld.Name = "BombStick"
 		weld.Part0, weld.Part1 = hit, bomb
 		weld.Parent = bomb
 	end
-	state.position = bomb.Position
 	return true
+end
+
+bombCaster.LengthChanged:Connect(function(cast, lastPoint, rayDirection, rayDisplacement)
+	local state = cast.UserData
+	local bomb = state and state.bomb
+	if not state or state.cleaned or state.stuck or not bomb or not bomb.Parent then return end
+	-- FastCast simulates the trajectory; the anchored sphere is only its visual.
+	bomb.Position = lastPoint + rayDirection * rayDisplacement
+end)
+
+bombCaster.RayHit:Connect(function(cast, result)
+	local state = cast.UserData
+	local bomb = state and state.bomb
+	if not state or state.cleaned or not bomb then return end
+	stick(bomb, state, result.Instance, result.Position + result.Normal * 0.6)
+end)
+
+bombCaster.CastTerminating:Connect(function(cast)
+	local state = cast.UserData
+	if state then state.cast = nil end
+end)
+
+local function newCastBehavior(state)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = state.filter
+	state.raycastParams = params
+	local behavior = FastCast.newBehavior()
+	behavior.RaycastParams = params
+	behavior.Acceleration = Vector3.new(0, -workspace.Gravity, 0)
+	behavior.HighFidelityBehavior = FastCast.HighFidelityBehavior.Always
+	behavior.HighFidelitySegmentSize = 0.25
+	behavior.CanPierceFunction = function(_, result)
+		-- Continue through thrower parts, tools, and non-solid visual effects.
+		return not canStick(state, state.bomb, result.Instance)
+	end
+	return behavior
 end
 
 local function queueLaunch(character, humanoid, velocity, now)
@@ -216,10 +275,10 @@ Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 	local bomb = sphere("ThrownBomb", 1.2)
 	local handle = tool:FindFirstChild("Handle")
 	bomb.Position = handle and handle:IsA("BasePart") and handle.Position or root.Position + Vector3.new(0, 1.5, 0)
-	bomb.CustomPhysicalProperties = PhysicalProperties.new(1, 0.6, 0.25)
+	-- This is a cosmetic shell driven by FastCast, never a competing physics body.
+	bomb.Anchored, bomb.CanCollide, bomb.CanTouch, bomb.CanQuery = true, false, false, false
 	bomb.Parent = workspace
-	bomb:SetNetworkOwner(nil)
-	local state = {position = bomb.Position, detonatesAt = now + Config.bombFuse,
+	local state = {bomb = bomb, detonatesAt = now + Config.bombFuse,
 		character = character, player = player, connections = {}, filter = {bomb}, ignored = {}}
 	protectThrower(bomb, state, character)
 	local backpack = player:FindFirstChildOfClass("Backpack")
@@ -227,11 +286,11 @@ Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 	table.insert(state.connections, player.CharacterAdded:Connect(function(nextCharacter)
 		protectThrower(bomb, state, nextCharacter)
 	end))
-	bomb.AssemblyLinearVelocity = BombPhysics.ThrowVelocity(target - bomb.Position, workspace.Gravity, Config.bombThrowSpeed, Config.bombArcHeight)
-	state.touchConnection = bomb.Touched:Connect(function(hit) stick(bomb, state, hit) end)
-	table.insert(state.connections, state.touchConnection)
 	table.insert(state.connections, bomb.Destroying:Connect(function() cleanupBomb(bomb, state) end))
 	liveBombs[bomb] = state
+	local velocity = BombPhysics.ThrowVelocity(target - bomb.Position, workspace.Gravity, Config.bombThrowSpeed, Config.bombArcHeight)
+	state.cast = bombCaster:Fire(bomb.Position, velocity.Unit, velocity, newCastBehavior(state))
+	state.cast.UserData = state
 	hideUntilReady(tool, now + Config.bombCooldown)
 	Debris:AddItem(bomb, Config.bombFuse + 1)
 end)
@@ -272,21 +331,6 @@ RunService.Heartbeat:Connect(function()
 		elseif now >= state.detonatesAt then
 			cleanupBomb(bomb, state)
 			explode(bomb, bomb.Position)
-		elseif not state.stuck then
-			local travel = bomb.Position - state.position
-			if travel.Magnitude > 0.001 then
-				local params = RaycastParams.new()
-				params.FilterType = Enum.RaycastFilterType.Exclude
-				local excluded = table.clone(state.filter)
-				for _ = 1, 8 do
-					params.FilterDescendantsInstances = excluded
-					local result = workspace:Raycast(state.position, travel, params)
-					if not result then break end
-					if stick(bomb, state, result.Instance, result.Position + result.Normal * 0.6) then break end
-					table.insert(excluded, result.Instance)
-				end
-			end
-			state.position = bomb.Position
 		end
 	end
 end)

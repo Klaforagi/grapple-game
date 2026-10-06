@@ -1088,9 +1088,30 @@ return function(sources)
 	explosionSound.TimeLength = 2
 	remotes.ThrowBomb = instance("RemoteEvent", "ThrowBomb")
 	local bombModule = instance("ModuleScript", "BombPhysics", storage.Modules)
+	local fastCastModule = instance("ModuleScript", "FastCastRedux", storage.Modules)
+	local bombCaster
+	local fastCast = {
+		HighFidelityBehavior = {Always = "Always"},
+		newBehavior = function() return {} end,
+		new = function()
+			bombCaster = {LengthChanged = signal(), RayHit = signal(), CastTerminating = signal()}
+			function bombCaster:Fire(origin, direction, velocity, behavior)
+				local cast = {origin = origin, direction = direction, velocity = velocity, behavior = behavior}
+				function cast:Terminate()
+					if self.terminated then return end
+					self.terminated = true
+					bombCaster.CastTerminating:Emit(self)
+				end
+				self.lastCast = cast
+				return cast
+			end
+			return bombCaster
+		end,
+	}
 	local previousRequire = env.require
 	env.require = function(module)
 		if module == bombModule then return bombPhysics end
+		if module == fastCastModule then return fastCast end
 		return previousRequire(module)
 	end
 	local attackerBackpack = instance("Backpack", "Backpack", attacker)
@@ -1116,6 +1137,11 @@ return function(sources)
 	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", nil)
 	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(100, 0, 0))
 	local thrown = assert(world:FindFirstChild("ThrownBomb"))
+	local thrownCast = bombCaster.lastCast
+	assert(thrown.Anchored and not thrown.CanCollide and not thrown.CanTouch, "bomb must be a FastCast-driven visual shell")
+	assert(thrownCast.behavior.Acceleration.Y == -world.Gravity and thrownCast.behavior.HighFidelityBehavior == "Always", "bomb did not configure a high-fidelity gravity cast")
+	bombCaster.LengthChanged:Emit(thrownCast, V.new(1, 2, 3), V.new(1, 0, 0), 4)
+	assert((thrown.Position - V.new(5, 2, 3)).Magnitude < 0.001, "FastCast flight did not update bomb position")
 	attackerHumanoid:SetAttribute("Ragdolled", false)
 	local bombHandle = bombTool:FindFirstChild("Handle")
 	assert(bombHandle.Transparency == 1 and not bombTool.Enabled, "held bomb did not disappear during cooldown")
@@ -1124,24 +1150,24 @@ return function(sources)
 	local count = 0
 	for _, child in ipairs(world:GetChildren()) do if child.Name == "ThrownBomb" then count += 1 end end
 	assert(count == 1, "bomb cooldown allowed duplicate throw")
-	thrown.Touched:Emit(attackerRoot)
+	bombCaster.RayHit:Emit(thrownCast, {Instance = attackerRoot, Position = attackerRoot.Position, Normal = V.new(0, 1, 0)})
 	assert(not thrown:FindFirstChild("BombStick"), "bomb stuck to thrower before leaving hand")
 	now += 1
-	thrown.Touched:Emit(attackerRoot)
-	thrown.Touched:Emit(bombHandle)
-	thrown.Touched:Emit(handle)
+	bombCaster.RayHit:Emit(thrownCast, {Instance = attackerRoot, Position = attackerRoot.Position, Normal = V.new(0, 1, 0)})
+	bombCaster.RayHit:Emit(thrownCast, {Instance = bombHandle, Position = bombHandle.Position, Normal = V.new(0, 1, 0)})
+	bombCaster.RayHit:Emit(thrownCast, {Instance = handle, Position = handle.Position, Normal = V.new(0, 1, 0)})
 	local lateAccessory = instance("Part", "LateAccessory", attacker.Character)
 	attacker.Character.DescendantAdded:Emit(lateAccessory)
 	lateAccessory.Parent = world
-	thrown.Touched:Emit(lateAccessory)
+	bombCaster.RayHit:Emit(thrownCast, {Instance = lateAccessory, Position = lateAccessory.Position, Normal = V.new(0, 1, 0)})
 	local ghost = instance("Part", "CameraOrEffect", world)
 	ghost.CanCollide = false
-	thrown.Touched:Emit(ghost)
+	bombCaster.RayHit:Emit(thrownCast, {Instance = ghost, Position = ghost.Position, Normal = V.new(0, 1, 0)})
 	assert(not thrown:FindFirstChild("BombStick"), "bomb stuck to thrower/tools/effect after old grace period")
-	thrown.Touched:Emit(victimRoot)
+	bombCaster.RayHit:Emit(thrownCast, {Instance = victimRoot, Position = victimRoot.Position, Normal = V.new(0, 1, 0)})
 	local weld = assert(thrown:FindFirstChild("BombStick"), "bomb did not stick to humanoid part")
 	assert(weld.Part0 == victimRoot and not thrown.Anchored and thrown.Massless, "sticking must follow character without anchoring or weighing it down")
-	thrown.Touched:Emit(wall)
+	bombCaster.RayHit:Emit(thrownCast, {Instance = wall, Position = wall.Position, Normal = V.new(0, 1, 0)})
 	assert(weld.Part0 == victimRoot, "second contact replaced the first sticky target")
 	thrown.Position = V.new(-5, -2, 0)
 	now = threwAt + 3.49
@@ -1214,14 +1240,12 @@ return function(sources)
 	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(10, 0, 0))
 	local swept = assert(world:FindFirstChild("ThrownBomb"))
 	local sweptAt = now
-	swept.Position = V.new(10, 0, 0)
+	local sweptCast = bombCaster.lastCast
 	wall.CanCollide = true
-	world.Raycast = function() return {Instance = wall, Position = V.new(5, 0, 0), Normal = V.new(-1, 0, 0)} end
-	runService.Heartbeat:Emit(0.1)
-	assert(swept:FindFirstChild("BombStick").Part0 == wall, "sweep missed first wall along flight path")
+	bombCaster.RayHit:Emit(sweptCast, {Instance = wall, Position = V.new(5, 0, 0), Normal = V.new(-1, 0, 0)})
+	assert(swept:FindFirstChild("BombStick").Part0 == wall, "FastCast missed first wall along flight path")
 	-- An explosion must release a grapple, preserve voluntary ragdolls, and
 	-- replace excessive existing velocity instead of adding more energy.
-	world.Raycast = function() return nil end
 	local blastTarget, blastHumanoid, blastRoot = character("GrappledBlastTarget", V.new(4, 0, 0), true)
 	local manualTarget, manualHumanoid = character("ManualBlastTarget", V.new(3, 0, 0), false)
 	manualHumanoid:AddTag("Ragdoll")

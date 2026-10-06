@@ -82,6 +82,7 @@ return {
 	
 	-- Q/E directly changes the permanent rope length in both target modes.
 	ropeLengthFraction = 0.05, -- 5% of current length per press / held control tick
+	ropeReelInterval = 1 / 15, -- Repeat held reel input at half the previous 30 Hz rate
 	playerMinDragDistance = 4, -- Prevent bodies being forced into the gun
 
 	bombToolName = "Bomb",
@@ -89,7 +90,7 @@ return {
 	bombCooldown = 6, -- Seconds after throwing before another throw
 	bombRadius = 8, -- Root-to-explosion distance in studs
 	bombLaunchHeight = 82, -- Studs above impact position in unobstructed flight; edge hits ~57
-	bombLaunchDistance = 125, -- Horizontal studs back to impact height; directly underneath launches vertically
+	bombLaunchDistance = 200, -- Horizontal studs back to impact height; directly underneath launches vertically
 	bombTumbleSpeed = 3.5, -- Whole-body rotation in radians/sec, capped at 4
 	bombLimbKickSpeed = 3, -- Relative limb kick in studs/sec, capped at 6; set both motion settings to 0 to disable
 	bombDebugRagdoll = true, -- Temporary: print server/client joint diagnostics after each blast
