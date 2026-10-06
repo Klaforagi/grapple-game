@@ -90,6 +90,8 @@ return {
 	bombRadius = 8, -- Root-to-explosion distance in studs
 	bombLaunchHeight = 82, -- Studs above impact position in unobstructed flight; edge hits ~57
 	bombLaunchDistance = 125, -- Horizontal studs back to impact height; directly underneath launches vertically
+	bombTumbleSpeed = 2.5, -- Initial torso rotation in radians/sec, capped at 4; 0 disables the tumble
+	bombDebugRagdoll = true, -- Temporary: print server/client joint diagnostics after each blast
 	bombRagdollDuration = 5, -- Each hit restarts stun; automatic recovery unless already voluntarily ragdolled
 	bombThrowSpeed = 70,
 	bombArcHeight = 6, -- Arc rises this far above the higher of hand and target

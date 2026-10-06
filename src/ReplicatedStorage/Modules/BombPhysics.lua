@@ -31,4 +31,12 @@ function M.Knockback(offset: Vector3, radius: number, gravity: number, height: n
 	return sideways + Vector3.new(0, verticalSpeed, 0)
 end
 
+-- Pitch away from the blast. Even a perfectly vertical launch needs a rotation
+-- axis: equal linear velocities alone preserve a standing pose in free fall.
+function M.TumbleVelocity(velocity: Vector3, speed: number): Vector3
+	local axis = Vector3.new(velocity.Z, 0, -velocity.X)
+	if axis.Magnitude < 0.001 then axis = Vector3.new(1, 0, 0) end
+	return axis.Unit * math.clamp(speed, 0, 4)
+end
+
 return M

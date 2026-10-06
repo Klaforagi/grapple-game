@@ -408,7 +408,23 @@ return function(sources)
 	assert(#r6:FindFirstChild("GrappleRagdollJoints"):GetChildren() == 6 and not motor6.Enabled and not root6.CanCollide)
 	assert(not root6.Massless and root6.RootPriority == 127 and not root6:GetNetworkOwnershipAuto(), "NPC root was not stable/server-owned")
 	assert(r6:FindFirstChild("GrappleRagdollJoints"):FindFirstChild("Neck").MaxFrictionTorque > 0, "ragdoll joints have no settling friction")
+	local function collisionPair(character, a, b)
+		for _, constraint in ipairs(character:FindFirstChild("GrappleSelfCollision"):GetChildren()) do
+			if (constraint.Part0 == a and constraint.Part1 == b) or (constraint.Part0 == b and constraint.Part1 == a) then return constraint end
+		end
+		error("Missing collision pair")
+	end
+	local r6Torso, r6Limb1, r6Limb2 = r6:FindFirstChild("Torso"), r6:FindFirstChild("Limb1"), r6:FindFirstChild("Limb2")
+	local oppositeLimbs = collisionPair(r6, r6Limb1, r6Limb2)
+	assert(not oppositeLimbs.Enabled, "non-neighboring limbs still pass through each other")
+	assert(collisionPair(r6, r6Torso, r6Limb1).Enabled, "joint neighbors can fight at their shared pivot")
+	assert(collisionPair(r6, root6, r6Limb2).Enabled, "invisible root can collide with its own limbs")
+	local nativeIgnore = instance("NoCollisionConstraint", "NativeLimbFilter", r6)
+	nativeIgnore.Part0, nativeIgnore.Part1 = r6Limb1, r6Limb2
+	r6.DescendantAdded:Emit(nativeIgnore)
+	assert(not nativeIgnore.Enabled, "native self-collision filter defeated the new collision policy")
 	ragdoll.Set(hum6, false)
+	assert(oppositeLimbs.Enabled and nativeIgnore.Enabled, "normal self-collision filters were not restored")
 	assert(root6.Massless and root6.RootPriority == -10, "ragdoll recovery lost original mass/root settings")
 	assert(config.ragdollToggle_Cooldown == 0.5, "ragdoll recovery cooldown should be half a second")
 	assert(hum6:GetAttribute("RagdollRecoveredAt") == now, "cooldown did not start on recovery")
@@ -428,17 +444,60 @@ return function(sources)
 	local animatedJoint = instance("AnimationConstraint", "LeftShoulder", upgradedTorso)
 	animatedJoint.Attachment0, animatedJoint.Attachment1 = shoulder0, shoulder1
 	local nativeSocket = instance("BallSocketConstraint", "LeftShoulderSocket", upgradedTorso)
-	nativeSocket.Attachment0, nativeSocket.Attachment1 = shoulder0, shoulder1
-	nativeSocket.MaxFrictionTorque = 2
+	-- Native shoulders can use different attachment instances and reversed order.
+	local socketShoulder0 = instance("Attachment", "SocketShoulder0", shoulder0)
+	local shoulderBone = instance("Bone", "ShoulderBone", upgradedArm)
+	local socketShoulder1 = instance("Attachment", "SocketShoulder1", shoulderBone)
+	nativeSocket.Attachment0, nativeSocket.Attachment1 = socketShoulder1, socketShoulder0
+	nativeSocket.MaxFrictionTorque = 67
+	nativeSocket.LimitsEnabled, nativeSocket.TwistLimitsEnabled = true, true
+	nativeSocket.UpperAngle, nativeSocket.TwistLowerAngle, nativeSocket.TwistUpperAngle = 15, -5, 5
+	nativeSocket.Restitution = 0.3
+	local extraSocket = instance("BallSocketConstraint", "ExtraShoulderBrace", upgradedTorso)
+	extraSocket.Attachment0, extraSocket.Attachment1 = root0, socketShoulder1
+	extraSocket.MaxFrictionTorque = 47
 	ragdoll.Set(upgradedHumanoid, true)
 	assert(not animatedJoint.Enabled and nativeSocket.Enabled, "upgraded avatar remained animated/stiff")
 	local upgradedFolder = upgradedRig:FindFirstChild("GrappleRagdollJoints")
 	assert(#upgradedFolder:GetChildren() == 1, "native avatar sockets duplicated")
 	assert(not animatedRoot.Enabled and upgradedFolder:FindFirstChild("RagdollRootWeld").Enabled, "upgraded root remained animated")
-	assert(nativeSocket.MaxFrictionTorque == 5, "native socket lacked settling friction")
+	assert(nativeSocket.MaxFrictionTorque == 5, "high native socket friction was not replaced")
+	assert(nativeSocket.UpperAngle == 95 and nativeSocket.TwistLowerAngle == -70 and nativeSocket.TwistUpperAngle == 70, "shoulder still permits excessive folding")
+	assert(nativeSocket.Restitution == 0 and not extraSocket.Enabled, "extra socket or bouncy limits still restrict the ragdoll")
+	upgradedHumanoid:SetAttribute("BombRagdollUntil", now + 5)
+	assert(nativeSocket.MaxFrictionTorque == 0, "bomb retained pose-holding socket friction")
+	ragdoll.Set(upgradedHumanoid, true)
+	assert(nativeSocket.MaxFrictionTorque == 0, "repeated ragdoll reset blast friction")
+	upgradedHumanoid:SetAttribute("BombRagdollUntil", nil)
+	assert(nativeSocket.MaxFrictionTorque == 5, "voluntary ragdoll lost settling friction after blast stun")
 	ragdoll.Set(upgradedHumanoid, false)
 	assert(animatedJoint.Enabled and nativeSocket.Enabled, "native rig recovery changed socket defaults")
-	assert(animatedRoot.Enabled and not upgradedFolder:FindFirstChild("RagdollRootWeld").Enabled and nativeSocket.MaxFrictionTorque == 2, "upgraded root/friction failed to restore")
+	assert(animatedRoot.Enabled and not upgradedFolder:FindFirstChild("RagdollRootWeld").Enabled and nativeSocket.MaxFrictionTorque == 67, "upgraded root/friction failed to restore")
+	assert(extraSocket.Enabled and extraSocket.MaxFrictionTorque == 47, "extra native socket was not restored")
+	assert(nativeSocket.UpperAngle == 15 and nativeSocket.TwistLowerAngle == -5 and nativeSocket.TwistUpperAngle == 5 and nativeSocket.Restitution == 0.3, "recovery lost native socket limits")
+	-- Late native sockets must replace generated fallbacks, even while active.
+	local forearm = instance("Part", "LeftLowerArm", upgradedRig)
+	local elbow0 = instance("Attachment", "Elbow0", upgradedArm)
+	local elbow1 = instance("Attachment", "Elbow1", forearm)
+	local elbow = instance("AnimationConstraint", "LeftElbow", upgradedArm)
+	elbow.Attachment0, elbow.Attachment1 = elbow0, elbow1
+	upgradedHumanoid:SetAttribute("BombRagdollUntil", now + 5)
+	ragdoll.Set(upgradedHumanoid, true)
+	local fallback = assert(upgradedFolder:FindFirstChild("LeftElbow"))
+	assert(fallback.UpperAngle == 80 and fallback.TwistUpperAngle == 10, "elbow retained excessive bend/twist")
+	assert(not collisionPair(upgradedRig, forearm, upgradedTorso).Enabled, "forearm cannot collide with non-neighboring torso")
+	assert(collisionPair(upgradedRig, forearm, upgradedArm).Enabled, "elbow neighbors can collide at the pivot")
+	local fallbackA0, fallbackA1 = fallback.Attachment0, fallback.Attachment1
+	local lateSocket = instance("BallSocketConstraint", "LeftElbowBallSocket", upgradedArm)
+	lateSocket.Enabled, lateSocket.MaxFrictionTorque = false, 55
+	upgradedRig.DescendantAdded:Emit(lateSocket)
+	lateSocket.Attachment0, lateSocket.Attachment1 = elbow0, elbow1
+	lateSocket:GetPropertyChangedSignal("Attachment1"):Emit()
+	assert(fallback.destroyed and fallbackA0.destroyed and fallbackA1.destroyed, "late socket left duplicate fallback constraints")
+	assert(lateSocket.Enabled and lateSocket.MaxFrictionTorque == 0 and not elbow.Enabled, "late socket was not activated with free blast joints")
+	upgradedHumanoid:SetAttribute("BombRagdollUntil", nil)
+	ragdoll.Set(upgradedHumanoid, false)
+	assert(elbow.Enabled and not lateSocket.Enabled and lateSocket.MaxFrictionTorque == 55, "late socket adoption corrupted recovery state")
 	-- Swap Player1/Player2 roles: the same ownership and recovery rules must apply.
 	local reverseGun = instance("Tool", config.toolName, victimCharacter)
 	local reverseHandle = instance("Part", "Handle", reverseGun)
@@ -601,6 +660,39 @@ return function(sources)
 	attackerRoot.Position, attackerRoot.AssemblyLinearVelocity = originalRootPosition, originalRootVelocity
 	env.CFrame.new = previousCFrameNew
 	world.CurrentCamera = nil
+	-- Airborne voluntary entry gets one local-owner nudge, preserving travel.
+	local savedEntryVelocity = attackerRoot.AssemblyLinearVelocity
+	local savedEntrySpin = {}
+	for _, part in ipairs(attacker.Character:GetChildren()) do
+		if part:IsA("BasePart") then savedEntrySpin[part] = part.AssemblyAngularVelocity part.AssemblyAngularVelocity = V.zero end
+	end
+	attackerRoot.AssemblyLinearVelocity = V.new(8, 25, 0)
+	attackerHumanoid:SetAttribute("RagdollExpectedOwner", 0)
+	attackerHumanoid:SetAttribute("Ragdolled", true)
+	runService.PreSimulation:Emit()
+	assert(attackerRoot.AssemblyAngularVelocity.Magnitude == 0, "client kicked a server-owned ragdoll")
+	attackerHumanoid:SetAttribute("RagdollExpectedOwner", attacker.UserId)
+	runService.PreSimulation:Emit()
+	assert(math.abs(attackerRoot.AssemblyAngularVelocity.Magnitude - 1.2) < 0.001, "airborne ragdoll entry stayed rigid")
+	assert((attackerRoot.AssemblyLinearVelocity - V.new(8, 25, 0)).Magnitude == 0, "entry nudge changed jump/fall velocity")
+	local entrySpin = attackerRoot.AssemblyAngularVelocity
+	runService.PreSimulation:Emit()
+	assert((attackerRoot.AssemblyAngularVelocity - entrySpin).Magnitude == 0, "entry nudge repeated every frame")
+	attackerHumanoid:SetAttribute("Ragdolled", false)
+	attackerRoot.AssemblyAngularVelocity, attackerRoot.AssemblyLinearVelocity = V.zero, V.zero
+	attackerHumanoid:SetAttribute("Ragdolled", true)
+	runService.PreSimulation:Emit()
+	assert(attackerRoot.AssemblyAngularVelocity.Magnitude == 0, "resting ragdoll received an airborne nudge")
+	attackerHumanoid:SetAttribute("Ragdolled", false)
+	attackerRoot.AssemblyLinearVelocity = V.new(8, 25, 0)
+	attackerHumanoid:SetAttribute("BombRagdollUntil", now + 5)
+	attackerHumanoid:SetAttribute("Ragdolled", true)
+	runService.PreSimulation:Emit()
+	assert(attackerRoot.AssemblyAngularVelocity.Magnitude == 0, "client entry nudge conflicted with bomb launch")
+	attackerHumanoid:SetAttribute("BombRagdollUntil", nil)
+	attackerHumanoid:SetAttribute("Ragdolled", false)
+	attackerRoot.AssemblyLinearVelocity = savedEntryVelocity
+	for part, spin in pairs(savedEntrySpin) do part.AssemblyAngularVelocity = spin end
 	victimRoot.AssemblyAngularVelocity = V.new(3, 2, 1)
 	runService.PreSimulation:Emit()
 	assert(victimRoot.AssemblyAngularVelocity.Magnitude > 0, "observer rewrote the physics owner's velocity")
@@ -922,6 +1014,13 @@ return function(sources)
 	assert(attacker.LoadCharacterCount == loadsBefore + 2, "watchdog reloaded a recovered character")
 
 	local bombPhysics = execute(sources.bombPhysics)
+	local verticalTumble = bombPhysics.TumbleVelocity(V.new(0, 150, 0), 2.5)
+	assert(math.abs(verticalTumble.Magnitude - 2.5) < 0.001, "vertical blast has no tumble")
+	local rightTumble = bombPhysics.TumbleVelocity(V.new(50, 150, 0), 2.5)
+	local leftTumble = bombPhysics.TumbleVelocity(V.new(-50, 150, 0), 2.5)
+	assert(rightTumble.Z < 0 and leftTumble.Z > 0, "blast tumble does not pitch away from explosion")
+	assert(bombPhysics.TumbleVelocity(V.zero, 1000).Magnitude == 4, "tumble configuration can create excessive spin")
+	assert(bombPhysics.TumbleVelocity(V.zero, 0).Magnitude == 0, "tumble cannot be disabled")
 	for _, offset in ipairs({V.new(10, -1.5, 0), V.new(8, 3, 5), V.new(0, -4, 0)}) do
 		local velocity = bombPhysics.ThrowVelocity(offset, 196.2, 70, 6)
 		local flight = (velocity.Y + math.sqrt(velocity.Y^2 - 2 * 196.2 * offset.Y)) / 196.2
@@ -1031,6 +1130,11 @@ return function(sources)
 	runService.Heartbeat:Emit(0.1)
 	assert(thrown.destroyed, "bomb missed 3.5-second fuse")
 	assert(attackerRoot.AssemblyLinearVelocity.Magnitude == 0, "launch ran before the ragdoll assembly rebuild")
+	for _, joint in ipairs(attacker.Character:GetDescendants()) do
+		if joint:IsA("Motor6D") and joint:GetAttribute("GrappleRagdollJoint") then
+			assert(not joint.Enabled, "bomb launched with animated limb joints still enabled")
+		end
+	end
 	assert(playedSounds[#playedSounds].sound == explosionSound and playedSounds[#playedSounds].source.Name == "BombBlast", "explosion sound did not play at blast")
 	-- The engine puts an unequipped tool into Backpack; mirror that in this mock.
 	bombTool.Parent = attackerBackpack
@@ -1039,12 +1143,21 @@ return function(sources)
 		if part:IsA("BasePart") and part ~= splitLimb then part.AssemblyRootPart = attackerRoot end
 	end
 	local previousRootImpulses = attackerRoot.ImpulseCount or 0
+	-- Existing violent spin must be replaced, not compounded by another blast.
+	attackerRoot.AssemblyAngularVelocity = V.new(100, 100, 100)
+	splitLimb.AssemblyAngularVelocity = V.new(-100, -100, -100)
 	now += 1 / 60
 	runService.Heartbeat:Emit(1 / 60)
 	local launched = attackerRoot.AssemblyLinearVelocity
 	assert(launched.X > 0 and launched.Y^2 / (2 * world.Gravity) >= 50 and launched.Magnitude < 200, "blast was missing or overpowered")
 	assert(attackerRoot.ImpulseCount == previousRootImpulses + 1, "shared assembly received one impulse per part")
 	assert((splitLimb.AssemblyLinearVelocity - launched).Magnitude < 0.001, "newly split ragdoll limb missed launch")
+	local expectedTumble = bombPhysics.TumbleVelocity(launched, config.bombTumbleSpeed)
+	assert((attackerRoot.AssemblyAngularVelocity - expectedTumble).Magnitude < 0.001, "torso did not start a bounded tumble during launch")
+	assert((splitLimb.AssemblyAngularVelocity + expectedTumble * 0.5).Magnitude < 0.001, "limbs retained the torso's rigid airborne pose")
+	attackerRoot.AssemblyAngularVelocity = V.new(0.2, 0.3, 0.4)
+	runService.Heartbeat:Emit(1 / 60)
+	assert((attackerRoot.AssemblyAngularVelocity - V.new(0.2, 0.3, 0.4)).Magnitude < 0.001, "bomb continuously forced ragdoll spin")
 	for _, part in ipairs(attacker.Character:GetChildren()) do
 		if part:IsA("BasePart") then part.AssemblyRootPart = nil end
 	end

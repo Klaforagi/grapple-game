@@ -10,6 +10,123 @@ local CAMERA_DEADZONE = 0.75
 local CAMERA_FOLLOW_SPEED = 12
 local CAMERA_MAX_LAG = 1.25 -- Studs; fast falls must not outrun the camera subject
 local OWNERSHIP_CHECK_INTERVAL = 0.25
+local SETTLING_FRICTION = 5
+local SOCKET_PROPERTIES = {"MaxFrictionTorque", "LimitsEnabled", "TwistLimitsEnabled", "UpperAngle", "TwistLowerAngle", "TwistUpperAngle", "Restitution"}
+
+local function attachmentBody(attachment, character)
+	-- Native joint attachments may be nested inside other Attachments/Bones.
+	local parent = attachment and attachment.Parent
+	while parent and parent ~= character do
+		if parent:IsA("BasePart") then return parent.Parent == character and parent or nil end
+		parent = parent.Parent
+	end
+	return nil
+end
+
+local function configureSocket(joint)
+	local socket = joint.socket
+	joint.originalSocketProperties = {}
+	for _, property in ipairs(SOCKET_PROPERTIES) do joint.originalSocketProperties[property] = socket[property] end
+	local name = string.lower(joint.motor.Name)
+	local tilt, twist = 75, 40
+	if string.find(name, "neck") then tilt, twist = 40, 45
+	elseif string.find(name, "waist") then tilt, twist = 25, 30
+	elseif string.find(name, "shoulder") then tilt, twist = 95, 70
+	elseif string.find(name, "hip") then tilt, twist = 60, 35
+	elseif string.find(name, "elbow") or string.find(name, "knee") then tilt, twist = 80, 10
+	elseif string.find(name, "wrist") then tilt, twist = 35, 25
+	elseif string.find(name, "ankle") then tilt, twist = 30, 20 end
+	socket.LimitsEnabled, socket.TwistLimitsEnabled = true, true
+	socket.UpperAngle, socket.TwistLowerAngle, socket.TwistUpperAngle = tilt, -twist, twist
+	socket.Restitution, socket.MaxFrictionTorque = 0, SETTLING_FRICTION
+end
+
+function Service.RefreshSelfCollisions(humanoid)
+	local rig = rigs[humanoid]
+	if not rig or not rig.active then return end
+	local character = humanoid.Parent
+	local adjacent = {}
+	local function connect(a, b)
+		if not a or not b then return end
+		adjacent[a] = adjacent[a] or {}
+		adjacent[b] = adjacent[b] or {}
+		adjacent[a][b], adjacent[b][a] = true, true
+	end
+	for _, joint in ipairs(rig.joints) do
+		connect(attachmentBody(joint.socket.Attachment0, character), attachmentBody(joint.socket.Attachment1, character))
+	end
+	for _, entry in ipairs(rig.roots) do connect(entry.weld.Part0, entry.weld.Part1) end
+	for _, constraint in ipairs(character:GetDescendants()) do
+		if not constraint:IsA("NoCollisionConstraint") then continue end
+		local a, b = constraint.Part0, constraint.Part1
+		if not a or not b or a.Parent ~= character or b.Parent ~= character then continue end
+		if rig.collisionRestore[constraint] == nil then rig.collisionRestore[constraint] = constraint.Enabled end
+		-- Leave joint neighbors and the invisible root exempt. Non-neighboring
+		-- limbs/torso parts collide, so a folded limb cannot pass through the body.
+		constraint.Enabled = a.Name == "HumanoidRootPart" or b.Name == "HumanoidRootPart"
+			or (adjacent[a] ~= nil and adjacent[a][b] == true)
+	end
+end
+
+function Service.RefreshJointFriction(humanoid)
+	local rig = rigs[humanoid]
+	if not rig or not rig.active then return end
+	-- Native avatar friction is strong enough to preserve the standing pose in
+	-- free fall. Blast ragdolls need free joints; other ragdolls keep light damping.
+	local friction = os.clock() < (humanoid:GetAttribute("BombRagdollUntil") or 0) and 0 or SETTLING_FRICTION
+	for _, joint in ipairs(rig.joints) do
+		if joint.socket.Parent and joint.socket.MaxFrictionTorque ~= friction then
+			joint.socket.MaxFrictionTorque = friction
+		end
+	end
+	if rig.suppressExtraSockets then rig.suppressExtraSockets() end
+end
+
+-- Inspect the real engine rig rather than inferring it from the ragdoll tag.
+-- This is read-only and does not change ownership, animation, or physics.
+function Service.ReportBombRig(humanoid, phase)
+	local character = humanoid.Parent
+	if not character then return end
+	local motors, enabledMotors, animations, enabledAnimations, sockets, assemblies = 0, 0, 0, 0, 0, {}
+	local details = {}
+	for _, item in ipairs(character:GetDescendants()) do
+		if item:IsA("BasePart") and item.Parent == character then
+			assemblies[item.AssemblyRootPart or item] = true
+			if item.Anchored then table.insert(details, "ANCHORED=" .. item.Name) end
+		elseif item:IsA("Motor6D") or item:IsA("AnimationConstraint") then
+			local upgraded = item:IsA("AnimationConstraint")
+			local p0 = upgraded and item.Attachment0 and item.Attachment0.Parent or (not upgraded and item.Part0)
+			local p1 = upgraded and item.Attachment1 and item.Attachment1.Parent or (not upgraded and item.Part1)
+			if p0 and p1 and p0.Parent == character and p1.Parent == character then
+				if upgraded then
+					animations += 1
+					if item.Enabled then enabledAnimations += 1 end
+				else
+					motors += 1
+					if item.Enabled then enabledMotors += 1 end
+				end
+				table.insert(details, item.Name .. ":" .. tostring(item.Enabled)
+					.. (upgraded and ("/kinematic=" .. tostring(item.IsKinematic)) or ""))
+			end
+		elseif item:IsA("BallSocketConstraint") and item.Enabled then
+			sockets += 1
+			table.insert(details, item.Name .. "/friction=" .. tostring(item.MaxFrictionTorque))
+		elseif (item:IsA("Weld") or item:IsA("WeldConstraint")) and item.Enabled
+			and item.Part0 and item.Part1 and item.Part0.Parent == character and item.Part1.Parent == character then
+			table.insert(details, "WELD=" .. item.Name .. ":" .. item.Part0.Name .. "->" .. item.Part1.Name)
+		end
+	end
+	local count = 0
+	for _ in pairs(assemblies) do count += 1 end
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	local tracks = animator and #animator:GetPlayingAnimationTracks() or 0
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local side = RunService:IsServer() and "SERVER" or ("CLIENT " .. tostring(Players.LocalPlayer and Players.LocalPlayer.Name))
+	warn(string.format("[BombRagdoll] %s %s %s ragdolled=%s state=%s evaluate=%s motors=%d/%d animationJoints=%d/%d sockets=%d assemblies=%d tracks=%d speed=%.1f spin=%.1f | %s",
+		side, character.Name, phase, tostring(humanoid:GetAttribute("Ragdolled")), tostring(humanoid:GetState()),
+		tostring(humanoid.EvaluateStateMachine), enabledMotors, motors, enabledAnimations, animations, sockets, count, tracks,
+		root and root.AssemblyLinearVelocity.Magnitude or 0, root and root.AssemblyAngularVelocity.Magnitude or 0, table.concat(details, ", ")))
+end
 
 -- Ownership must be checked again after the engine rebuilds assemblies from
 -- disabled motors. A one-time assignment can miss the newly separate limbs.
@@ -59,6 +176,8 @@ if RunService:IsServer() then
 			if rig.active and humanoid.Parent and now >= (rig.nextOwnershipCheck or 0) then
 				rig.nextOwnershipCheck = now + OWNERSHIP_CHECK_INTERVAL
 				Service.RefreshOwnership(humanoid)
+				Service.RefreshJointFriction(humanoid)
+				Service.RefreshSelfCollisions(humanoid)
 			end
 		end
 	end)
@@ -97,8 +216,8 @@ local function enableJointRagdoll(joint)
 	joint.socketWasEnabled = socket.Enabled
 	if joint.native then
 		joint.originalFriction = socket.MaxFrictionTorque
-		socket.MaxFrictionTorque = math.max(5, joint.originalFriction)
 	end
+	configureSocket(joint)
 	motor:SetAttribute("GrappleRestoreEnabled", motor.Enabled)
 	socket:SetAttribute("GrappleRagdollSocket", true)
 	socket:SetAttribute("GrappleRestoreEnabled", socket.Enabled)
@@ -120,17 +239,63 @@ function Service.Prepare(humanoid)
 	local character = humanoid.Parent
 	humanoid.BreakJointsOnDeath = false
 	humanoid.RequiresNeck = false
-	local rig = {joints = {}, roots = {}, parts = {}, active = false}
+	local rig = {joints = {}, roots = {}, parts = {}, extraSockets = {}, collisionRestore = {}, active = false}
 	rigs[humanoid] = rig
 	local folder = Instance.new("Folder")
 	folder.Name = "GrappleRagdollJoints"
 	folder.Parent = character
-	-- Players can collide with other players. Suppress only pairs inside this
-	-- character so overlapping ragdoll limbs cannot push their own body apart.
+	-- Normal animated poses suppress self-collision. Ragdoll enables collisions
+	-- between non-neighboring parts; the original pair filters return on recovery.
 	local selfCollisions = Instance.new("Folder")
 	selfCollisions.Name = "GrappleSelfCollision"
 	selfCollisions.Parent = character
 	local bodyParts = {}
+	rig.suppressExtraSockets = function()
+		local selected = {}
+		for _, joint in ipairs(rig.joints) do selected[joint.socket] = true end
+		for _, socket in ipairs(character:GetDescendants()) do
+			if socket:IsA("BallSocketConstraint") and not selected[socket]
+				and attachmentBody(socket.Attachment0, character) and attachmentBody(socket.Attachment1, character) then
+				-- Any unselected body socket is a second physical restriction,
+				-- including native sockets our joint matching cannot identify.
+				if rig.extraSockets[socket] == nil then rig.extraSockets[socket] = socket.Enabled end
+				socket.Enabled = false
+			end
+		end
+	end
+	local function findNativeSocket(part0, part1)
+		for _, constraint in ipairs(character:GetDescendants()) do
+			if constraint:IsA("BallSocketConstraint") and not constraint:IsDescendantOf(folder) then
+				local a0, a1 = constraint.Attachment0, constraint.Attachment1
+				-- Avatar shoulders can use different attachment objects for their
+				-- animation and socket constraints. Match the connected body parts.
+				local body0, body1 = attachmentBody(a0, character), attachmentBody(a1, character)
+				if body0 and body1 and ((body0 == part0 and body1 == part1)
+					or (body0 == part1 and body1 == part0)) then return constraint end
+			end
+		end
+	end
+	local function adoptNativeSocket(joint, socket)
+		local oldSocket, a0, a1 = joint.socket, joint.a0, joint.a1
+		joint.socket, joint.native, joint.a0, joint.a1 = socket, true, nil, nil
+		if rig.active then
+			-- Preserve the motor's pre-ragdoll state; do not snapshot it again.
+			if rig.extraSockets[socket] ~= nil then
+				socket.Enabled = rig.extraSockets[socket]
+				rig.extraSockets[socket] = nil
+			end
+			joint.socketWasEnabled, joint.originalFriction = socket.Enabled, socket.MaxFrictionTorque
+			configureSocket(joint)
+			socket:SetAttribute("GrappleRagdollSocket", true)
+			socket:SetAttribute("GrappleRestoreEnabled", socket.Enabled)
+			socket.Enabled = true
+		end
+		oldSocket:Destroy()
+		if a0 then a0:Destroy() end
+		if a1 then a1:Destroy() end
+		Service.RefreshJointFriction(humanoid)
+		rig.nextOwnershipCheck = 0
+	end
 	local function ignoreSelfCollision(part)
 		if part.Parent ~= character or bodyParts[part] then return end
 		for other in pairs(bodyParts) do
@@ -175,19 +340,33 @@ function Service.Prepare(humanoid)
 			end
 			return
 		end
-		for _, joint in ipairs(rig.joints) do if joint.motor == motor then return end end
+		for _, joint in ipairs(rig.joints) do
+			if joint.motor == motor then
+				if upgraded and not joint.native then
+					local native = findNativeSocket(part0, part1)
+					if native then adoptNativeSocket(joint, native) end
+				end
+				return
+			end
+		end
 		if upgraded then
 			-- Upgraded avatars already supply the passive joint. Reuse it so we
 			-- don't stack competing sockets or edit animation retargeting attachments.
-			for _, constraint in ipairs(character:GetDescendants()) do
-				if constraint:IsA("BallSocketConstraint")
-					and constraint.Attachment0 == motor.Attachment0 and constraint.Attachment1 == motor.Attachment1 then
-					local joint = {motor = motor, socket = constraint, native = true, wasEnabled = motor.Enabled}
-					table.insert(rig.joints, joint)
-					motor:SetAttribute("GrappleRagdollJoint", true)
-					if rig.active then enableJointRagdoll(joint) rig.nextOwnershipCheck = 0 end
-					return
+			local constraint = findNativeSocket(part0, part1)
+			if constraint then
+				local joint = {motor = motor, socket = constraint, native = true, wasEnabled = motor.Enabled}
+				table.insert(rig.joints, joint)
+				motor:SetAttribute("GrappleRagdollJoint", true)
+				if rig.active then
+					if rig.extraSockets[constraint] ~= nil then
+						constraint.Enabled = rig.extraSockets[constraint]
+						rig.extraSockets[constraint] = nil
+					end
+					enableJointRagdoll(joint)
+					Service.RefreshJointFriction(humanoid)
+					rig.nextOwnershipCheck = 0
 				end
+				return
 			end
 		end
 		local a0, a1 = Instance.new("Attachment"), Instance.new("Attachment")
@@ -207,19 +386,47 @@ function Service.Prepare(humanoid)
 		motor:SetAttribute("GrappleRagdollJoint", true)
 		local joint = {motor = motor, socket = socket, a0 = a0, a1 = a1, wasEnabled = motor.Enabled}
 		table.insert(rig.joints, joint)
-		if rig.active then enableJointRagdoll(joint) rig.nextOwnershipCheck = 0 end
+		if rig.active then
+			enableJointRagdoll(joint)
+			Service.RefreshJointFriction(humanoid)
+			rig.nextOwnershipCheck = 0
+		end
 	end
 	rig.scan = function()
 		for _, instance in ipairs(character:GetDescendants()) do add(instance) end
 	end
 	rig.scan()
-	character.DescendantAdded:Connect(function(instance)
+	local watchedInstances = setmetatable({}, {__mode = "k"})
+	local function watch(instance)
+		if watchedInstances[instance] then return end
+		watchedInstances[instance] = true
 		add(instance)
+		if instance:IsA("BallSocketConstraint") and not instance:IsDescendantOf(folder) then
+			rig.scan()
+			local function reconcileSockets()
+				rig.scan()
+				Service.RefreshJointFriction(humanoid)
+			end
+			instance:GetPropertyChangedSignal("Attachment0"):Connect(reconcileSockets)
+			instance:GetPropertyChangedSignal("Attachment1"):Connect(reconcileSockets)
+			Service.RefreshJointFriction(humanoid)
+		end
 		if instance:IsA("Motor6D") or instance:IsA("AnimationConstraint") then
 			local upgraded = instance:IsA("AnimationConstraint")
 			instance:GetPropertyChangedSignal(upgraded and "Attachment0" or "Part0"):Connect(function() add(instance) end)
 			instance:GetPropertyChangedSignal(upgraded and "Attachment1" or "Part1"):Connect(function() add(instance) end)
 		end
+		if instance:IsA("NoCollisionConstraint") then
+			local function refresh() Service.RefreshSelfCollisions(humanoid) end
+			instance:GetPropertyChangedSignal("Part0"):Connect(refresh)
+			instance:GetPropertyChangedSignal("Part1"):Connect(refresh)
+		end
+		Service.RefreshSelfCollisions(humanoid)
+	end
+	character.DescendantAdded:Connect(watch)
+	for _, instance in ipairs(character:GetDescendants()) do watch(instance) end
+	humanoid:GetAttributeChangedSignal("BombRagdollUntil"):Connect(function()
+		Service.RefreshJointFriction(humanoid)
 	end)
 	return rig
 end
@@ -237,6 +444,8 @@ function Service.Set(humanoid, enabled, preserveMotion)
 		humanoid:UnequipTools()
 	end
 	if rig.active == enabled then
+		Service.RefreshJointFriction(humanoid)
+		Service.RefreshSelfCollisions(humanoid)
 		humanoid.PlatformStand = enabled and grappleLocked or rig.platformStand == true
 		return
 	end
@@ -280,12 +489,20 @@ function Service.Set(humanoid, enabled, preserveMotion)
 				enableJointRagdoll(joint)
 			else
 				joint.socket.Enabled = joint.socketWasEnabled == true
-				if joint.native then joint.socket.MaxFrictionTorque = joint.originalFriction end
+				for property, value in pairs(joint.originalSocketProperties or {}) do joint.socket[property] = value end
 				joint.motor.Enabled = joint.wasEnabled
 			end
 		end
 	end
 	if not enabled then
+		for constraint, previousEnabled in pairs(rig.collisionRestore) do
+			if constraint.Parent then constraint.Enabled = previousEnabled end
+		end
+		table.clear(rig.collisionRestore)
+		for socket, previousEnabled in pairs(rig.extraSockets) do
+			if socket.Parent then socket.Enabled = previousEnabled end
+		end
+		table.clear(rig.extraSockets)
 		for part, previous in pairs(rig.parts) do
 			if part.Parent then
 				part.CanCollide = previous.collide
@@ -302,6 +519,8 @@ function Service.Set(humanoid, enabled, preserveMotion)
 	humanoid.EvaluateStateMachine = not enabled and rig.stateMachine
 	humanoid.PlatformStand = enabled and grappleLocked or rig.platformStand == true
 	humanoid:SetAttribute("Ragdolled", enabled)
+	Service.RefreshJointFriction(humanoid)
+	Service.RefreshSelfCollisions(humanoid)
 	if humanoid.Health > 0 then
 		humanoid:ChangeState(enabled and Enum.HumanoidStateType.Physics or Enum.HumanoidStateType.GettingUp)
 	end
@@ -358,18 +577,71 @@ function Service.InitClient()
 	-- ragdolls it sees, including the victim the local player is now simulating.
 	local watched = setmetatable({}, {__mode = "k"})
 	local activeRigs = {}
+	local pendingEntryMotion = {}
+	local function startAirborneMotion(humanoid)
+		if humanoid.Parent ~= localPlayer.Character or humanoid.Health <= 0
+			or humanoid:GetAttribute("GrapplePhysicsLocked") or humanoid:GetAttribute("GrappleLocalPhysicsLock")
+			or humanoid:GetAttribute("BombRagdollUntil") ~= nil then return true end
+		-- Only the local simulator may seed this motion. Observers never write
+		-- velocities, and bomb/grapple ownership transitions use their own launch.
+		if humanoid:GetAttribute("RagdollExpectedOwner") ~= localPlayer.UserId then return false end
+		local root = humanoid.Parent:FindFirstChild("HumanoidRootPart")
+		if not root or root.Anchored then return true end
+		local velocity = root.AssemblyLinearVelocity
+		if math.abs(velocity.Y) < 5 or root.AssemblyAngularVelocity.Magnitude > 1.5 then return true end
+		local assemblies, count = {}, 0
+		for _, part in ipairs(humanoid.Parent:GetChildren()) do
+			if part:IsA("BasePart") then
+				local assembly = part.AssemblyRootPart or part
+				if not assemblies[assembly] then assemblies[assembly] = true count += 1 end
+			end
+		end
+		if count < 2 then return false end -- Wait for the replicated motors to split.
+		local axis = Vector3.new(velocity.Z, 0, -velocity.X)
+		if axis.Magnitude < 0.01 then
+			local look = root.CFrame.LookVector
+			axis = Vector3.new(look.Z, 0, -look.X)
+		end
+		if axis.Magnitude < 0.01 then axis = Vector3.new(1, 0, 0) end
+		local rootAssembly = root.AssemblyRootPart or root
+		for assembly in pairs(assemblies) do
+			if not assembly.Anchored and assembly.AssemblyAngularVelocity.Magnitude < 2 then
+				assembly.AssemblyAngularVelocity += axis.Unit * (assembly == rootAssembly and 1.2 or -0.6)
+			end
+		end
+		return true
+	end
 	local function bind(humanoid)
 		if not humanoid:IsA("Humanoid") or watched[humanoid] then return end
 		watched[humanoid] = true
 		local previousStateMachine = humanoid.EvaluateStateMachine
 		local previousGettingUp = humanoid:GetStateEnabled(Enum.HumanoidStateType.GettingUp)
 		local wasRagdolled, wasLocked = false, false
+		local reportedBlast
+		local function reportBlast()
+			local revision = humanoid:GetAttribute("BombBlastRevision")
+			if humanoid:GetAttribute("BombRagdollDebug") ~= true or not revision or reportedBlast == revision then return end
+			reportedBlast = revision
+			task.delay(0.5, function()
+				if humanoid.Parent and humanoid:GetAttribute("BombBlastRevision") == revision then
+					Service.ReportBombRig(humanoid, "airborne")
+				end
+			end)
+		end
+		humanoid:GetAttributeChangedSignal("BombBlastRevision"):Connect(reportBlast)
+		humanoid:GetAttributeChangedSignal("BombRagdollDebug"):Connect(reportBlast)
+		reportBlast()
 		local function update()
 			local ragdolled = humanoid:GetAttribute("Ragdolled") == true
 			local locked = humanoid:GetAttribute("GrapplePhysicsLocked") == true
 				or humanoid:GetAttribute("GrappleLocalPhysicsLock") == true
 			local enabled = ragdolled or locked
 			if ragdolled == wasRagdolled and locked == wasLocked then return end
+			if ragdolled and not wasRagdolled and localPlayer and humanoid.Parent == localPlayer.Character then
+				pendingEntryMotion[humanoid] = os.clock() + 0.5
+			elseif not ragdolled or locked then
+				pendingEntryMotion[humanoid] = nil
+			end
 			wasRagdolled, wasLocked = ragdolled, locked
 			updateCameraSubject(humanoid, enabled)
 			local restoreStateMachine = humanoid:GetAttribute("RagdollRestoreStateMachine")
@@ -409,6 +681,11 @@ function Service.InitClient()
 		cameraAnchor.CFrame = CFrame.new(cameraRoot.Position - remaining)
 	end)
 	RunService.PreSimulation:Connect(function()
+		for humanoid, deadline in pairs(pendingEntryMotion) do
+			if not humanoid.Parent or os.clock() > deadline or startAirborneMotion(humanoid) then
+				pendingEntryMotion[humanoid] = nil
+			end
+		end
 		for humanoid in pairs(activeRigs) do
 			if not humanoid.Parent then activeRigs[humanoid] = nil continue end
 			humanoid.EvaluateStateMachine = false

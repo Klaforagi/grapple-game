@@ -115,6 +115,7 @@ local function queueLaunch(character, humanoid, velocity, now)
 	humanoid:SetAttribute("BombRagdollUntil", now + Config.bombRagdollDuration)
 	humanoid:SetAttribute("PhysicsServerUntil", now + SERVER_HOLD)
 	humanoid:SetAttribute("RagdollActivatedAt", now)
+	humanoid:SetAttribute("BombRagdollDebug", Config.bombDebugRagdoll == true)
 	-- Release any grapple before launching so its rope cannot pin the victim.
 	humanoid:SetAttribute("BombBlastRevision", (humanoid:GetAttribute("BombBlastRevision") or 0) + 1)
 	humanoid.Sit = false
@@ -132,6 +133,18 @@ local function launch(humanoid, state, now)
 	humanoid:SetAttribute("PhysicsServerUntil", now + SERVER_HOLD)
 	Ragdoll.RefreshOwnership(humanoid)
 	local assemblies = {}
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local rootAssembly = root and (root.AssemblyRootPart or root)
+	local tumble = BombPhysics.TumbleVelocity(state.velocity, Config.bombTumbleSpeed or 2.5)
+	if Config.bombDebugRagdoll then
+		Ragdoll.ReportBombRig(humanoid, "before launch")
+		local revision = humanoid:GetAttribute("BombBlastRevision")
+		task.delay(0.5, function()
+			if humanoid.Parent == character and humanoid:GetAttribute("BombBlastRevision") == revision then
+				Ragdoll.ReportBombRig(humanoid, "airborne")
+			end
+		end)
+	end
 	for _, part in ipairs(character:GetDescendants()) do
 		if not part:IsA("BasePart") then continue end
 		local assembly = part.AssemblyRootPart or part
@@ -143,6 +156,13 @@ local function launch(humanoid, state, now)
 				-- Correct to one desired velocity; do not stack launch energy or
 				-- multiply the impulse by the number of welded body parts.
 				assembly:ApplyImpulse((state.velocity - assembly.AssemblyLinearVelocity) * mass)
+				-- A standing ragdoll with equal limb velocities stays standing in
+				-- free fall. Start a small relative rotation AFTER joints split,
+				-- while the server owns them, so it visibly folds before landing.
+				-- Set once rather than accumulate spin or drive it every frame.
+				if tumble.Magnitude > 0 then
+					assembly.AssemblyAngularVelocity = tumble * (assembly == rootAssembly and 1 or -0.5)
+				end
 			end
 		end
 	end
