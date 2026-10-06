@@ -7,7 +7,7 @@ local Remotes = require(storage.Modules:WaitForChild("GrappleRemotes"))
 local M = {}
 local initialized = setmetatable({}, {__mode = "k"})
 local lastShot = -math.huge
-function M.Fire(tool, centerAim)
+function M.Fire(tool, aimPosition)
 	local player = Players.LocalPlayer
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -19,9 +19,11 @@ function M.Fire(tool, centerAim)
 	if now - lastShot < 0.1 then return end
 	lastShot = now
 	local ray
-	if centerAim then
+	if aimPosition == true then
 		local size = camera.ViewportSize
 		ray = camera:ViewportPointToRay(size.X / 2, size.Y / 2)
+	elseif aimPosition then
+		ray = camera:ViewportPointToRay(aimPosition.X, aimPosition.Y)
 	else
 		local position = UIS:GetMouseLocation()
 		-- GetMouseLocation uses raw viewport pixels. ScreenPointToRay would
@@ -52,11 +54,21 @@ function M.Init(tool)
 	end
 	connect(tool.Equipped, cursor)
 	connect(tool.Unequipped, function() if Config.CustomCursorsEnabled then mouse.Icon = "" end end)
-	connect(tool.Activated, function() M.Fire(tool) end)
+	connect(tool.Activated, function()
+		-- On phones, TouchTapInWorld below provides the actual firing finger.
+		if not UIS.TouchEnabled then M.Fire(tool) end
+	end)
 	connect(UIS.InputBegan, function(input, processed)
-		if not processed and input.UserInputType == Enum.UserInputType.MouseButton1 then
+		if not UIS.TouchEnabled and not processed and input.UserInputType == Enum.UserInputType.MouseButton1 then
 			M.Fire(tool)
 		end
+	end)
+	connect(UIS.TouchTapInWorld, function(touchPositions, processed)
+		if processed or not UIS.TouchEnabled or tool.Parent ~= player.Character then return end
+		-- TouchTapInWorld currently supplies one Vector2. Some older input
+		-- paths supply a list, so retain support for both forms.
+		local position = typeof(touchPositions) == "Vector2" and touchPositions or touchPositions[#touchPositions]
+		if position then M.Fire(tool, position) end
 	end)
 	for _, attribute in ipairs({"InCooldown", "InUse", "HasGrappled"}) do
 		connect(tool:GetAttributeChangedSignal(attribute), cursor)

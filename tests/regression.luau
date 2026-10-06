@@ -769,7 +769,7 @@ return function(sources)
 	victim.Character = victimCharacter
 	env.require = savedRequire
 	-- Firing is independent of movement and legacy Tool.Enabled, with click deduplication.
-	local input = {InputBegan = signal(), GetFocusedTextBox = function() return nil end,
+	local input = {InputBegan = signal(), TouchTapInWorld = signal(), TouchEnabled = false, GetFocusedTextBox = function() return nil end,
 		GetMouseLocation = function() return {X = 100, Y = 100} end}
 	services.UserInputService = input
 	players.LocalPlayer = attacker
@@ -804,14 +804,19 @@ return function(sources)
 	toolClient.Fire(gun, true)
 	assert(#remotes.FireGrapple.sent == 2, "touch fire did not use shared firing path")
 	assert(aimPixels[1] == 400 and aimPixels[2] == 300, "touch center aim changed")
+	input.TouchEnabled = true
+	now += 0.2
+	input.TouchTapInWorld:Emit({X = 710, Y = 460, kind = "Vector2"}, false)
+	assert(#remotes.FireGrapple.sent == 3 and aimPixels[1] == 710 and aimPixels[2] == 460, "mobile grapple did not use the firing tap")
+	input.TouchEnabled = false
 	attackerHumanoid:SetAttribute("Ragdolled", true)
 	now += 0.2
 	toolClient.Fire(gun)
-	assert(#remotes.FireGrapple.sent == 3, "ragdolled player could not fire the grapple gun")
+	assert(#remotes.FireGrapple.sent == 4, "ragdolled player could not fire the grapple gun")
 	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", true)
 	now += 0.2
 	toolClient.Fire(gun)
-	assert(#remotes.FireGrapple.sent == 3, "grapple-locked player fired the grapple gun")
+	assert(#remotes.FireGrapple.sent == 4, "grapple-locked player fired the grapple gun")
 	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", nil)
 	attackerHumanoid:SetAttribute("Ragdolled", false)
 	local unequipsBefore = attackerHumanoid.UnequippedCount or 0
@@ -1284,10 +1289,15 @@ return function(sources)
 	now += 0.2
 	bombTool.Activated:Emit()
 	assert(#remotes.ThrowBomb.sent == 2, "unacknowledged throw caused full client cooldown")
+	input.TouchEnabled = true
+	now += 0.2
+	input.TouchTapInWorld:Emit({X = 640, Y = 420, kind = "Vector2"}, false)
+	assert(#remotes.ThrowBomb.sent == 3 and aimPixels[1] == 640 and aimPixels[2] == 420, "mobile bomb did not use the firing tap")
+	input.TouchEnabled = false
 	bombTool.Enabled = false
 	bombTool:SetAttribute("BombCoolingDown", true)
 	now += 0.2
 	bombTool.Activated:Emit()
-	assert(#remotes.ThrowBomb.sent == 2, "bomb client ignored authoritative cooldown")
+	assert(#remotes.ThrowBomb.sent == 3, "bomb client ignored authoritative cooldown")
 	print("PASS: bounded fall camera at 15/30/60/144 FPS, resting camera stability, four-player ownership, ragdolls, handoff/controls, momentum, ropes, bombs")
 end

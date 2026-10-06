@@ -7,7 +7,7 @@ local player = Players.LocalPlayer
 local initialized = setmetatable({}, {__mode = "k"})
 local lastRequest = -math.huge
 
-local function fire(tool)
+local function fire(tool, aimPosition)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local camera = workspace.CurrentCamera
@@ -19,7 +19,7 @@ local function fire(tool)
 	-- accepted throw, so a rejected request cannot strand the tool for six seconds.
 	if now - lastRequest < 0.15 then return end
 	lastRequest = now
-	local point = UIS.TouchEnabled and camera.ViewportSize / 2 or UIS:GetMouseLocation()
+	local point = aimPosition or UIS:GetMouseLocation()
 	local ray = camera:ViewportPointToRay(point.X, point.Y)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
@@ -31,8 +31,21 @@ end
 local function watch(tool)
 	if not tool:IsA("Tool") or tool.Name ~= Config.bombToolName or initialized[tool] then return end
 	initialized[tool] = true
-	tool.Activated:Connect(function() fire(tool) end)
+	tool.Activated:Connect(function()
+		-- Mobile aim arrives through TouchTapInWorld with the firing finger.
+		if not UIS.TouchEnabled then fire(tool) end
+	end)
 end
+
+UIS.TouchTapInWorld:Connect(function(touchPositions, processed)
+	if processed or not UIS.TouchEnabled then return end
+	local character = player.Character
+	local tool = character and character:FindFirstChild(Config.bombToolName)
+	-- Roblox supplies one Vector2 here on current mobile clients; accept the
+	-- older list form as well.
+	local position = typeof(touchPositions) == "Vector2" and touchPositions or touchPositions[#touchPositions]
+	if tool and position then fire(tool, position) end
+end)
 
 local backpackConnection, characterConnection
 local function spawned(character)
