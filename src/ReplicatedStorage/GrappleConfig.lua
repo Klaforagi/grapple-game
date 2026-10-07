@@ -86,6 +86,13 @@ return {
 	playerMinDragDistance = 4, -- Prevent bodies being forced into the gun
 
 	bombToolName = "Bomb",
+	pushToolName = "Push",
+	pushRange = 6.5, -- Studs forward; walls block the push
+	pushWidth = 8,
+	pushHeight = 6,
+	pushCooldown = 4,
+	pushRagdollDuration = 5,
+	pushSpeed = 32, -- Outward knockdown speed, studs/second
 	bombFuse = 3.5, -- Seconds from throw, including time in flight
 	bombCooldown = 6, -- Seconds after throwing before another throw
 	bombRadius = 8, -- Root-to-explosion distance in studs
@@ -93,7 +100,7 @@ return {
 	bombLaunchDistance = 200, -- Horizontal studs back to impact height; directly underneath launches vertically
 	bombTumbleSpeed = 3.5, -- Whole-body rotation in radians/sec, capped at 4
 	bombLimbKickSpeed = 3, -- Relative limb kick in studs/sec, capped at 6; set both motion settings to 0 to disable
-	bombDebugRagdoll = true, -- Temporary: print server/client joint diagnostics after each blast
+	bombDebugRagdoll = false, -- Enable to print server/client joint diagnostics after each blast
 	bombRagdollDuration = 5, -- Each hit restarts stun; automatic recovery unless already voluntarily ragdolled
 	bombThrowSpeed = 70,
 	bombArcHeight = 6, -- Arc rises this far above the higher of hand and target

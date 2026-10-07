@@ -111,7 +111,7 @@ Remotes.ToggleRagdoll.OnServerEvent:Connect(function(player)
 	end
 end)
 Remotes.EquipRagdollTool.OnServerEvent:Connect(function(player, toolName, shouldEquip)
-	if type(toolName) ~= "string" or (toolName ~= Config.toolName and toolName ~= Config.bombToolName) then return end
+	if type(toolName) ~= "string" or (toolName ~= Config.toolName and toolName ~= Config.bombToolName and toolName ~= Config.pushToolName) then return end
 	if type(shouldEquip) ~= "boolean" then return end
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")

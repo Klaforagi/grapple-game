@@ -3,6 +3,7 @@ local RunService = game:GetService("RunService")
 local storage = game:GetService("ReplicatedStorage")
 local names = {"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "StruggleInput", "StruggleProgress", "ThrowBomb", "EquipRagdollTool", "SetGrappleColor", "ServerRestartNotice"}
 local folder
+table.insert(names, "UsePush")
 if RunService:IsServer() then
 	folder = storage:FindFirstChild("Remotes")
 	if not folder then

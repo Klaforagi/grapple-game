@@ -13,6 +13,7 @@ local lastThrow, liveBombs, coolingTools, pendingLaunches, stunned = {}, {}, {},
 local issued = setmetatable({}, {__mode = "k"})
 local SERVER_HOLD = 0.3
 local bombCaster = FastCast.new()
+local lastPush = {}
 
 local bombColors = {
 	Black = Color3.fromRGB(20, 20, 20), White = Color3.fromRGB(255, 255, 255), Red = Color3.fromRGB(220, 55, 55), Orange = Color3.fromRGB(242, 143, 43),
@@ -50,6 +51,14 @@ local function giveBomb(player, character)
 	if not character:FindFirstChild(Config.toolName) then backpack:WaitForChild(Config.toolName, 10) end
 	if player.Character ~= character or not character.Parent or issued[character] then return end
 	issued[character] = true
+	if not backpack:FindFirstChild(Config.pushToolName) and not character:FindFirstChild(Config.pushToolName) then
+		local push = Instance.new("Tool")
+		push.Name = Config.pushToolName
+		push.RequiresHandle, push.CanBeDropped = false, false
+		push.ToolTip = "Push nearby players down"
+		push:SetAttribute("PushTool", true)
+		push.Parent = backpack
+	end
 	if backpack:FindFirstChild(Config.bombToolName) or character:FindFirstChild(Config.bombToolName) then return end
 	local tool = Instance.new("Tool")
 	tool.Name = Config.bombToolName
@@ -170,14 +179,15 @@ local function newCastBehavior(state)
 	return behavior
 end
 
-local function queueLaunch(character, humanoid, velocity, now)
+local function queueLaunch(character, humanoid, velocity, now, duration)
 	local previous = stunned[humanoid]
 	stunned[humanoid] = {
 		character = character,
 		recover = (previous and previous.recover) or not humanoid:HasTag("Ragdoll")
 			or humanoid:GetAttribute("GrappleAppliedRagdoll") == true,
 	}
-	humanoid:SetAttribute("BombRagdollUntil", now + Config.bombRagdollDuration)
+	-- Shared knockdown deadline prevents overlapping pushes/blasts shortening a stun.
+	humanoid:SetAttribute("BombRagdollUntil", math.max(humanoid:GetAttribute("BombRagdollUntil") or 0, now + (duration or Config.bombRagdollDuration)))
 	humanoid:SetAttribute("PhysicsServerUntil", now + SERVER_HOLD)
 	humanoid:SetAttribute("RagdollActivatedAt", now)
 	humanoid:SetAttribute("BombRagdollDebug", Config.bombDebugRagdoll == true)
@@ -265,6 +275,58 @@ local function explode(bomb, position)
 	end
 end
 
+Remotes.UsePush.OnServerEvent:Connect(function(player)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local tool = character and character:FindFirstChild(Config.pushToolName)
+	if not humanoid or humanoid.Health <= 0 or not root or humanoid:GetAttribute("GrapplePhysicsLocked") then return end
+	if not tool or not tool:IsA("Tool") or not tool:GetAttribute("PushTool") then return end
+	local now = os.clock()
+	if now - (lastPush[player] or -math.huge) < Config.pushCooldown then return end
+	lastPush[player] = now
+	tool.Enabled = false
+	task.delay(Config.pushCooldown, function() if tool.Parent then tool.Enabled = true end end)
+	-- Horizontal facing keeps the frontal box usable while ragdolled too.
+	local look = root.CFrame.LookVector
+	local forward = Vector3.new(look.X, 0, look.Z)
+	forward = forward.Magnitude > 0.01 and forward.Unit or Vector3.new(0, 0, -1)
+	local right = Vector3.new(-forward.Z, 0, forward.X)
+	local center = root.Position + forward * (Config.pushRange / 2)
+	local hitbox = Instance.new("Part")
+	hitbox.Name = "PushHitbox"
+	hitbox.Size = Vector3.new(Config.pushWidth, Config.pushHeight, Config.pushRange)
+	hitbox.Material = Enum.Material.Neon
+	hitbox.Color = Color3.fromRGB(100, 230, 255)
+	hitbox.Anchored, hitbox.CanCollide, hitbox.CanTouch, hitbox.CanQuery = true, false, false, false
+	hitbox.CastShadow, hitbox.Transparency = false, 0.8
+	hitbox.CFrame = CFrame.lookAt(center, center + forward)
+	hitbox.Parent = workspace
+	TweenService:Create(hitbox, TweenInfo.new(0.5), {Transparency = 1}):Play()
+	Debris:AddItem(hitbox, 0.5)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = {character}
+	params.RespectCanCollide = true
+	-- Include NPC/test rigs as well as player characters, once per humanoid.
+	for _, victim in ipairs(workspace:GetDescendants()) do
+		if not victim:IsA("Humanoid") then continue end
+		local model = victim.Parent
+		local targetRoot = model and model:FindFirstChild("HumanoidRootPart")
+		if model == character or victim.Health <= 0 or not targetRoot or targetRoot.Anchored then continue end
+		local offset = targetRoot.Position - root.Position
+		local depth = offset:Dot(forward)
+		if depth < 0 or depth > Config.pushRange
+			or math.abs(offset:Dot(right)) > Config.pushWidth / 2
+			or math.abs(offset.Y) > Config.pushHeight / 2 then continue end
+		local obstruction = workspace:Raycast(root.Position, offset, params)
+		if obstruction and not obstruction.Instance:IsDescendantOf(model) then continue end
+		local horizontal = Vector3.new(offset.X, 0, offset.Z)
+		local direction = horizontal.Magnitude > 0.01 and horizontal.Unit or Vector3.new(0, 0, -1)
+		queueLaunch(model, victim, direction * Config.pushSpeed + Vector3.new(0, 6, 0), now, Config.pushRagdollDuration)
+	end
+end)
+
 Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 	if typeof(target) ~= "Vector3" then return end
 	for _, value in ipairs({target.X, target.Y, target.Z}) do
@@ -347,5 +409,5 @@ local function added(player)
 	if player.Character then task.spawn(giveBomb, player, player.Character) end
 end
 Players.PlayerAdded:Connect(added)
-Players.PlayerRemoving:Connect(function(player) lastThrow[player] = nil end)
+Players.PlayerRemoving:Connect(function(player) lastThrow[player], lastPush[player] = nil, nil end)
 for _, player in ipairs(Players:GetPlayers()) do added(player) end

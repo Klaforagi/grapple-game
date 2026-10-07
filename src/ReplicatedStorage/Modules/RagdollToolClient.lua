@@ -7,7 +7,7 @@ local Remotes = require(Storage.Modules:WaitForChild("GrappleRemotes"))
 local M = {}
 
 function M.Select(toolName)
-	if toolName ~= Config.toolName and toolName ~= Config.bombToolName then return end
+	if toolName ~= Config.toolName and toolName ~= Config.bombToolName and toolName ~= Config.pushToolName then return end
 	local player = Players.LocalPlayer
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")

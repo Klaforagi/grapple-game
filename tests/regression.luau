@@ -1093,6 +1093,7 @@ return function(sources)
 	local explosionSound = instance("Sound", "Explode", soundsFolder)
 	explosionSound.TimeLength = 2
 	remotes.ThrowBomb = instance("RemoteEvent", "ThrowBomb")
+	remotes.UsePush = instance("RemoteEvent", "UsePush")
 	local bombModule = instance("ModuleScript", "BombPhysics", storage.Modules)
 	local fastCastModule = instance("ModuleScript", "FastCastRedux", storage.Modules)
 	local bombCaster
@@ -1300,5 +1301,39 @@ return function(sources)
 	now += 0.2
 	bombTool.Activated:Emit()
 	assert(#remotes.ThrowBomb.sent == 3, "bomb client ignored authoritative cooldown")
+	local pushTool = assert(attackerBackpack:FindFirstChild(config.pushToolName))
+	assert(pushTool.RequiresHandle == false and not pushTool:FindFirstChild("Handle"), "Push must be a handle-free ability")
+	bombTool.Parent = attackerBackpack
+	pushTool.Parent = attacker.Character
+	attacker.Character.ChildAdded:Emit(pushTool)
+	attackerRoot.CFrame = {LookVector = V.new(1, 0, 0)}
+	local pushCharacter, pushHumanoid, pushRoot = character("PushTarget", attackerRoot.Position + V.new(4, 0, 0), false)
+	local pushPlayer = instance("Player", "PushTargetPlayer", players)
+	pushPlayer.Character = pushCharacter
+	pushPlayer.UserId = 500
+	-- Leave this humanoid out of Players to exercise NPC targeting too.
+	world.Raycast = function() return nil end
+	now += 1
+	input.InputBegan:Emit({UserInputType = "MouseButton1"}, false)
+	pushTool.Activated:Emit()
+	assert(#remotes.UsePush.sent == 1, "Push activation did not send a request")
+	remotes.UsePush.OnServerEvent:Emit(attacker)
+	assert(world:FindFirstChild("PushHitbox").Size.X == config.pushWidth and world:FindFirstChild("PushHitbox").Size.Z == config.pushRange, "Push visual does not match box")
+	local pushDeadline = pushHumanoid:GetAttribute("BombRagdollUntil")
+	assert(pushDeadline == now + 5 and pushHumanoid:GetAttribute("Ragdolled"), "Push did not apply five-second ragdoll")
+	assert(not attackerHumanoid:GetAttribute("BombRagdollUntil"), "Push hit its own user")
+	remotes.UsePush.OnServerEvent:Emit(attacker)
+	assert(pushHumanoid:GetAttribute("BombRagdollUntil") == pushDeadline, "Push cooldown failed")
+	runService.Heartbeat:Emit(1 / 60)
+	assert(pushRoot.AssemblyLinearVelocity.X > 0 and pushRoot.AssemblyLinearVelocity.Magnitude < 50, "Push launch was missing or excessive")
+	ragdoll.Set(pushHumanoid, false)
+	assert(pushHumanoid:GetAttribute("Ragdolled"), "Push recovery bypassed stun")
+	assert(not pushHumanoid:GetAttribute("GrapplePhysicsLocked"), "Push disabled tool access")
+	now = pushDeadline + 0.01
+	runService.Heartbeat:Emit(1 / 60)
+	assert(not pushHumanoid:GetAttribute("Ragdolled"), "Push failed to recover target")
+	pushRoot.Position = attackerRoot.Position + V.new(-4, 0, 0)
+	remotes.UsePush.OnServerEvent:Emit(attacker)
+	assert(not pushHumanoid:GetAttribute("Ragdolled"), "Frontal Push hit a target behind the user")
 	print("PASS: bounded fall camera at 15/30/60/144 FPS, resting camera stability, four-player ownership, ragdolls, handoff/controls, momentum, ropes, bombs")
 end
