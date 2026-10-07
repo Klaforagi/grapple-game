@@ -183,15 +183,23 @@ if RunService:IsServer() then
 	end)
 end
 
-function Service.RecoverPose(humanoid)
+local function horizontalFacing(root)
+	local look = root and root.CFrame.LookVector
+	if not look then return Vector3.new(0, 0, -1) end
+	local flatLook = Vector3.new(look.X, 0, look.Z)
+	if flatLook.Magnitude < 0.01 then return Vector3.new(0, 0, -1) end
+	return flatLook.Unit
+end
+
+function Service.RecoverPose(humanoid, recoveryFacing)
 	local character = humanoid.Parent
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	if not root or not root:IsA("BasePart") or root.Anchored then return end
 
-	local look = root.CFrame.LookVector
-	local flatLook = Vector3.new(look.X, 0, look.Z)
-	if flatLook.Magnitude < 0.01 then flatLook = Vector3.new(0, 0, -1) end
-	flatLook = flatLook.Unit
+	-- The loose root can rotate arbitrarily while falling. Standing up should
+	-- use the direction the player had before ragdolling, rather than whichever
+	-- direction the physics solver left the root facing.
+	local flatLook = recoveryFacing or horizontalFacing(root)
 
 	local position = root.Position
 	local params = RaycastParams.new()
@@ -454,6 +462,8 @@ function Service.Set(humanoid, enabled, preserveMotion)
 	if enabled then
 		rig.autoRotate, rig.platformStand = humanoid.AutoRotate, humanoid.PlatformStand
 		rig.stateMachine = humanoid.EvaluateStateMachine
+		local root = humanoid.Parent:FindFirstChild("HumanoidRootPart")
+		rig.recoveryFacing = horizontalFacing(root)
 		humanoid:SetAttribute("RagdollRestoreStateMachine", rig.stateMachine)
 		rig.gettingUp = humanoid:GetStateEnabled(Enum.HumanoidStateType.GettingUp)
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
@@ -524,7 +534,10 @@ function Service.Set(humanoid, enabled, preserveMotion)
 	if humanoid.Health > 0 then
 		humanoid:ChangeState(enabled and Enum.HumanoidStateType.Physics or Enum.HumanoidStateType.GettingUp)
 	end
-	if not enabled and humanoid.Health > 0 and not preserveMotion then Service.RecoverPose(humanoid) end
+	if not enabled and humanoid.Health > 0 and not preserveMotion then
+		Service.RecoverPose(humanoid, rig.recoveryFacing)
+	end
+	if not enabled then rig.recoveryFacing = nil end
 	if enabled then Service.RefreshOwnership(humanoid) end
 end
 

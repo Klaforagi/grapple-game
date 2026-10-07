@@ -197,7 +197,9 @@ return function(sources)
 		warn = function() end,
 		game = {GetService = function(_, name) return assert(services[name], name) end},
 		workspace = world, Vector3 = V, Instance = {new = instance},
-		CFrame = {new = function() return identity end, lookAt = function() return identity end}, BrickColor = {new = function() return {} end},
+		CFrame = {new = function() return identity end, lookAt = function(origin, target)
+			return setmetatable({LookVector = (target - origin).Unit}, {__mul = function(a) return a end})
+		end}, BrickColor = {new = function() return {} end},
 		Color3 = {fromRGB = function() return {} end}, ColorSequence = {new = function() return {} end},
 		PhysicalProperties = {new = function(d, f) return {Density = d, Friction = f} end},
 		RaycastParams = {new = function() return {} end}, OverlapParams = {new = function() return {} end},
@@ -404,6 +406,7 @@ return function(sources)
 	-- R6 joints must disable and restore as well.
 	local r6, hum6, root6, motor6 = character("R6", V.new(), false)
 	root6.Massless, root6.RootPriority = true, -10
+	root6.CFrame = {LookVector = V.new(1, 0, 0)}
 	ragdoll.Set(hum6, true)
 	assert(#r6:FindFirstChild("GrappleRagdollJoints"):GetChildren() == 6 and not motor6.Enabled and not root6.CanCollide)
 	assert(not root6.Massless and root6.RootPriority == 127 and not root6:GetNetworkOwnershipAuto(), "NPC root was not stable/server-owned")
@@ -423,7 +426,10 @@ return function(sources)
 	nativeIgnore.Part0, nativeIgnore.Part1 = r6Limb1, r6Limb2
 	r6.DescendantAdded:Emit(nativeIgnore)
 	assert(not nativeIgnore.Enabled, "native self-collision filter defeated the new collision policy")
+	-- A ragdoll can spin in flight, but recovery should retain its original yaw.
+	root6.CFrame = {LookVector = V.new(-1, 0, 0)}
 	ragdoll.Set(hum6, false)
+	assert(root6.CFrame.LookVector.X == 1 and root6.CFrame.LookVector.Z == 0, "recovery used the loose root's final facing")
 	assert(oppositeLimbs.Enabled and nativeIgnore.Enabled, "normal self-collision filters were not restored")
 	assert(root6.Massless and root6.RootPriority == -10, "ragdoll recovery lost original mass/root settings")
 	assert(config.ragdollToggle_Cooldown == 0.5, "ragdoll recovery cooldown should be half a second")
