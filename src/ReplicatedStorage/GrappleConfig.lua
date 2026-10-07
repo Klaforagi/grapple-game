@@ -35,6 +35,7 @@ return {
 	GrappleCooldown = 0.1,
 	playerReleaseCooldown = 0.3, -- Ignore shoot-to-release briefly after catching a player
 	playerOwnershipReleaseDelay = 0.2, -- Keep the last simulator and victim controls locked after detaching
+	playerReleaseRagdollDuration = 1, -- Click/tap release keeps an auto-ragdolled victim loose to preserve momentum
 	
 	
 	
@@ -84,6 +85,8 @@ return {
 	ropeLengthFraction = 0.05, -- 5% of current length per press / held control tick
 	ropeReelInterval = 1 / 15, -- Repeat held reel input at half the previous 30 Hz rate
 	playerMinDragDistance = 4, -- Prevent bodies being forced into the gun
+	playerReelVictimPullSpeed = 22, -- Minimum victim speed toward the grappler while shortening
+	playerReelVictimMaxBoost = 30, -- Maximum velocity added by one accepted reel input
 
 	bombToolName = "Bomb",
 	pushToolName = "Push",

@@ -221,7 +221,7 @@ return function(sources)
 	end
 	local config = execute(sources.config)
 	local remotes = {}
-	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "StruggleInput", "StruggleProgress", "EquipRagdollTool", "SetGrappleColor", "ServerRestartNotice"}) do
+	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "StruggleInput", "StruggleProgress", "EquipRagdollTool", "SetGrappleColor", "SetPlayerSetting", "ServerRestartNotice"}) do
 		remotes[name] = instance("RemoteEvent", name)
 	end
 	local ragdoll = execute(sources.ragdoll)
@@ -317,6 +317,8 @@ return function(sources)
 	assert(not rope.destroyed, "accidental second click released a newly caught player")
 	remotes.ChangeLength.OnServerEvent:Emit(attacker, 12)
 	assert(rope.Length == 12, "reel-in did not immediately set the actual rope length")
+	assert(victimRoot.AssemblyLinearVelocity.Z < 0 and victimRoot.ImpulseCount == 1,
+		"reel-in did not favor pulling the victim toward the grappler")
 	remotes.ChangeLength.OnServerEvent:Emit(attacker, 0/0)
 	assert(rope.Length == 12, "NaN length changed the fixed rope")
 	now += 0.5
@@ -352,6 +354,8 @@ return function(sources)
 	-- a grapple-created ragdoll as though it were voluntary.
 	fire()
 	fire()
+	assert(victimHumanoid:GetAttribute("ForcedRagdollUntil") ~= nil and victimHumanoid:GetAttribute("Ragdolled"),
+		"click release did not hold the victim ragdoll")
 	local staleRelease = table.clone(delayed)
 	table.clear(delayed)
 	fire()
@@ -967,6 +971,8 @@ return function(sources)
 	equipHumanoid.Died:Emit()
 	assert(not equipHumanoid:GetAttribute("Ragdolled") and equipCharacter.BreakJointsCount == 1,
 		"normal death retained the ragdoll assembly")
+	assert(equipCharacter:FindFirstChild("Torso").CanCollide,
+		"broken-apart body parts can fall through the floor")
 	assert(nativeBackpackEnabled and next(equipActions) == nil, "death retained the ragdoll hotbar")
 	equipPlayer.CharacterRemoving:Emit(equipCharacter)
 	equipPlayer.Character = nil

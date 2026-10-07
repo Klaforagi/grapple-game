@@ -480,6 +480,14 @@ function Service.BreakApart(humanoid)
 	if not character then return end
 	local rig = rigs[humanoid]
 	if rig then rig.active = false end
+	-- Living avatar body parts are commonly non-collidable. Once their joints
+	-- break, enable collision so the head and limbs do not fall through floors.
+	for _, item in ipairs(character:GetChildren()) do
+		if item:IsA("BasePart") then
+			item.CanCollide = item.Name ~= "HumanoidRootPart"
+			item.Massless = false
+		end
+	end
 
 	-- Ragdoll sockets can keep a dead avatar assembled after Roblox breaks its
 	-- motors. Remove every physical/animation joint connecting two body parts.
@@ -508,7 +516,8 @@ end
 function Service.Set(humanoid, enabled, preserveMotion)
 	-- All recovery paths (including grapple escape/tag removal) honor blast stun.
 	if not enabled and (humanoid:GetAttribute("GrapplePhysicsLocked")
-		or os.clock() < (humanoid:GetAttribute("BombRagdollUntil") or 0)) then
+		or os.clock() < (humanoid:GetAttribute("BombRagdollUntil") or 0)
+		or os.clock() < (humanoid:GetAttribute("ForcedRagdollUntil") or 0)) then
 		humanoid:AddTag("Ragdoll")
 		return
 	end

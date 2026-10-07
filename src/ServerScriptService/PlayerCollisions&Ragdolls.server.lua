@@ -90,7 +90,8 @@ for _, player in ipairs(Players:GetPlayers()) do playerAdded(player) end
 Remotes.ToggleRagdoll.OnServerEvent:Connect(function(player)
 	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 or humanoid:GetAttribute("GrappledBy") then return end
-	if os.clock() < (humanoid:GetAttribute("BombRagdollUntil") or 0) then return end
+	if os.clock() < (humanoid:GetAttribute("BombRagdollUntil") or 0)
+		or os.clock() < (humanoid:GetAttribute("ForcedRagdollUntil") or 0) then return end
 	if humanoid:HasTag("Ragdoll") then
 		local activatedAt = humanoid:GetAttribute("RagdollActivatedAt")
 		if activatedAt and os.clock() - activatedAt < Config.ragdollToggle_Cooldown then return end

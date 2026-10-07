@@ -105,7 +105,7 @@ local function restoreAutomaticNetworkOwnership(character: Model)
 	end
 end
 
-local disconnectRope: (Player, boolean?) -> ()
+local disconnectRope: (Player, boolean?, boolean?) -> ()
 
 local function finishVictimHandoff(state, departingPlayer)
 	local character, humanoid = state.victimCharacter, state.victimHumanoid
@@ -126,7 +126,8 @@ local function finishVictimHandoff(state, departingPlayer)
 		humanoid:SetAttribute("GrapplePhysicsSession", nil)
 		if humanoid:HasTag("Ragdoll") then Ragdoll.Set(humanoid, true) end
 		if state.appliedRagdoll and humanoid.Health > 0
-			and os.clock() >= (humanoid:GetAttribute("BombRagdollUntil") or 0) then
+			and os.clock() >= (humanoid:GetAttribute("BombRagdollUntil") or 0)
+			and os.clock() >= (humanoid:GetAttribute("ForcedRagdollUntil") or 0) then
 			-- Set before removing the tag so its observer cannot run pose recovery.
 			Ragdoll.Set(humanoid, false, true)
 			humanoid:RemoveTag("Ragdoll")
@@ -137,7 +138,7 @@ local function finishVictimHandoff(state, departingPlayer)
 	end
 end
 
-disconnectRope = function(player: Player, skipCooldown: boolean?)
+disconnectRope = function(player: Player, skipCooldown: boolean?, preserveVictimMomentum: boolean?)
 	local state = Active[player]
 	if not state then return end
 	-- Clear first so destruction and death callbacks can safely re-enter.
@@ -155,13 +156,36 @@ disconnectRope = function(player: Player, skipCooldown: boolean?)
 
 	local victimHumanoid: Humanoid? = state.victimHumanoid
 	if victimHumanoid and physicsSessions[state.victimCharacter] == state then
+		local forcedDuration = math.max(0, Config.playerReleaseRagdollDuration or 1)
+		if preserveVictimMomentum then
+			state.forcedRagdollUntil = os.clock() + forcedDuration
+			victimHumanoid:SetAttribute("ForcedRagdollUntil", state.forcedRagdollUntil)
+		end
 		if victimHumanoid.Parent then victimHumanoid:SetAttribute("GrappledBy", nil) end
 		-- Let the current simulator finish the detached motion before handing
-		-- it back. This is a settling interval, not a network acknowledgement.
+		-- it back. A click/tap release keeps the grappler as simulator for the
+		-- complete forced-ragdoll window so ownership cannot interrupt momentum.
 		state.detached = true
-		task.delay(math.clamp(Config.playerOwnershipReleaseDelay or 0.2, 0, 1), function()
+		local handoffDelay = math.clamp(Config.playerOwnershipReleaseDelay or 0.2, 0, 1)
+		if preserveVictimMomentum then handoffDelay = math.max(handoffDelay, forcedDuration) end
+		task.delay(handoffDelay, function()
 			finishVictimHandoff(state)
 		end)
+		if state.forcedRagdollUntil then
+			local deadline = state.forcedRagdollUntil
+			task.delay(forcedDuration, function()
+				if victimHumanoid.Parent ~= state.victimCharacter
+					or victimHumanoid:GetAttribute("ForcedRagdollUntil") ~= deadline then return end
+				victimHumanoid:SetAttribute("ForcedRagdollUntil", nil)
+				if state.appliedRagdoll and victimHumanoid.Health > 0
+					and not victimHumanoid:GetAttribute("GrapplePhysicsLocked")
+					and physicsSessions[state.victimCharacter] == nil
+					and os.clock() >= (victimHumanoid:GetAttribute("BombRagdollUntil") or 0) then
+					Ragdoll.Set(victimHumanoid, false, true)
+					victimHumanoid:RemoveTag("Ragdoll")
+				end
+			end)
+		end
 	end
 	if state.ownershipTransferred and state.character.Parent then
 		local ownerHumanoid = state.character:FindFirstChildOfClass("Humanoid")
@@ -405,9 +429,31 @@ Remotes.ChangeLength.OnServerEvent:Connect(function(player, requestedLength)
 	state.lastLengthChange = now
 	local minimum = state.victimHumanoid and (Config.playerMinDragDistance or 4) or minRopeLength
 	local length = math.clamp(requestedLength, minimum, maxRopeLength)
+	local previousLength = state.rope.Length
 	-- Store the actual constraint length immediately. It cannot unwind when
 	-- input stops and does not depend on winch force or target convergence.
 	state.rope.Length = length
+
+	-- Rope tension is equal at both ends, which can pull the grappler toward a
+	-- resistant victim. Reel-in gets a one-sided assist on the victim assembly.
+	if state.victimHumanoid and length < previousLength - 0.001 then
+		local ownerRoot = state.character:FindFirstChild("HumanoidRootPart")
+		local victimRoot = state.victimCharacter and state.victimCharacter:FindFirstChild("HumanoidRootPart")
+		if ownerRoot and ownerRoot:IsA("BasePart") and victimRoot and victimRoot:IsA("BasePart")
+			and not victimRoot.Anchored then
+			local offset = ownerRoot.Position - victimRoot.Position
+			if offset.Magnitude > (Config.playerMinDragDistance or 4) then
+				local direction = offset.Unit
+				local currentSpeed = victimRoot.AssemblyLinearVelocity:Dot(direction)
+				local desiredSpeed = Config.playerReelVictimPullSpeed or 22
+				local boost = math.clamp(desiredSpeed - currentSpeed, 0,
+					Config.playerReelVictimMaxBoost or 30)
+				if boost > 0 then
+					victimRoot:ApplyImpulse(direction * victimRoot.AssemblyMass * boost)
+				end
+			end
+		end
+	end
 end)
 
 Remotes.ToggleWallMode.OnServerEvent:Connect(function(player)
@@ -439,7 +485,7 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	lastFire[player] = now
 	if Active[player] then
 		if now < (Active[player].releaseAllowedAt or 0) then return end
-		disconnectRope(player)
+		disconnectRope(player, false, true)
 		return
 	end
 	if not isValidAim(player, hitPosition, cameraPosition) then return end
