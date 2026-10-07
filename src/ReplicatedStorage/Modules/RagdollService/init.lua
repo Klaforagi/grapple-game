@@ -11,6 +11,10 @@ local CAMERA_FOLLOW_SPEED = 12
 local CAMERA_MAX_LAG = 1.25 -- Studs; fast falls must not outrun the camera subject
 local OWNERSHIP_CHECK_INTERVAL = 0.25
 local SETTLING_FRICTION = 5
+-- Low surface friction lets loose limbs slide across stair lips instead of
+-- catching on every individual step. Keep it above zero for stable rest poses.
+local RAGDOLL_SURFACE_FRICTION = 0.2
+local STAIR_SURFACE_FRICTION = 0.01
 local SOCKET_PROPERTIES = {"MaxFrictionTorque", "LimitsEnabled", "TwistLimitsEnabled", "UpperAngle", "TwistLowerAngle", "TwistUpperAngle", "Restitution"}
 
 local function attachmentBody(attachment, character)
@@ -80,6 +84,37 @@ function Service.RefreshJointFriction(humanoid)
 		end
 	end
 	if rig.suppressExtraSockets then rig.suppressExtraSockets() end
+end
+
+function Service.RefreshSurfaceFriction(humanoid)
+	local rig = rigs[humanoid]
+	if not rig or not rig.active then return end
+	local touchingStair = false
+	for part in pairs(rig.parts) do
+		if part.Parent and part.Name ~= "HumanoidRootPart" and part.GetTouchingParts then
+			local ok, touching = pcall(function() return part:GetTouchingParts() end)
+			if ok then
+				for _, other in ipairs(touching) do
+					if (other.Name == "Stair" or other.Name == "StairFillW")
+						and not other:IsDescendantOf(humanoid.Parent) then
+						touchingStair = true
+						break
+					end
+				end
+			end
+		end
+		if touchingStair then break end
+	end
+
+	local friction = touchingStair and STAIR_SURFACE_FRICTION or RAGDOLL_SURFACE_FRICTION
+	if rig.surfaceFriction == friction then return end
+	rig.surfaceFriction = friction
+	for part, previous in pairs(rig.parts) do
+		if part.Parent and part.Name ~= "HumanoidRootPart" then
+			part.CustomPhysicalProperties = PhysicalProperties.new(previous.density,
+				friction, 0, 100, 100)
+		end
+	end
 end
 
 -- Inspect the real engine rig rather than inferring it from the ragdoll tag.
@@ -178,6 +213,7 @@ if RunService:IsServer() then
 				Service.RefreshOwnership(humanoid)
 				Service.RefreshJointFriction(humanoid)
 				Service.RefreshSelfCollisions(humanoid)
+				Service.RefreshSurfaceFriction(humanoid)
 			end
 		end
 	end)
@@ -245,7 +281,7 @@ function Service.Prepare(humanoid)
 		return rigs[humanoid]
 	end
 	local character = humanoid.Parent
-	humanoid.BreakJointsOnDeath = false
+	humanoid.BreakJointsOnDeath = true
 	humanoid.RequiresNeck = false
 	local rig = {joints = {}, roots = {}, parts = {}, extraSockets = {}, collisionRestore = {}, active = false}
 	rigs[humanoid] = rig
@@ -439,6 +475,36 @@ function Service.Prepare(humanoid)
 	return rig
 end
 
+function Service.BreakApart(humanoid)
+	local character = humanoid.Parent
+	if not character then return end
+	local rig = rigs[humanoid]
+	if rig then rig.active = false end
+
+	-- Ragdoll sockets can keep a dead avatar assembled after Roblox breaks its
+	-- motors. Remove every physical/animation joint connecting two body parts.
+	for _, item in ipairs(character:GetDescendants()) do
+		local connected = false
+		if item:IsA("Motor6D") or item:IsA("Weld") or item:IsA("WeldConstraint") then
+			connected = item.Part0 and item.Part1
+				and item.Part0.Parent == character and item.Part1.Parent == character
+		elseif item:IsA("AnimationConstraint") or item:IsA("BallSocketConstraint") then
+			connected = attachmentBody(item.Attachment0, character) ~= nil
+				and attachmentBody(item.Attachment1, character) ~= nil
+		end
+		if connected then item:Destroy() end
+	end
+
+	local ragdollFolder = character:FindFirstChild("GrappleRagdollJoints")
+	if ragdollFolder then ragdollFolder:Destroy() end
+	local collisionFolder = character:FindFirstChild("GrappleSelfCollision")
+	if collisionFolder then collisionFolder:Destroy() end
+	humanoid:RemoveTag("Ragdoll")
+	humanoid:SetAttribute("Ragdolled", false)
+	rigs[humanoid] = nil
+	character:BreakJoints()
+end
+
 function Service.Set(humanoid, enabled, preserveMotion)
 	-- All recovery paths (including grapple escape/tag removal) honor blast stun.
 	if not enabled and (humanoid:GetAttribute("GrapplePhysicsLocked")
@@ -460,6 +526,7 @@ function Service.Set(humanoid, enabled, preserveMotion)
 	rig.active = enabled
 	rig.nextOwnershipCheck = 0
 	if enabled then
+		rig.surfaceFriction = RAGDOLL_SURFACE_FRICTION
 		rig.autoRotate, rig.platformStand = humanoid.AutoRotate, humanoid.PlatformStand
 		rig.stateMachine = humanoid.EvaluateStateMachine
 		local root = humanoid.Parent:FindFirstChild("HumanoidRootPart")
@@ -469,7 +536,9 @@ function Service.Set(humanoid, enabled, preserveMotion)
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
 		for _, part in ipairs(humanoid.Parent:GetChildren()) do
 			if part:IsA("BasePart") then
+				local currentProperties = part.CurrentPhysicalProperties
 				rig.parts[part] = {collide = part.CanCollide, properties = part.CustomPhysicalProperties, group = part.CollisionGroup,
+					density = currentProperties.Density,
 					massless = part.Massless, rootPriority = part.RootPriority}
 				part.Massless = false
 				part.RootPriority = part.Name == "HumanoidRootPart" and 127 or math.min(part.RootPriority, 126)
@@ -480,8 +549,10 @@ function Service.Set(humanoid, enabled, preserveMotion)
 				-- through it independently of the visible corpse.
 				part.CanCollide = part.Name ~= "HumanoidRootPart" or humanoid.Health <= 0
 				if part.Name ~= "HumanoidRootPart" then
-					local p = part.CurrentPhysicalProperties
-					part.CustomPhysicalProperties = PhysicalProperties.new(p.Density, 0.25, 0, 100, 100)
+					-- Give the ragdoll a slick surface while it is loose. This lets its
+					-- limbs slide over stair lips instead of wedging on each individual step.
+					part.CustomPhysicalProperties = PhysicalProperties.new(currentProperties.Density,
+						RAGDOLL_SURFACE_FRICTION, 0, 100, 100)
 				end
 			end
 		end
@@ -522,6 +593,7 @@ function Service.Set(humanoid, enabled, preserveMotion)
 			end
 		end
 		table.clear(rig.parts)
+		rig.surfaceFriction = nil
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, rig.gettingUp)
 		humanoid:SetAttribute("RagdollRecoveredAt", os.clock())
 	end

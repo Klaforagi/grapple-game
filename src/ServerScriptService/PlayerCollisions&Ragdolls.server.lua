@@ -68,13 +68,7 @@ local function configure(player, character)
 	if humanoid:HasTag("Ragdoll") then Ragdoll.Set(humanoid, true) end
 	humanoid.Died:Connect(function()
 		ensureRespawn(player, character)
-		humanoid:AddTag("Ragdoll")
-		Ragdoll.Set(humanoid, true)
-
-		-- Set may be a no-op if the player was already ragdolled before dying.
-		-- Keep the camera's root on the floor in either case.
-		local root = character:FindFirstChild("HumanoidRootPart")
-		if root and root:IsA("BasePart") then root.CanCollide = true end
+		Ragdoll.BreakApart(humanoid)
 	end)
 end
 CollectionService:GetInstanceAddedSignal("Ragdoll"):Connect(function(humanoid)

@@ -1,4 +1,4 @@
--- Server-authoritative damage for every BasePart named LavaBrick inside
+-- Server-authoritative damage for every LavaBrick and LavaBrick1Tap inside
 -- Workspace.LavaBricks. Touch events catch short landings while jumping;
 -- the overlap scan is retained for characters that begin inside a lava part.
 -- A humanoid can take at most one lava tick per second, even when several
@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local DAMAGE = 30
+local ONE_TAP_DAMAGE = 1000
 local DAMAGE_COOLDOWN = 2
 local OVERLAP_INTERVAL = 0.1
 
@@ -21,7 +22,8 @@ local nextDamageAt = setmetatable({}, {__mode = "k"})
 local touchConnections: {[BasePart]: RBXScriptConnection} = {}
 
 local function isLavaBrick(instance: Instance): boolean
-	return instance:IsA("BasePart") and instance.Name == "LavaBrick"
+	return instance:IsA("BasePart")
+		and (instance.Name == "LavaBrick" or instance.Name == "LavaBrick1Tap")
 end
 
 local function register(instance: Instance)
@@ -38,10 +40,12 @@ local function damageHumanoid(humanoid: Humanoid, lavaBrick: BasePart)
 	if humanoid.Health <= 0 then return end
 
 	local now = os.clock()
-	if now < (nextDamageAt[humanoid] or 0) then return end
+	local oneTap = lavaBrick.Name == "LavaBrick1Tap"
+	-- A one-tap brick must still kill if the player just touched ordinary lava.
+	if not oneTap and now < (nextDamageAt[humanoid] or 0) then return end
 
 	nextDamageAt[humanoid] = now + DAMAGE_COOLDOWN
-	humanoid:TakeDamage(DAMAGE)
+	humanoid:TakeDamage(oneTap and ONE_TAP_DAMAGE or DAMAGE)
 
 	local damageSound = lavaBrick:FindFirstChild("DamageSound")
 	if damageSound and damageSound:IsA("Sound") then damageSound:Play() end

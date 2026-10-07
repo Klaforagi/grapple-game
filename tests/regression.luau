@@ -123,6 +123,8 @@ return function(sources)
 	end
 	function methods:SetNetworkOwnershipAuto() self.NetworkOwner, self.OwnershipAuto = "auto", true end
 	function methods:GetMass() return 5 end
+	function methods:GetTouchingParts() return self.TouchingParts or {} end
+	function methods:BreakJoints() self.BreakJointsCount = (self.BreakJointsCount or 0) + 1 end
 	function methods:ChangeState(state) self.State = state end
 	function methods:Move(direction) self.MoveDirection = direction end
 	function methods:GetState() return self.State end
@@ -411,6 +413,12 @@ return function(sources)
 	assert(#r6:FindFirstChild("GrappleRagdollJoints"):GetChildren() == 6 and not motor6.Enabled and not root6.CanCollide)
 	assert(not root6.Massless and root6.RootPriority == 127 and not root6:GetNetworkOwnershipAuto(), "NPC root was not stable/server-owned")
 	assert(r6:FindFirstChild("GrappleRagdollJoints"):FindFirstChild("Neck").MaxFrictionTorque > 0, "ragdoll joints have no settling friction")
+	r6:FindFirstChild("Limb1").TouchingParts = {instance("Part", "StairFillW", world)}
+	ragdoll.RefreshSurfaceFriction(hum6)
+	assert(r6:FindFirstChild("Limb1").CustomPhysicalProperties.Friction == 0.01, "stair contact did not lower ragdoll friction")
+	r6:FindFirstChild("Limb1").TouchingParts = {}
+	ragdoll.RefreshSurfaceFriction(hum6)
+	assert(r6:FindFirstChild("Limb1").CustomPhysicalProperties.Friction == 0.2, "leaving stairs did not restore ragdoll friction")
 	local function collisionPair(character, a, b)
 		for _, constraint in ipairs(character:FindFirstChild("GrappleSelfCollision"):GetChildren()) do
 			if (constraint.Part0 == a and constraint.Part1 == b) or (constraint.Part0 == b and constraint.Part1 == a) then return constraint end
@@ -615,14 +623,15 @@ return function(sources)
 	remotes.FireGrapple.OnServerEvent:Emit(attacker, victimRoot.Position, V.new(0, 0, -100))
 	assert(victimHumanoid:GetAttribute("GrappledBy") == attacker.UserId and not gun:GetAttribute("WallMode"), "wall mode player hit did not become a normal grapple and disable wall mode")
 	fire()
-	-- Death must remove the physical rope but leave the dead character ragdolled.
+	-- Grapple cleanup must remove the physical rope on death. The lifecycle
+	-- script's normal joint-breaking behavior is exercised below.
 	hitParts = {victimRoot}
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
 	fire()
 	local deathRope = assert(victimRoot:FindFirstChildWhichIsA("RopeConstraint"))
 	victimHumanoid.Health = 0
 	victimHumanoid.Died:Emit()
-	assert(deathRope.destroyed and victimHumanoid:GetAttribute("Ragdolled"), "death cleanup resurrected or retained rope")
+	assert(deathRope.destroyed, "death cleanup retained the rope")
 	-- The attacker's client must also suppress the remote victim's state machine.
 	runService.IsServer = function() return false end
 	players.LocalPlayer = attacker
@@ -956,6 +965,8 @@ return function(sources)
 	equipHumanoid:SetAttribute("Ragdolled", true)
 	equipHumanoid.Health = 0
 	equipHumanoid.Died:Emit()
+	assert(not equipHumanoid:GetAttribute("Ragdolled") and equipCharacter.BreakJointsCount == 1,
+		"normal death retained the ragdoll assembly")
 	assert(nativeBackpackEnabled and next(equipActions) == nil, "death retained the ragdoll hotbar")
 	equipPlayer.CharacterRemoving:Emit(equipCharacter)
 	equipPlayer.Character = nil
@@ -985,12 +996,12 @@ return function(sources)
 	now = recoveredAt + 0.5
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid:HasTag("Ragdoll"), "cooldown did not expire after half a second")
-	-- A dead ragdoll's camera follows HumanoidRootPart, so that root must not
-	-- pass through the floor even when it was already ragdolled before death.
+	-- Resetting an active ragdoll must still use normal break-apart death.
 	remotes.ResetCharacter.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid.Health == 0, "reset request did not kill a ragdolled player")
 	attackerHumanoid.Died:Emit()
-	assert(attackerRoot.CanCollide, "dead ragdoll root can fall through the floor")
+	assert(not attackerHumanoid:GetAttribute("Ragdolled") and attacker.Character.BreakJointsCount == 1,
+		"reset retained the ragdoll assembly")
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
 	assert(attacker.LoadCharacterCount == 1, "dead player did not receive respawn fallback")
 	attackerHumanoid.Health = 100
