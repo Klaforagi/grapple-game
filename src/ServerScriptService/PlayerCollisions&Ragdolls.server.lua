@@ -89,7 +89,8 @@ Players.PlayerRemoving:Connect(function(player) pendingRespawns[player] = nil en
 for _, player in ipairs(Players:GetPlayers()) do playerAdded(player) end
 Remotes.ToggleRagdoll.OnServerEvent:Connect(function(player)
 	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if not humanoid or humanoid.Health <= 0 or humanoid:GetAttribute("GrappledBy") then return end
+	if not humanoid or humanoid.Health <= 0 or humanoid:GetAttribute("GrappledBy")
+		or humanoid:GetAttribute("CapsuleLocked") then return end
 	if os.clock() < (humanoid:GetAttribute("BombRagdollUntil") or 0)
 		or os.clock() < (humanoid:GetAttribute("ForcedRagdollUntil") or 0) then return end
 	if humanoid:HasTag("Ragdoll") then
@@ -112,7 +113,8 @@ Remotes.EquipRagdollTool.OnServerEvent:Connect(function(player, toolName, should
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not character or not humanoid or humanoid.Health <= 0
 		or humanoid:GetAttribute("Ragdolled") ~= true
-		or humanoid:GetAttribute("GrapplePhysicsLocked") == true then return end
+		or humanoid:GetAttribute("GrapplePhysicsLocked") == true
+		or humanoid:GetAttribute("CapsuleLocked") == true then return end
 	local equipped = character:FindFirstChild(toolName)
 	local backpack = player:FindFirstChildOfClass("Backpack")
 	if not backpack then return end

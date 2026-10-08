@@ -4,6 +4,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local ServerStorage = game:GetService("ServerStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("GrappleConfig"))
 local Remotes = require(ReplicatedStorage.Modules:WaitForChild("GrappleRemotes"))
@@ -19,6 +20,12 @@ local FIRE_INTERVAL = 0.05
 local LENGTH_INTERVAL = Config.ropeReelInterval or 1 / 15
 local minRopeLength = Config.minRopeLength or Config.MinRopeLength or 0.1
 local maxRopeLength = Config.maxRopeLength or Config.MaxRopeLength or 500
+local releaseGrapple = ServerStorage:FindFirstChild("ReleaseGrapple")
+if not releaseGrapple then
+	releaseGrapple = Instance.new("BindableEvent")
+	releaseGrapple.Name = "ReleaseGrapple"
+	releaseGrapple.Parent = ServerStorage
+end
 
 local hitboxFolder = Workspace:FindFirstChild("Hitbox")
 if not hitboxFolder then
@@ -225,6 +232,10 @@ disconnectRope = function(player: Player, skipCooldown: boolean?, preserveVictim
 		Remotes.GrappledWall:FireClient(player)
 	end
 end
+
+releaseGrapple.Event:Connect(function(player)
+	if player and player:IsA("Player") then disconnectRope(player, true, false) end
+end)
 
 local function createImpactAttachment(player: Player, part: BasePart, position: Vector3): Attachment
 	local attachment = Instance.new("Attachment")
@@ -495,6 +506,7 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	local tool = getTool(player)
 	local firePoint = tool and getFirePoint(tool)
 	if not character or not humanoid or humanoid.Health <= 0 or humanoid:GetAttribute("GrapplePhysicsLocked")
+		or humanoid:GetAttribute("CapsuleLocked")
 		or not tool or not firePoint then return end
 	if os.clock() < (cooldownUntil[player] or 0) then return end
 	local aim = hitPosition - firePoint.WorldPosition

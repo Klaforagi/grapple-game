@@ -87,6 +87,9 @@ return {
 	playerMinDragDistance = 4, -- Prevent bodies being forced into the gun
 	playerReelVictimPullSpeed = 22, -- Minimum victim speed toward the grappler while shortening
 	playerReelVictimMaxBoost = 30, -- Maximum velocity added by one accepted reel input
+	capsuleCaptureDistance = 12, -- Victim must be this close to the Trigger Part
+	capsulePromptDistance = 10,
+	capsuleDamagePerSecond = 5,
 
 	bombToolName = "Bomb",
 	pushToolName = "Push",

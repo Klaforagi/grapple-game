@@ -60,7 +60,7 @@ return function(sources)
 			CollisionGroup = "Default", CurrentPhysicalProperties = {Density = 1}, AssemblyMass = 5,
 			Died = signal(), Destroying = signal(), Unequipped = signal(), CharacterRemoving = signal(), CharacterAdded = signal(),
 			DescendantAdded = signal(), ChildAdded = signal(), OnServerEvent = signal(), OnClientEvent = signal(),
-			Equipped = signal(), Activated = signal(), Touched = signal(),
+			Equipped = signal(), Activated = signal(), Touched = signal(), Event = signal(), Triggered = signal(),
 		}, objectMT)
 		table.insert(objects, object)
 		return object
@@ -194,6 +194,7 @@ return function(sources)
 	function world:GetPartBoundsInBox() return hitParts end
 	function world:Raycast() return nil end
 	local services = {Players = players, RunService = runService, ReplicatedStorage = storage, Workspace = world, PhysicsService = {}}
+	services.ServerStorage = instance("ServerStorage", "ServerStorage")
 	services.StarterPack = instance("StarterPack", "StarterPack")
 	local env = setmetatable({
 		warn = function() end,
@@ -1358,5 +1359,10 @@ return function(sources)
 	pushRoot.Position = attackerRoot.Position + V.new(-4, 0, 0)
 	remotes.UsePush.OnServerEvent:Emit(attacker)
 	assert(not pushHumanoid:GetAttribute("Ragdolled"), "Frontal Push hit a target behind the user")
-	print("PASS: bounded fall camera at 15/30/60/144 FPS, resting camera stability, four-player ownership, ragdolls, handoff/controls, momentum, ropes, bombs")
+	execute(sources.capsuleTests)({execute = execute, sources = sources, instance = instance,
+		methods = methods, signal = signal, env = env, services = services, world = world,
+		players = players, runService = runService, character = character,
+		advance = function(seconds) now += seconds end})
+	execute(sources.rigRespawnTests)(sources.rigRespawn)
+	print("PASS: bounded fall camera at 15/30/60/144 FPS, resting camera stability, four-player ownership, ragdolls, handoff/controls, momentum, ropes, bombs, capsule capture/rescue, NPC respawn")
 end
