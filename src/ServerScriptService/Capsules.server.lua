@@ -83,11 +83,14 @@ end
 local function updatePrompt(state)
 	local occupied = state.occupant ~= nil
 	local occupantPlayer = occupied and state.occupant.player
+	local waiting = occupied and state.occupant.waitingForRespawn == true
 	state.model:SetAttribute("CapsuleOccupied", occupied)
+	state.model:SetAttribute("CapsuleWaitingForRespawn", waiting)
 	state.model:SetAttribute("CapsuleOccupiedUserId", occupantPlayer and occupantPlayer.UserId or (occupied and 0 or nil))
-	state.prompt.ActionText = occupied and "Save" or "Put Inside"
-	state.prompt.ObjectText = occupied
+	state.prompt.ActionText = waiting and "Waiting" or (occupied and "Save" or "Put Inside")
+	state.prompt.ObjectText = waiting and "Waiting for respawn" or (occupied
 		and ((occupantPlayer and occupantPlayer.DisplayName or state.occupant.character.Name) .. " is freezing") or "Capsule"
+	)
 end
 
 local function updateHealth(occupant)
@@ -95,8 +98,7 @@ local function updateHealth(occupant)
 	local maximum = math.max(1, occupant.humanoid.MaxHealth)
 	if occupant.displayHealth == health and occupant.displayMax == maximum then return end
 	occupant.displayHealth, occupant.displayMax = health, maximum
-	occupant.healthText.Text = string.format("%s  |  %d / %d HP", occupant.player and occupant.player.DisplayName
-		or occupant.character.Name, math.ceil(health), math.ceil(maximum))
+	occupant.healthText.Text = occupant.player and occupant.player.DisplayName or occupant.character.Name
 	occupant.healthFill.Size = UDim2.fromScale(math.clamp(health / maximum, 0, 1), 1)
 end
 
@@ -104,7 +106,9 @@ local function createHealthDisplay(occupant)
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "CapsuleHealth"
 	gui.Adornee = occupant.root
-	gui.Size = UDim2.fromOffset(210, 48)
+	-- Scale units make the display naturally grow nearby and shrink with
+	-- distance, unlike pixel offsets which remain the same screen size.
+	gui.Size = UDim2.fromScale(5, 1.15)
 	gui.StudsOffsetWorldSpace = Vector3.new(0, 4, 0)
 	gui.AlwaysOnTop = true
 	gui.MaxDistance = 70
@@ -112,11 +116,11 @@ local function createHealthDisplay(occupant)
 	local text = Instance.new("TextLabel")
 	text.Size = UDim2.fromScale(1, 0.7)
 	text.BackgroundColor3 = Color3.fromRGB(27, 42, 53)
-	text.BackgroundTransparency = 0.15
+	text.BackgroundTransparency = 1
 	text.BorderSizePixel = 0
 	text.TextColor3 = Color3.fromRGB(255, 255, 255)
 	text.Font = Enum.Font.GothamBold
-	text.TextSize = 13
+	text.TextScaled = true
 	text.Parent = gui
 	local track = Instance.new("Frame")
 	track.Size = UDim2.fromScale(1, 0.2)
@@ -133,6 +137,16 @@ local function createHealthDisplay(occupant)
 	gui.Parent = occupant.character
 end
 
+local function freezePose(occupant)
+	for _, part in ipairs(occupant.character:GetDescendants()) do
+		if part:IsA("BasePart") then
+			if occupant.anchoredParts[part] == nil then occupant.anchoredParts[part] = part.Anchored end
+			part.Anchored = true
+		end
+	end
+	occupant.poseFrozen = true
+end
+
 local function restoreCharacter(state, rescued)
 	local occupant = state.occupant
 	if not occupant then return end
@@ -140,10 +154,14 @@ local function restoreCharacter(state, rescued)
 	occupiedCharacters[occupant.character] = nil
 	for _, connection in ipairs(occupant.connections) do connection:Disconnect() end
 	if occupant.healthGui then occupant.healthGui:Destroy() end
+	for scriptInstance, wasDisabled in pairs(occupant.animationScripts) do
+		if scriptInstance.Parent then scriptInstance.Disabled = wasDisabled end
+	end
 
 	local humanoid, root = occupant.humanoid, occupant.root
 	if humanoid.Parent == occupant.character then
 		humanoid:SetAttribute("CapsuleLocked", nil)
+		humanoid.BreakJointsOnDeath = occupant.breakJointsOnDeath
 		humanoid.WalkSpeed = occupant.walkSpeed
 		humanoid.AutoRotate = occupant.autoRotate
 		humanoid.UseJumpPower = occupant.useJumpPower
@@ -154,6 +172,9 @@ local function restoreCharacter(state, rescued)
 	-- restores its normal appearance, including for rescued NPCs.
 	for _, tool in ipairs(occupant.detachedTools) do
 		if tool.Parent == nil and occupant.character.Parent then tool.Parent = occupant.character end
+	end
+	for part, wasAnchored in pairs(occupant.anchoredParts) do
+		if part.Parent then part.Anchored = wasAnchored end
 	end
 	if root.Parent == occupant.character then
 		root.Anchored = occupant.rootAnchored
@@ -178,12 +199,14 @@ local function capture(state, owner, character, humanoid)
 		player = Players:GetPlayerFromCharacter(character), character = character, humanoid = humanoid, root = root,
 		walkSpeed = humanoid.WalkSpeed, autoRotate = humanoid.AutoRotate,
 		useJumpPower = humanoid.UseJumpPower, jumpPower = humanoid.JumpPower, jumpHeight = humanoid.JumpHeight,
-		rootAnchored = root.Anchored, bodyColors = {}, connections = {}, detachedTools = {},
+		rootAnchored = root.Anchored, anchoredParts = {}, bodyColors = {}, animationScripts = {}, connections = {}, detachedTools = {},
+		breakJointsOnDeath = humanoid.BreakJointsOnDeath,
 		nextDamageAt = os.clock() + 1,
 	}
 	state.occupant = occupant
 	occupiedCharacters[character] = state
 	humanoid:SetAttribute("CapsuleLocked", true)
+	humanoid.BreakJointsOnDeath = false
 	humanoid:SetAttribute("ForcedRagdollUntil", nil)
 	releaseGrapple:Fire(owner)
 	if occupant.player then
@@ -198,6 +221,16 @@ local function capture(state, owner, character, humanoid)
 	end
 	humanoid.WalkSpeed, humanoid.AutoRotate = 0, false
 	humanoid.JumpPower, humanoid.JumpHeight = 0, 0
+	for _, item in ipairs(character:GetDescendants()) do
+		if (item:IsA("LocalScript") or item:IsA("Script")) and item.Name == "Animate" then
+			occupant.animationScripts[item] = item.Disabled
+			item.Disabled = true
+		end
+	end
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if animator then
+		for _, track in ipairs(animator:GetPlayingAnimationTracks()) do track:Stop(0) end
+	end
 	for _, part in ipairs(character:GetChildren()) do
 		if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
 			part.Color = FREEZE_COLOR
@@ -229,11 +262,21 @@ local function capture(state, owner, character, humanoid)
 		end
 	end))
 	table.insert(occupant.connections, humanoid.Died:Connect(function()
-		if state.occupant == occupant then restoreCharacter(state, false) end
+		if state.occupant ~= occupant then return end
+		freezePose(occupant)
+		occupant.waitingForRespawn = true
+		updatePrompt(state)
 	end))
 	if occupant.player then
 		table.insert(occupant.connections, occupant.player.CharacterRemoving:Connect(function(removed)
-			if removed == character and state.occupant == occupant then restoreCharacter(state, false) end
+			if removed == character and state.occupant == occupant and not occupant.waitingForRespawn then
+				restoreCharacter(state, false)
+			end
+		end))
+		table.insert(occupant.connections, occupant.player.CharacterAdded:Connect(function(added)
+			if added ~= character and state.occupant == occupant and occupant.waitingForRespawn then
+				restoreCharacter(state, false)
+			end
 		end))
 	end
 	updatePrompt(state)
@@ -249,6 +292,7 @@ local function capture(state, owner, character, humanoid)
 		-- capsule pose only after those joints have been restored.
 		humanoid.AutoRotate = false
 		root.CFrame = captureCFrame(state, humanoid, root)
+		freezePose(occupant)
 	end)
 end
 
@@ -286,6 +330,7 @@ local function configure(model)
 		if not actor or actor.Health <= 0 or actor:GetAttribute("CapsuleLocked") then return end
 		if not playerRoot or distanceToPart(trigger, playerRoot.Position) > (Config.capsulePromptDistance or 10) + 2 then return end
 		if state.occupant then
+			if state.occupant.waitingForRespawn then return end
 			if not state.occupant.player or state.occupant.player ~= player then restoreCharacter(state, true) end
 			return
 		end
@@ -323,11 +368,22 @@ RunService.Heartbeat:Connect(function(dt)
 			if occupant then restoreCharacter(state, true) end
 			capsules[model] = nil
 		elseif occupant then
-			if not occupant.character:IsDescendantOf(Workspace) or occupant.humanoid.Health <= 0 then
+			if occupant.poseFrozen then freezePose(occupant) end
+			if not occupant.character:IsDescendantOf(Workspace) then
+				if occupant.waitingForRespawn and occupant.player and occupant.player.Parent == Players then continue end
 				restoreCharacter(state, false)
+			elseif occupant.humanoid.Health <= 0 then
+				if not occupant.waitingForRespawn then
+					occupant.waitingForRespawn = true
+					updatePrompt(state)
+				end
 			elseif os.clock() >= occupant.nextDamageAt then
 				occupant.nextDamageAt = os.clock() + 1
 				occupant.humanoid:TakeDamage(Config.capsuleDamagePerSecond or 5)
+			end
+			local animator = occupant.humanoid:FindFirstChildOfClass("Animator")
+			if animator then
+				for _, track in ipairs(animator:GetPlayingAnimationTracks()) do track:Stop(0) end
 			end
 			if state.occupant == occupant then updateHealth(occupant) end
 		end

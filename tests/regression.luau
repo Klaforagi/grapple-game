@@ -206,11 +206,11 @@ return function(sources)
 		Color3 = {fromRGB = function() return {} end}, ColorSequence = {new = function() return {} end},
 		PhysicalProperties = {new = function(d, f) return {Density = d, Friction = f} end},
 		RaycastParams = {new = function() return {} end}, OverlapParams = {new = function() return {} end},
-		Enum = {HumanoidStateType = {Physics = "Physics", Ragdoll = "Ragdoll", GettingUp = "GettingUp"},
+		Enum = {HumanoidStateType = {Physics = "Physics", Ragdoll = "Ragdoll", GettingUp = "GettingUp", Freefall = "Freefall"},
 			RenderPriority = {Camera = {Value = 200}},
 			ForceLimitMode = {PerAxis = "PerAxis"}, ActuatorRelativeTo = {World = "World"},
 			PositionAlignmentMode = {OneAttachment = "OneAttachment"}, RaycastFilterType = {Exclude = "Exclude"},
-			Material = {Neon = "Neon"}, KeyCode = setmetatable({}, {__index = function(_, key) return key end})},
+			Material = {Neon = "Neon", Air = "Air"}, KeyCode = setmetatable({}, {__index = function(_, key) return key end})},
 		os = {clock = function() return now end},
 		task = {delay = function(_, fn) table.insert(delayed, fn) end, defer = function(fn, ...) fn(...) end, spawn = function(fn, ...) fn(...) end},
 		typeof = function(value) return type(value) == "table" and value.kind or type(value) end,
@@ -222,7 +222,7 @@ return function(sources)
 	end
 	local config = execute(sources.config)
 	local remotes = {}
-	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "StruggleInput", "StruggleProgress", "EquipRagdollTool", "SetGrappleColor", "SetPlayerSetting", "ServerRestartNotice"}) do
+	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "StruggleInput", "StruggleProgress", "EquipRagdollTool", "SetGrappleColor", "SetPlayerSetting", "ServerRestartNotice", "FallLanded"}) do
 		remotes[name] = instance("RemoteEvent", name)
 	end
 	local ragdoll = execute(sources.ragdoll)
@@ -445,6 +445,7 @@ return function(sources)
 	assert(root6.CFrame.LookVector.X == 1 and root6.CFrame.LookVector.Z == 0, "recovery used the loose root's final facing")
 	assert(oppositeLimbs.Enabled and nativeIgnore.Enabled, "normal self-collision filters were not restored")
 	assert(root6.Massless and root6.RootPriority == -10, "ragdoll recovery lost original mass/root settings")
+	assert(config.ragdollRelease_Cooldown == 2, "self ragdoll should take two seconds to cancel")
 	assert(config.ragdollToggle_Cooldown == 0.5, "ragdoll recovery cooldown should be half a second")
 	assert(hum6:GetAttribute("RagdollRecoveredAt") == now, "cooldown did not start on recovery")
 	for _, object in ipairs(r6:GetDescendants()) do if object:IsA("Motor6D") then assert(object.Enabled) end end
@@ -844,8 +845,8 @@ return function(sources)
 	input.InputBegan:Emit({UserInputType = "Keyboard", KeyCode = "One"}, true)
 	assert(gun.Parent == attacker.Character and (attackerHumanoid.UnequippedCount or 0) == unequipsBefore, "grapple code hijacked the normal hotbar key")
 	world.Raycast = function() return nil end
-	-- Exercise the actual toggle handler: both entering and leaving ragdoll have
-	-- the same 0.5-second cooldown.
+	-- Exercise the actual toggle handler: leaving a self-triggered ragdoll waits
+	-- 2 seconds, and entering again waits 0.5 seconds.
 	services.CollectionService = {
 		GetInstanceAddedSignal = function() return signal() end,
 		GetInstanceRemovedSignal = function() return signal() end,
@@ -858,7 +859,202 @@ return function(sources)
 	local equipPlayer = instance("Player", "EquipPlayer", players)
 	local equipCharacter, equipHumanoid = character("EquipCharacter", V.zero, false)
 	equipPlayer.Character = equipCharacter
+	table.insert(playerList, equipPlayer)
 	players.PlayerAdded:Emit(equipPlayer)
+	-- A long jump is still a short drop. Time in Freefall must not ragdoll it,
+	-- including the landing frame where the state is still Freefall.
+	do
+	local equipRoot = equipCharacter:FindFirstChild("HumanoidRootPart")
+	equipHumanoid.FloorMaterial = env.Enum.Material.Air
+	equipHumanoid.State = env.Enum.HumanoidStateType.Freefall
+	equipRoot.Position = V.new(0, 0, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, 50, 0)
+	runService.Heartbeat:Emit(0.1)
+	now += 1.2
+	equipRoot.Position = V.new(0, 8, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -40, 0)
+	runService.Heartbeat:Emit(0.1)
+	equipRoot.Position = V.new(0, 1, 0)
+	runService.Heartbeat:Emit(0.1)
+	remotes.FallLanded.OnServerEvent:Emit(equipPlayer, 0)
+	assert(not equipHumanoid:HasTag("Ragdoll"), "short jump reported as a landing ragdoll")
+	equipHumanoid.FloorMaterial = "Ground"
+	equipHumanoid.State = env.Enum.HumanoidStateType.Freefall
+	equipRoot.Position = V.new(0, 0, 0)
+	equipRoot.AssemblyLinearVelocity = V.zero
+	runService.Heartbeat:Emit(0.1)
+	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),
+		"ordinary jump ragdolled on landing")
+	-- A long drop ragdolls on the landing frame, not in the air.
+	equipHumanoid.FloorMaterial = env.Enum.Material.Air
+	equipHumanoid.State = env.Enum.HumanoidStateType.Freefall
+	equipRoot.Position = V.new(0, 80, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -30, 0)
+	runService.Heartbeat:Emit(0.1)
+	now += 0.35
+	equipRoot.Position = V.new(0, 40, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -100, 0)
+	runService.Heartbeat:Emit(0.1)
+	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),
+		"long fall activated ragdoll before ground contact")
+	equipHumanoid.FloorMaterial = "Ground"
+	equipHumanoid.State = env.Enum.HumanoidStateType.Freefall
+	equipRoot.AssemblyLinearVelocity = V.zero
+	runService.Heartbeat:Emit(0.1)
+	assert(equipHumanoid:HasTag("Ragdoll") and equipHumanoid:GetAttribute("FallRagdollUntil") == now + 3,
+		"landing did not start a three-second ragdoll")
+	now += 3.01
+	runService.Heartbeat:Emit(0.1)
+	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),
+		"fall-created ragdoll did not recover automatically")
+	-- The body can be on the ground before FloorMaterial or the state machine updates.
+	equipHumanoid.FloorMaterial = env.Enum.Material.Air
+	equipHumanoid.State = env.Enum.HumanoidStateType.Freefall
+	equipRoot.Position = V.new(0, 90, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -40, 0)
+	runService.Heartbeat:Emit(0.1)
+	equipRoot.Position = V.new(0, 45, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -110, 0)
+	runService.Heartbeat:Emit(0.1)
+	assert(not equipHumanoid:HasTag("Ragdoll"), "ray landing armed before the body reached the ground")
+	world.Raycast = function() return {Instance = equipRoot, Position = equipRoot.Position} end
+	runService.Heartbeat:Emit(0.1)
+	assert(equipHumanoid:HasTag("Ragdoll") and equipHumanoid:GetAttribute("FallRagdollUntil") == now + 3,
+		"ground contact did not ragdoll before the humanoid state updated")
+	world.Raycast = function() return nil end
+	now += 3.01
+	equipHumanoid.FloorMaterial = "Ground"
+	runService.Heartbeat:Emit(0.1)
+	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),
+		"ray-landed ragdoll did not recover automatically")
+	-- The body is already down on the owning client while the server still sees air.
+	equipHumanoid.FloorMaterial = env.Enum.Material.Air
+	equipHumanoid.State = env.Enum.HumanoidStateType.Freefall
+	equipRoot.Position = V.new(0, 100, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -60, 0)
+	runService.Heartbeat:Emit(0.1)
+	equipRoot.Position = V.new(0, 55, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -130, 0)
+	runService.Heartbeat:Emit(0.1)
+	assert(not equipHumanoid:HasTag("Ragdoll"), "client landing report armed before the fall was long")
+	remotes.FallLanded.OnServerEvent:Emit(equipPlayer, 50)
+	assert(equipHumanoid:HasTag("Ragdoll") and equipHumanoid:GetAttribute("FallRagdollUntil") == now + 3,
+		"client landing report waited for the server to see the ground")
+	now += 3.01
+	equipHumanoid.FloorMaterial = "Ground"
+	runService.Heartbeat:Emit(0.1)
+	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),
+		"client-reported fall ragdoll did not recover automatically")
+	-- A player who chose to ragdoll remains down after the same minimum lock.
+	equipHumanoid:AddTag("Ragdoll")
+	ragdoll.Set(equipHumanoid, true)
+	equipHumanoid.FloorMaterial = env.Enum.Material.Air
+	equipRoot.Position = V.new(0, 90, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -20, 0)
+	runService.Heartbeat:Emit(0.1)
+	now += 0.61
+	equipRoot.Position = V.new(0, 40, 0)
+	equipRoot.AssemblyLinearVelocity = V.zero
+	runService.Heartbeat:Emit(0.1)
+	now += 0.35
+	runService.Heartbeat:Emit(0.1)
+	assert(not equipHumanoid:GetAttribute("FallRagdollUntil"),
+		"existing ragdoll received its fall lock before ground contact")
+	-- FloorMaterial stays on the takeoff surface once the state machine is off.
+	-- Contact is the ray, not that frozen value.
+	equipHumanoid.FloorMaterial = "Ground"
+	equipHumanoid.EvaluateStateMachine = false
+	equipHumanoid.State = env.Enum.HumanoidStateType.Freefall
+	equipRoot.Position = V.new(0, 40, 0)
+	equipRoot.AssemblyLinearVelocity = V.zero
+	world.Raycast = function() return {Instance = equipRoot, Position = equipRoot.Position} end
+	runService.Heartbeat:Emit(0.1)
+	world.Raycast = function() return nil end
+	assert(equipHumanoid:GetAttribute("FallRagdollUntil") == now + 3,
+		"existing ragdoll did not receive its lock on landing")
+	remotes.ToggleRagdoll.OnServerEvent:Emit(equipPlayer)
+	assert(equipHumanoid:HasTag("Ragdoll") and equipHumanoid:GetAttribute("FallRagdollUntil") == now + 3,
+		"fall lock let a voluntary ragdoll stand up")
+	now += 3.01
+	runService.Heartbeat:Emit(0.1)
+	assert(equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),
+		"pre-existing ragdoll was incorrectly recovered after falling")
+	remotes.ToggleRagdoll.OnServerEvent:Emit(equipPlayer)
+	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("Ragdolled")
+		and equipRoot:FindFirstChild("RootJoint").Enabled,
+		"voluntary ragdoll could not stand up after the fall lock")
+	-- Stuck Ground while still falling must not spend the lock in the air.
+	equipHumanoid.EvaluateStateMachine = true
+	equipHumanoid.FloorMaterial = "Ground"
+	equipRoot.Position = V.new(0, 120, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -90, 0)
+	ragdoll.Set(equipHumanoid, true)
+	equipHumanoid:AddTag("Ragdoll")
+	runService.Heartbeat:Emit(0.1)
+	now += 0.3
+	equipRoot.Position = V.new(0, 80, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -90, 0)
+	runService.Heartbeat:Emit(0.1)
+	assert(not equipHumanoid:GetAttribute("FallRagdollUntil"),
+		"stale floor locked a ragdoll before it reached the ground")
+	world.Raycast = function() return {Instance = equipRoot, Position = equipRoot.Position} end
+	equipRoot.Position = V.new(0, 40, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -20, 0)
+	runService.Heartbeat:Emit(0.1)
+	world.Raycast = function() return nil end
+	assert(equipHumanoid:GetAttribute("FallRagdollUntil") == now + 3,
+		"ragdoll fall did not lock when the body reached the ground")
+	remotes.ToggleRagdoll.OnServerEvent:Emit(equipPlayer)
+	assert(equipHumanoid:HasTag("Ragdoll") and equipHumanoid:GetAttribute("FallRagdollUntil") == now + 3,
+		"stale-floor fall lock let them stand immediately")
+	now += 3.01
+	runService.Heartbeat:Emit(0.1)
+	assert(equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),
+		"ragdoll chosen before landing was forced up after the lock")
+	remotes.ToggleRagdoll.OnServerEvent:Emit(equipPlayer)
+	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("Ragdolled")
+		and equipHumanoid.EvaluateStateMachine and equipRoot:FindFirstChild("RootJoint").Enabled,
+		"could not stand after the stale-floor lock")
+	-- Ragdoll, stand back up while still falling, then hit. The fall still locks.
+	equipHumanoid.FloorMaterial = env.Enum.Material.Air
+	equipRoot.Position = V.new(0, 130, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -50, 0)
+	runService.Heartbeat:Emit(0.1)
+	equipRoot.Position = V.new(0, 70, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -110, 0)
+	runService.Heartbeat:Emit(0.1)
+	assert(not equipHumanoid:HasTag("Ragdoll"), "override fall armed before the landing report")
+	now += 0.51
+	remotes.ToggleRagdoll.OnServerEvent:Emit(equipPlayer)
+	now += 2
+	remotes.ToggleRagdoll.OnServerEvent:Emit(equipPlayer)
+	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("Ragdolled"),
+		"could not stand back up while still falling")
+	now += 0.35
+	runService.Heartbeat:Emit(0.1)
+	assert(not equipHumanoid:GetAttribute("FallRagdollUntil"),
+		"fall lock started in the air after they stood back up")
+	remotes.FallLanded.OnServerEvent:Emit(equipPlayer, 55, nil, true)
+	assert(equipHumanoid:HasTag("Ragdoll") and equipHumanoid:GetAttribute("Ragdolled") == true
+		and equipHumanoid:GetAttribute("FallRagdollUntil") == now + 3,
+		"ragdolling during the fall did not lock on impact")
+	now += 3.01
+	runService.Heartbeat:Emit(0.1)
+	assert(equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),
+		"a ragdoll started during the fall was forced up after the lock")
+	remotes.ToggleRagdoll.OnServerEvent:Emit(equipPlayer)
+	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("Ragdolled")
+		and equipRoot:FindFirstChild("RootJoint").Enabled,
+		"could not stand after the fall override expired")
+	equipHumanoid.FloorMaterial = nil
+	equipHumanoid.EvaluateStateMachine = true
+	equipRoot.Position = V.zero
+	equipRoot.AssemblyLinearVelocity = V.zero
+	world.Raycast = function() return nil end
+	end
+	ragdoll.Set(equipHumanoid, false)
+	equipHumanoid:RemoveTag("Ragdoll")
+	table.remove(playerList, #playerList)
 	local victimToolBackpack = instance("Backpack", "Backpack", equipPlayer)
 	equipPlayer.ChildAdded:Emit(victimToolBackpack)
 	local ragdollBomb = instance("Tool", config.bombToolName, victimToolBackpack)
@@ -988,7 +1184,7 @@ return function(sources)
 	assert(gun.Parent == attacker.Character, "non-grappled ragdoll unequipped the grapple gun")
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid:HasTag("Ragdoll"), "ragdoll could be cancelled without its cooldown")
-	now += 0.49
+	now += 1.99
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid:HasTag("Ragdoll"), "ragdoll cancellation cooldown ended early")
 	now += 0.01
@@ -1359,6 +1555,11 @@ return function(sources)
 	pushRoot.Position = attackerRoot.Position + V.new(-4, 0, 0)
 	remotes.UsePush.OnServerEvent:Emit(attacker)
 	assert(not pushHumanoid:GetAttribute("Ragdolled"), "Frontal Push hit a target behind the user")
+	assert(config.pushActiveDuration == 0.35, "Push active window changed unexpectedly")
+	attackerRoot.Position = attackerRoot.Position + V.new(-8, 0, 0)
+	now += 0.2
+	runService.Heartbeat:Emit(0.2)
+	assert(pushHumanoid:GetAttribute("Ragdolled"), "Push did not acquire a target during its active window")
 	execute(sources.capsuleTests)({execute = execute, sources = sources, instance = instance,
 		methods = methods, signal = signal, env = env, services = services, world = world,
 		players = players, runService = runService, character = character,

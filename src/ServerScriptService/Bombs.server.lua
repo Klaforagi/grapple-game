@@ -14,6 +14,7 @@ local issued = setmetatable({}, {__mode = "k"})
 local SERVER_HOLD = 0.3
 local bombCaster = FastCast.new()
 local lastPush = {}
+local activePushes = {}
 
 local bombColors = {
 	Black = Color3.fromRGB(20, 20, 20), White = Color3.fromRGB(255, 255, 255), Red = Color3.fromRGB(220, 55, 55), Orange = Color3.fromRGB(242, 143, 43),
@@ -275,6 +276,37 @@ local function explode(bomb, position)
 	end
 end
 
+local function scanPush(state, now)
+	local character, root = state.character, state.root
+	if not character.Parent or state.player.Character ~= character or not root.Parent then return false end
+	-- Follow the user's current position and facing throughout the short active window.
+	local look = root.CFrame.LookVector
+	local forward = Vector3.new(look.X, 0, look.Z)
+	forward = forward.Magnitude > 0.01 and forward.Unit or Vector3.new(0, 0, -1)
+	local right = Vector3.new(-forward.Z, 0, forward.X)
+	local center = root.Position + forward * (Config.pushRange / 2)
+	state.hitbox.CFrame = CFrame.lookAt(center, center + forward)
+	state.params.FilterDescendantsInstances = {character}
+	for _, victim in ipairs(workspace:GetDescendants()) do
+		if not victim:IsA("Humanoid") or state.hit[victim] then continue end
+		local model = victim.Parent
+		local targetRoot = model and model:FindFirstChild("HumanoidRootPart")
+		if model == character or victim.Health <= 0 or not targetRoot or targetRoot.Anchored then continue end
+		local offset = targetRoot.Position - root.Position
+		local depth = offset:Dot(forward)
+		if depth < 0 or depth > Config.pushRange
+			or math.abs(offset:Dot(right)) > Config.pushWidth / 2
+			or math.abs(offset.Y) > Config.pushHeight / 2 then continue end
+		local obstruction = workspace:Raycast(root.Position, offset, state.params)
+		if obstruction and not obstruction.Instance:IsDescendantOf(model) then continue end
+		state.hit[victim] = true
+		local horizontal = Vector3.new(offset.X, 0, offset.Z)
+		local direction = horizontal.Magnitude > 0.01 and horizontal.Unit or forward
+		queueLaunch(model, victim, direction * Config.pushSpeed + Vector3.new(0, 6, 0), now, Config.pushRagdollDuration)
+	end
+	return true
+end
+
 Remotes.UsePush.OnServerEvent:Connect(function(player)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -288,12 +320,6 @@ Remotes.UsePush.OnServerEvent:Connect(function(player)
 	lastPush[player] = now
 	tool.Enabled = false
 	task.delay(Config.pushCooldown, function() if tool.Parent then tool.Enabled = true end end)
-	-- Horizontal facing keeps the frontal box usable while ragdolled too.
-	local look = root.CFrame.LookVector
-	local forward = Vector3.new(look.X, 0, look.Z)
-	forward = forward.Magnitude > 0.01 and forward.Unit or Vector3.new(0, 0, -1)
-	local right = Vector3.new(-forward.Z, 0, forward.X)
-	local center = root.Position + forward * (Config.pushRange / 2)
 	local hitbox = Instance.new("Part")
 	hitbox.Name = "PushHitbox"
 	hitbox.Size = Vector3.new(Config.pushWidth, Config.pushHeight, Config.pushRange)
@@ -301,31 +327,18 @@ Remotes.UsePush.OnServerEvent:Connect(function(player)
 	hitbox.Color = Color3.fromRGB(100, 230, 255)
 	hitbox.Anchored, hitbox.CanCollide, hitbox.CanTouch, hitbox.CanQuery = true, false, false, false
 	hitbox.CastShadow, hitbox.Transparency = false, 0.8
-	hitbox.CFrame = CFrame.lookAt(center, center + forward)
 	hitbox.Parent = workspace
-	TweenService:Create(hitbox, TweenInfo.new(0.5), {Transparency = 1}):Play()
-	Debris:AddItem(hitbox, 0.5)
+	local duration = Config.pushActiveDuration or 0.35
+	TweenService:Create(hitbox, TweenInfo.new(duration), {Transparency = 1}):Play()
+	Debris:AddItem(hitbox, duration)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = {character}
 	params.RespectCanCollide = true
-	-- Include NPC/test rigs as well as player characters, once per humanoid.
-	for _, victim in ipairs(workspace:GetDescendants()) do
-		if not victim:IsA("Humanoid") then continue end
-		local model = victim.Parent
-		local targetRoot = model and model:FindFirstChild("HumanoidRootPart")
-		if model == character or victim.Health <= 0 or not targetRoot or targetRoot.Anchored then continue end
-		local offset = targetRoot.Position - root.Position
-		local depth = offset:Dot(forward)
-		if depth < 0 or depth > Config.pushRange
-			or math.abs(offset:Dot(right)) > Config.pushWidth / 2
-			or math.abs(offset.Y) > Config.pushHeight / 2 then continue end
-		local obstruction = workspace:Raycast(root.Position, offset, params)
-		if obstruction and not obstruction.Instance:IsDescendantOf(model) then continue end
-		local horizontal = Vector3.new(offset.X, 0, offset.Z)
-		local direction = horizontal.Magnitude > 0.01 and horizontal.Unit or Vector3.new(0, 0, -1)
-		queueLaunch(model, victim, direction * Config.pushSpeed + Vector3.new(0, 6, 0), now, Config.pushRagdollDuration)
-	end
+	local state = {player = player, character = character, root = root, hitbox = hitbox,
+		params = params, hit = {}, expiresAt = now + duration}
+	activePushes[player] = state
+	scanPush(state, now)
 end)
 
 Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
@@ -368,6 +381,11 @@ end)
 
 RunService.Heartbeat:Connect(function()
 	local now = os.clock()
+	for player, state in pairs(activePushes) do
+		if now > state.expiresAt or not state.hitbox.Parent or not scanPush(state, now) then
+			activePushes[player] = nil
+		end
+	end
 	for humanoid, state in pairs(pendingLaunches) do
 		pendingLaunches[humanoid] = nil
 		launch(humanoid, state, now)
@@ -411,5 +429,5 @@ local function added(player)
 	if player.Character then task.spawn(giveBomb, player, player.Character) end
 end
 Players.PlayerAdded:Connect(added)
-Players.PlayerRemoving:Connect(function(player) lastThrow[player], lastPush[player] = nil, nil end)
+Players.PlayerRemoving:Connect(function(player) lastThrow[player], lastPush[player], activePushes[player] = nil, nil, nil end)
 for _, player in ipairs(Players:GetPlayers()) do added(player) end

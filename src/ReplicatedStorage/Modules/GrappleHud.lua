@@ -15,7 +15,9 @@ local M = {}
 function M.Init()
 	if M.started then return end
 	M.started = true
-	require(script.Parent.RagdollService).InitClient()
+	local RagdollService = require(script.Parent.RagdollService)
+	RagdollService.InitClient()
+	RagdollService.WatchLocalFalls()
 	local player = Players.LocalPlayer
 	-- The default reset action can be ignored while the humanoid state machine
 	-- is suppressed for a ragdoll. Route it through the server instead.
@@ -84,7 +86,10 @@ function M.Init()
 		displayLength = math.clamp(displayLength + delta, minimum, Config.maxRopeLength)
 		Remotes.ChangeLength:FireServer(displayLength)
 	end
-	local function ragdoll() Remotes.ToggleRagdoll:FireServer() end
+	local function ragdoll()
+		RagdollService.NoteRagdollInput()
+		Remotes.ToggleRagdoll:FireServer()
+	end
 	-- A compact touch-only reel replaces the former full-screen grapple panel.
 	-- Its normalized position keeps it at 75% across and 95% down on any screen.
 	local reelControls = make("Frame", screen, {
@@ -124,17 +129,6 @@ function M.Init()
 	local wallButton = button(wallControls, "OFF", UDim2.fromOffset(0, 0), UDim2.fromOffset(78, 36), toggleWallMode)
 	wallButton.Font, wallButton.TextSize = Enum.Font.GothamBold, 14
 	make("UIStroke", wallButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
-	local ragdollControls = make("Frame", screen, {
-		Name = "RagdollControls", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.94, 0, 0.5, 62),
-		Size = UDim2.fromOffset(78, 36), BackgroundTransparency = 1, Visible = false,
-	})
-	local ragdollScale = make("UIScale", ragdollControls, {Scale = 1})
-	local ragdollLabel = label(ragdollControls, "Ragdoll", UDim2.fromOffset(-36, -22), UDim2.fromOffset(150, 18))
-	ragdollLabel.TextSize, ragdollLabel.TextXAlignment = 11, Enum.TextXAlignment.Center
-	styleReelLabel(ragdollLabel)
-	local ragdollButton = button(ragdollControls, "OFF", UDim2.fromOffset(0, 0), UDim2.fromOffset(78, 36), ragdoll)
-	ragdollButton.Font, ragdollButton.TextSize = Enum.Font.GothamBold, 14
-	make("UIStroke", ragdollButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
 	local palette = {
 		{"Black", Color3.fromRGB(20, 20, 20)}, {"White", Color3.fromRGB(255, 255, 255)}, {"Red", Color3.fromRGB(220, 55, 55)}, {"Orange", Color3.fromRGB(242, 143, 43)},
 		{"Yellow", Color3.fromRGB(245, 220, 55)}, {"Green", Color3.fromRGB(65, 180, 90)}, {"Blue", Color3.fromRGB(55, 125, 230)}, {"Purple", Color3.fromRGB(145, 82, 210)},
@@ -144,6 +138,10 @@ function M.Init()
 	local inventoryButton = button(screen, "INV", UDim2.new(0, 18, 0.5, -22), UDim2.fromOffset(44, 44), function() inventoryOpen = not inventoryOpen end)
 	inventoryButton.Font, inventoryButton.TextSize = Enum.Font.GothamBold, 12
 	make("UIStroke", inventoryButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
+	local ragdollButton = button(screen, "RAG", UDim2.new(0, 18, 0.5, 30), UDim2.fromOffset(44, 44), ragdoll)
+	ragdollButton.Name = "RagdollButton"
+	ragdollButton.Font, ragdollButton.TextSize = Enum.Font.GothamBold, 12
+	make("UIStroke", ragdollButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
 	local inventory = make("Frame", screen, {Name = "GrappleInventory", Position = UDim2.new(0, 72, 0.5, -104), Size = UDim2.fromOffset(184, 208), BackgroundColor3 = Color3.fromRGB(39, 51, 65), Visible = false})
 	rounded(inventory)
 	make("UIStroke", inventory, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
@@ -442,7 +440,7 @@ function M.Init()
 		if camera then
 			local viewport = camera.ViewportSize
 			local scale = math.clamp(math.min(viewport.X / 800, viewport.Y / 450), 0.7, 1.2)
-			reelScale.Scale, wallScale.Scale, ragdollScale.Scale = scale, scale, scale
+			reelScale.Scale, wallScale.Scale = scale, scale
 			escapeScale.Scale = math.clamp(math.min(viewport.X / 480, viewport.Y / 800), 0.55, 1)
 			local settingsUiScale = math.clamp(math.min(viewport.X / 800, viewport.Y / 600), 0.7, 1)
 			settingsScale.Scale = settingsUiScale
@@ -452,8 +450,8 @@ function M.Init()
 		local equipped = tool()
 		reelControls.Visible = currentRope ~= nil and equipped ~= nil
 		wallControls.Visible = equipped ~= nil
-		ragdollControls.Visible = equipped ~= nil
 		inventoryButton.Visible = player.Character ~= nil
+		ragdollButton.Visible = player.Character ~= nil
 		inventory.Visible = player.Character ~= nil and inventoryOpen
 		gunTab.BackgroundColor3 = inventoryTab == "Gun" and Color3.fromRGB(72, 165, 92) or Color3.fromRGB(178, 70, 70)
 		ropeTab.BackgroundColor3 = inventoryTab == "Rope" and Color3.fromRGB(72, 165, 92) or Color3.fromRGB(178, 70, 70)
@@ -461,10 +459,6 @@ function M.Init()
 		local wallMode = equipped and equipped:GetAttribute("WallMode") == true
 		wallButton.Text = wallMode and "ON" or "OFF"
 		wallButton.BackgroundColor3 = wallMode and Color3.fromRGB(72, 165, 92) or Color3.fromRGB(178, 70, 70)
-		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-		local ragdolled = humanoid and humanoid:GetAttribute("Ragdolled") == true
-		ragdollButton.Text = ragdolled and "ON" or "OFF"
-		ragdollButton.BackgroundColor3 = ragdolled and Color3.fromRGB(72, 165, 92) or Color3.fromRGB(178, 70, 70)
 		if currentRope and not shorten and not lengthen then displayLength = currentRope.Length end
 		ropeLength.Text = currentRope and string.format("%.1f studs", displayLength) or ""
 	end)

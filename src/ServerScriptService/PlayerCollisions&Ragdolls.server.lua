@@ -25,6 +25,7 @@ pcall(function() PhysicsService:RegisterCollisionGroup(GROUP) end)
 PhysicsService:CollisionGroupSetCollidable(GROUP, GROUP, Config.playerCollisionsEnabled ~= false)
 
 local pendingRespawns = {}
+local fallStates = setmetatable({}, {__mode = "k"})
 local function healthy(character)
 	if not character or not character.Parent then return false end
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -65,10 +66,13 @@ local function configure(player, character)
 		if instance:IsA("Tool") and humanoid:GetAttribute("GrapplePhysicsLocked") == true then humanoid:UnequipTools() end
 	end)
 	Ragdoll.Prepare(humanoid)
+	fallStates[humanoid] = {character = character}
 	if humanoid:HasTag("Ragdoll") then Ragdoll.Set(humanoid, true) end
 	humanoid.Died:Connect(function()
 		ensureRespawn(player, character)
-		Ragdoll.BreakApart(humanoid)
+		-- Capsule victims remain assembled in the tube until their replacement
+		-- character spawns. All other deaths use the normal break-apart effect.
+		if not humanoid:GetAttribute("CapsuleLocked") then Ragdoll.BreakApart(humanoid) end
 	end)
 end
 CollectionService:GetInstanceAddedSignal("Ragdoll"):Connect(function(humanoid)
@@ -87,23 +91,33 @@ end
 Players.PlayerAdded:Connect(playerAdded)
 Players.PlayerRemoving:Connect(function(player) pendingRespawns[player] = nil end)
 for _, player in ipairs(Players:GetPlayers()) do playerAdded(player) end
+-- Defined with the fall helpers below. The toggle runs later, after that assignment.
+local bodyLanded
 Remotes.ToggleRagdoll.OnServerEvent:Connect(function(player)
 	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 or humanoid:GetAttribute("GrappledBy")
 		or humanoid:GetAttribute("CapsuleLocked") then return end
 	if os.clock() < (humanoid:GetAttribute("BombRagdollUntil") or 0)
-		or os.clock() < (humanoid:GetAttribute("ForcedRagdollUntil") or 0) then return end
+		or os.clock() < (humanoid:GetAttribute("ForcedRagdollUntil") or 0)
+		or os.clock() < (humanoid:GetAttribute("FallRagdollUntil") or 0) then return end
 	if humanoid:HasTag("Ragdoll") then
 		local activatedAt = humanoid:GetAttribute("RagdollActivatedAt")
-		if activatedAt and os.clock() - activatedAt < Config.ragdollToggle_Cooldown then return end
+		if activatedAt and os.clock() - activatedAt < (Config.ragdollRelease_Cooldown or 2) then return end
 		humanoid:RemoveTag("Ragdoll")
 		Ragdoll.Set(humanoid, false)
 	else
 		local recoveredAt = humanoid:GetAttribute("RagdollRecoveredAt")
 		if recoveredAt and os.clock() - recoveredAt < Config.ragdollToggle_Cooldown then return end
+		local state = fallStates[humanoid]
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		-- Decide before Set. Ragdoll turns the state machine off, and FloorMaterial then sticks.
+		local duringFall = state and (state.fallPeakY or (root and root:IsA("BasePart")
+			and bodyLanded and not bodyLanded(character, humanoid, root)))
 		humanoid:SetAttribute("RagdollActivatedAt", os.clock())
 		humanoid:AddTag("Ragdoll")
 		Ragdoll.Set(humanoid, true)
+		if duringFall then state.wasRagdolled = true end
 	end
 end)
 Remotes.EquipRagdollTool.OnServerEvent:Connect(function(player, toolName, shouldEquip)
@@ -143,12 +157,225 @@ end)
 -- the parts are removed to keep void deaths and Reset on the normal respawn
 -- path.
 local VOID_KILL_PADDING = 25
+local FALL_DESCEND_SPEED = 12 -- Downward studs/s. Slower motion is a hover, rope lower, or hop.
+local FALL_FLOOR_SPEED = 8 -- Still falling this fast, FloorMaterial is the takeoff surface, not a landing.
+local FALL_ARREST_TIME = 0.2 -- Holding below that speed this long cancels the fall.
+
+local function fallDistanceRequired(humanoid)
+	local minimum = Config.fallRagdollDistance or 30
+	local gravity = Workspace.Gravity
+	if type(gravity) ~= "number" or gravity <= 1 then gravity = 196.2 end
+	local jumpHeight = tonumber(humanoid.JumpHeight) or 7.2
+	if humanoid.UseJumpPower == true then
+		local power = tonumber(humanoid.JumpPower) or 50
+		jumpHeight = (power * power) / (2 * gravity)
+	end
+	-- Landing back on the same surface drops about one jump height.
+	return math.max(minimum, jumpHeight + 12)
+end
+
+local function groundHit(origin, distance, params)
+	local hit = Workspace:Raycast(origin, Vector3.new(0, -distance, 0), params)
+	if not hit or not hit.Position then return nil end
+	local normalY = hit.Normal and hit.Normal.Y or 1
+	if normalY <= 0.4 then return nil end
+	return hit
+end
+
+-- Size.Y is the part's own axis. A sideways limb is wide in the world and short along Y,
+-- so the landing test has to use the lowest corner, then fall back to an upright extent.
+local function partBottom(part)
+	local size = part.Size
+	local position = part.Position
+	local halfY = ((size and size.Y) or 0) * 0.5
+	local cf = part.CFrame
+	if typeof(cf) ~= "CFrame" or not cf.PointToWorldSpace or not size then
+		return position.Y - halfY
+	end
+	local hx, hy, hz = size.X * 0.5, size.Y * 0.5, size.Z * 0.5
+	local bottom = cf.Position.Y
+	local samples = {
+		cf:PointToWorldSpace(Vector3.new(-hx, -hy, -hz)), cf:PointToWorldSpace(Vector3.new(-hx, -hy, hz)),
+		cf:PointToWorldSpace(Vector3.new(-hx, hy, -hz)), cf:PointToWorldSpace(Vector3.new(-hx, hy, hz)),
+		cf:PointToWorldSpace(Vector3.new(hx, -hy, -hz)), cf:PointToWorldSpace(Vector3.new(hx, -hy, hz)),
+		cf:PointToWorldSpace(Vector3.new(hx, hy, -hz)), cf:PointToWorldSpace(Vector3.new(hx, hy, hz)),
+	}
+	for _, point in ipairs(samples) do
+		if point and point.Y < bottom then bottom = point.Y end
+	end
+	return bottom
+end
+
+local function bodyLowY(character, root)
+	local low = partBottom(root)
+	for _, part in ipairs(character:GetChildren()) do
+		if part:IsA("BasePart") then
+			local bottom = partBottom(part)
+			if bottom < low then low = bottom end
+		end
+	end
+	return low
+end
+
+-- Once EvaluateStateMachine is off, FloorMaterial freezes on whatever it was at takeoff.
+-- A fast fall also keeps that value until the humanoid notices, which is after the hit.
+local function floorTrusted(humanoid, root)
+	if humanoid.FloorMaterial == Enum.Material.Air then return false end
+	if humanoid.EvaluateStateMachine == false then return false end
+	if humanoid:HasTag("Ragdoll") or humanoid:GetAttribute("Ragdolled") == true then return false end
+	local velocity = root.AssemblyLinearVelocity
+	return not velocity or velocity.Y >= -FALL_FLOOR_SPEED
+end
+
+-- The root sits at the hips, and on a ragdoll it does not even collide.
+-- A limb bottom touching the floor is the landing, not the root settling afterward.
+bodyLanded = function(character, humanoid, root)
+	if floorTrusted(humanoid, root) then return true end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = {character}
+	params.IgnoreWater = true
+	for _, part in ipairs(character:GetChildren()) do
+		if part:IsA("BasePart") and part ~= root then
+			local bottom = partBottom(part)
+			local hit = groundHit(Vector3.new(part.Position.X, bottom + 1.25, part.Position.Z), 2, params)
+			if hit then
+				local gap = bottom - hit.Position.Y
+				if gap <= 0.75 and gap >= -2 then return true end
+			end
+		end
+	end
+	local foot = (root.Size.Y * 0.5) + (tonumber(humanoid.HipHeight) or 0)
+	local hit = groundHit(root.Position + Vector3.new(0, 4, 0), 4 + foot + 4, params)
+	if not hit then return false end
+	local gap = root.Position.Y - hit.Position.Y
+	return gap <= foot + 0.45 and gap >= -4
+end
+
+local function commitFallRagdoll(humanoid, state, now)
+	if state.triggered then return end
+	state.triggered = true
+	state.fallPeakY, state.arrestedAt = nil, nil
+	local voluntary = state.wasRagdolled == true or humanoid:HasTag("Ragdoll")
+		or humanoid:GetAttribute("Ragdolled") == true
+	-- A fall you entered already ragdolled stays down after the lock. You get up yourself.
+	state.autoRecover = not voluntary
+	local deadline = now + (Config.fallRagdollDuration or 3)
+	humanoid:SetAttribute("FallRagdollUntil", deadline)
+	humanoid:SetAttribute("RagdollActivatedAt", now)
+	humanoid:AddTag("Ragdoll")
+	Ragdoll.Set(humanoid, true)
+end
+
+-- The owning client hits the ground before this server's copy of the body does.
+-- reportedPeak and duringFall are optional. Older callers send the landing height only.
+Remotes.FallLanded.OnServerEvent:Connect(function(player, reportedY, reportedPeak, duringFall)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not humanoid or humanoid.Health <= 0 or not root or not root:IsA("BasePart") then return end
+	if humanoid:GetAttribute("CapsuleLocked") then return end
+	local state = fallStates[humanoid]
+	if not state or state.triggered or not state.fallPeakY then return end
+	-- They ragdolled on the way down, even if they toggled back up before this arrived.
+	if duringFall == true then state.wasRagdolled = true end
+	local y = root.Position.Y
+	local ragdolled = state.wasRagdolled == true or humanoid:HasTag("Ragdoll")
+		or humanoid:GetAttribute("Ragdolled") == true
+	if ragdolled then
+		local low = bodyLowY(character, root)
+		if low < y then y = low end
+	end
+	local slack = ragdolled and 80 or 25
+	if type(reportedY) == "number" and reportedY == reportedY and reportedY < y and y - reportedY <= slack then
+		y = reportedY
+	end
+	if type(reportedPeak) == "number" and reportedPeak == reportedPeak
+		and reportedPeak > state.fallPeakY and reportedPeak - state.fallPeakY <= 40 then
+		state.fallPeakY = reportedPeak
+	end
+	if state.fallPeakY - y < fallDistanceRequired(humanoid) then return end
+	commitFallRagdoll(humanoid, state, os.clock())
+end)
+
 RunService.Heartbeat:Connect(function()
+	local now = os.clock()
 	local destroyHeight = Workspace.FallenPartsDestroyHeight
 	for _, player in ipairs(Players:GetPlayers()) do
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if humanoid and humanoid.Health > 0 and root and root:IsA("BasePart") then
+			local state = fallStates[humanoid]
+			if not state then
+				state = {character = character}
+				fallStates[humanoid] = state
+			end
+			local existingDeadline = humanoid:GetAttribute("FallRagdollUntil")
+			if existingDeadline and now >= existingDeadline then
+				local recover = state.autoRecover == true
+				local blocked = recover and (humanoid:GetAttribute("GrapplePhysicsLocked")
+					or humanoid:GetAttribute("CapsuleLocked")
+					or now < (humanoid:GetAttribute("BombRagdollUntil") or 0)
+					or now < (humanoid:GetAttribute("ForcedRagdollUntil") or 0))
+				if not blocked then
+					-- The lock is over either way. Only an unchosen fall stands them up.
+					humanoid:SetAttribute("FallRagdollUntil", nil)
+					state.triggered = nil
+					if recover then
+						state.autoRecover = nil
+						Ragdoll.Set(humanoid, false, true)
+						humanoid:RemoveTag("Ragdoll")
+					end
+				end
+			end
+			-- Distance, not time in Freefall. A jump spends a long time in that state
+			-- and the state often stays Freefall after the feet are already down.
+			if humanoid:GetAttribute("CapsuleLocked") then
+				state.fallPeakY, state.arrestedAt = nil, nil
+			else
+				local landed = bodyLanded(character, humanoid, root)
+				local velocityY = root.AssemblyLinearVelocity.Y
+				local ragdolled = humanoid:HasTag("Ragdoll") or humanoid:GetAttribute("Ragdolled") == true
+				-- A floating root hides the drop. The body that actually fell is the lowest part.
+				local height = root.Position.Y
+				if ragdolled or state.wasRagdolled then
+					local low = bodyLowY(character, root)
+					if low < height then height = low end
+				end
+				if landed then
+					if state.fallPeakY and not state.triggered
+						and state.fallPeakY - height >= fallDistanceRequired(humanoid) then
+						commitFallRagdoll(humanoid, state, now)
+					else
+						state.fallPeakY, state.arrestedAt = nil, nil
+						state.wasRagdolled = nil
+					end
+				elseif not state.triggered then
+					if ragdolled then state.wasRagdolled = true end
+					if velocityY < -FALL_DESCEND_SPEED then
+						state.arrestedAt = nil
+						local sample = root.Position.Y
+						state.fallPeakY = math.max(state.fallPeakY or sample, sample)
+					elseif state.fallPeakY and (ragdolled or state.wasRagdolled) then
+						-- The loose root stops, and standing back up zeroes vertical speed.
+						-- Neither one is a new jump. This is still the same fall.
+						state.arrestedAt = nil
+					elseif velocityY > FALL_DESCEND_SPEED then
+						state.fallPeakY, state.arrestedAt = nil, nil
+						if not ragdolled then state.wasRagdolled = nil end
+					else
+						state.arrestedAt = state.arrestedAt or now
+						if state.fallPeakY and not state.wasRagdolled and now - state.arrestedAt >= FALL_ARREST_TIME then
+							state.fallPeakY = nil
+						end
+					end
+				end
+				if landed and not state.fallPeakY and not humanoid:GetAttribute("FallRagdollUntil") then
+					state.triggered, state.autoRecover, state.wasRagdolled = nil, nil, nil
+				end
+			end
+		end
 		if humanoid and humanoid.Health > 0 and root and root:IsA("BasePart")
 			and typeof(destroyHeight) == "number" and destroyHeight ~= -math.huge
 			and root.Position.Y <= destroyHeight + VOID_KILL_PADDING then

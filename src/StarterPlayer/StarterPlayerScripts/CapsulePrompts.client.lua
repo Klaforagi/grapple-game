@@ -6,6 +6,53 @@ local Config = require(ReplicatedStorage:WaitForChild("GrappleConfig"))
 local localPlayer = Players.LocalPlayer
 local prompts = {}
 local humanoids = {}
+local animationLocks = {}
+local animationBaselines = setmetatable({}, {__mode = "k"})
+
+local function animationScripts(character)
+	local scripts = {}
+	for _, item in ipairs(character:GetDescendants()) do
+		if (item:IsA("LocalScript") or item:IsA("Script")) and item.Name == "Animate" then
+			table.insert(scripts, item)
+		end
+	end
+	return scripts
+end
+
+local function updateAnimationLock(humanoid)
+	local character = humanoid.Parent
+	local locked = character and humanoid:GetAttribute("CapsuleLocked") == true
+	local state = animationLocks[humanoid]
+	if not locked then
+		if state then
+			for animate, wasDisabled in pairs(state.scripts) do
+				if animate.Parent then animate.Disabled = wasDisabled end
+			end
+			animationLocks[humanoid] = nil
+		elseif character then
+			for _, animate in ipairs(animationScripts(character)) do
+				animationBaselines[animate] = animate.Disabled
+			end
+		end
+		return
+	end
+
+	if not state then
+		state = {scripts = {}}
+		animationLocks[humanoid] = state
+	end
+	for _, item in ipairs(animationScripts(character)) do
+		if state.scripts[item] == nil then
+			local baseline = animationBaselines[item]
+			state.scripts[item] = if baseline == nil then false else baseline
+		end
+		item.Disabled = true
+	end
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if animator then
+		for _, track in ipairs(animator:GetPlayingAnimationTracks()) do track:Stop(0) end
+	end
+end
 
 local function distanceToPart(part, position)
 	local point = part.CFrame:PointToObjectSpace(position)
@@ -29,6 +76,12 @@ end
 workspace.DescendantAdded:Connect(watch)
 for _, instance in ipairs(workspace:GetDescendants()) do watch(instance) end
 
+-- Animation tracks are evaluated locally. Enforce the capsule lock immediately
+-- before animation evaluation so the captive sees the same still pose as everyone else.
+RunService.PreAnimation:Connect(function()
+	for humanoid in pairs(humanoids) do updateAnimationLock(humanoid) end
+end)
+
 local accumulator = 0
 local rescan = 0
 RunService.Heartbeat:Connect(function(dt)
@@ -37,7 +90,10 @@ RunService.Heartbeat:Connect(function(dt)
 		rescan = 0
 		for _, instance in ipairs(workspace:GetDescendants()) do watch(instance) end
 		for humanoid in pairs(humanoids) do
-			if not humanoid:IsDescendantOf(workspace) then humanoids[humanoid] = nil end
+			if not humanoid:IsDescendantOf(workspace) then
+				updateAnimationLock(humanoid)
+				humanoids[humanoid] = nil
+			end
 		end
 	end
 	accumulator += dt
@@ -57,8 +113,11 @@ RunService.Heartbeat:Connect(function(dt)
 			continue
 		end
 		local occupied = model and model:GetAttribute("CapsuleOccupied") == true
+		local waitingForRespawn = model and model:GetAttribute("CapsuleWaitingForRespawn") == true
 		local occupiedUserId = occupied and model:GetAttribute("CapsuleOccupiedUserId")
-		if occupied then
+		if waitingForRespawn then
+			prompt.Enabled = false
+		elseif occupied then
 			prompt.Enabled = occupiedUserId ~= localPlayer.UserId
 		else
 			local eligible = false

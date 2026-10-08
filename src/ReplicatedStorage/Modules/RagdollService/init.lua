@@ -517,7 +517,8 @@ function Service.Set(humanoid, enabled, preserveMotion)
 	-- All recovery paths (including grapple escape/tag removal) honor blast stun.
 	if not enabled and (humanoid:GetAttribute("GrapplePhysicsLocked")
 		or os.clock() < (humanoid:GetAttribute("BombRagdollUntil") or 0)
-		or os.clock() < (humanoid:GetAttribute("ForcedRagdollUntil") or 0)) then
+		or os.clock() < (humanoid:GetAttribute("ForcedRagdollUntil") or 0)
+		or os.clock() < (humanoid:GetAttribute("FallRagdollUntil") or 0)) then
 		humanoid:AddTag("Ragdoll")
 		return
 	end
@@ -790,6 +791,137 @@ function Service.InitClient()
 			end
 			-- The separate camera anchor already smooths the view. Do not write
 			-- assembly velocities here: observers must consume the owner's physics.
+		end
+	end)
+end
+
+-- Set by the ragdoll key before ToggleRagdoll reaches the server. The fall watcher
+-- turns it into the landing report. The server is the only thing that may disable motors:
+-- a local prediction is what gets snapshotted, and standing back up then leaves them off.
+local fallRagdollArmed = false
+
+function Service.NoteRagdollInput()
+	fallRagdollArmed = true
+end
+
+function Service.WatchLocalFalls()
+	if RunService:IsServer() or Service.fallsWatched then return end
+	Service.fallsWatched = true
+	local storage = game:GetService("ReplicatedStorage")
+	local Config = require(storage:WaitForChild("GrappleConfig"))
+	local Remotes = require(storage.Modules:WaitForChild("GrappleRemotes"))
+	local player = Players.LocalPlayer
+	local DESCEND = 12
+	local ARREST = 0.2
+	local peakY, slowSince, sent, watched, duringFall
+	local function required(humanoid)
+		local minimum = Config.fallRagdollDistance or 30
+		local gravity = workspace.Gravity
+		if type(gravity) ~= "number" or gravity <= 1 then gravity = 196.2 end
+		local jumpHeight = tonumber(humanoid.JumpHeight) or 7.2
+		if humanoid.UseJumpPower == true then
+			local power = tonumber(humanoid.JumpPower) or 50
+			jumpHeight = (power * power) / (2 * gravity)
+		end
+		return math.max(minimum, jumpHeight + 12)
+	end
+	local function partBottom(part)
+		local size = part.Size
+		local halfY = ((size and size.Y) or 0) * 0.5
+		local cf = part.CFrame
+		if typeof(cf) ~= "CFrame" or not cf.PointToWorldSpace or not size then
+			return part.Position.Y - halfY
+		end
+		local hx, hy, hz = size.X * 0.5, size.Y * 0.5, size.Z * 0.5
+		local bottom = cf.Position.Y
+		local samples = {
+			cf:PointToWorldSpace(Vector3.new(-hx, -hy, -hz)), cf:PointToWorldSpace(Vector3.new(-hx, -hy, hz)),
+			cf:PointToWorldSpace(Vector3.new(-hx, hy, -hz)), cf:PointToWorldSpace(Vector3.new(-hx, hy, hz)),
+			cf:PointToWorldSpace(Vector3.new(hx, -hy, -hz)), cf:PointToWorldSpace(Vector3.new(hx, -hy, hz)),
+			cf:PointToWorldSpace(Vector3.new(hx, hy, -hz)), cf:PointToWorldSpace(Vector3.new(hx, hy, hz)),
+		}
+		for _, point in ipairs(samples) do
+			if point and point.Y < bottom then bottom = point.Y end
+		end
+		return bottom
+	end
+	local function bodyLow(character, root)
+		local low = partBottom(root)
+		for _, part in ipairs(character:GetChildren()) do
+			if part:IsA("BasePart") and partBottom(part) < low then low = partBottom(part) end
+		end
+		return low
+	end
+	-- FloorMaterial sticks after the state machine stops, and it lags a fast fall.
+	local function limbLanded(character, humanoid, root)
+		local ragdolled = humanoid:GetAttribute("Ragdolled") == true or humanoid:HasTag("Ragdoll")
+		local velocity = root.AssemblyLinearVelocity
+		local fast = velocity and velocity.Y < -8
+		if humanoid.FloorMaterial ~= Enum.Material.Air and not ragdolled and not fast
+			and humanoid.EvaluateStateMachine ~= false then
+			return true
+		end
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = {character}
+		params.IgnoreWater = true
+		for _, part in ipairs(character:GetChildren()) do
+			if part:IsA("BasePart") and part ~= root then
+				local bottom = partBottom(part)
+				local hit = workspace:Raycast(Vector3.new(part.Position.X, bottom + 1.25, part.Position.Z), Vector3.new(0, -2, 0), params)
+				if hit and hit.Position and (not hit.Normal or hit.Normal.Y > 0.4) then
+					local gap = bottom - hit.Position.Y
+					if gap <= 0.75 and gap >= -2 then return true end
+				end
+			end
+		end
+		return false
+	end
+	RunService.PostSimulation:Connect(function()
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if character ~= watched or not humanoid or humanoid.Health <= 0 or not root or not root:IsA("BasePart")
+			or humanoid:GetAttribute("CapsuleLocked") then
+			watched, peakY, slowSince, sent, duringFall = character, nil, nil, false, false
+			fallRagdollArmed = false
+			return
+		end
+		local velocityY = root.AssemblyLinearVelocity.Y
+		local ragdolled = humanoid:GetAttribute("Ragdolled") == true or humanoid:HasTag("Ragdoll")
+		local landed = limbLanded(character, humanoid, root)
+		if fallRagdollArmed then
+			if not landed then duringFall = true end
+			fallRagdollArmed = false
+		end
+		if ragdolled and not landed then duringFall = true end
+		local y = root.Position.Y
+		if ragdolled or duringFall then
+			local low = bodyLow(character, root)
+			if low < y then y = low end
+		end
+		if landed then
+			if peakY and not sent and peakY - y >= required(humanoid) then
+				sent = true
+				Remotes.FallLanded:FireServer(y, peakY, duringFall == true)
+			end
+			peakY, slowSince = nil, nil
+			if not ragdolled then duringFall = false end
+			return
+		end
+		-- The lock has ended and this is a new descent, so a later impact can report again.
+		if sent and humanoid:GetAttribute("FallRagdollUntil") == nil and velocityY < -DESCEND then sent = false end
+		if velocityY < -DESCEND then
+			slowSince = nil
+			local sample = root.Position.Y
+			peakY = math.max(peakY or sample, sample)
+		elseif (ragdolled or duringFall) and peakY then
+			slowSince = nil
+		elseif not ragdolled and not duringFall and velocityY > DESCEND then
+			peakY, slowSince = nil, nil
+		else
+			slowSince = slowSince or os.clock()
+			if peakY and not ragdolled and not duringFall and os.clock() - slowSince >= ARREST then peakY = nil end
 		end
 	end)
 end
