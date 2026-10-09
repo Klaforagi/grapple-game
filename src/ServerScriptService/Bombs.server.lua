@@ -180,7 +180,7 @@ local function newCastBehavior(state)
 	return behavior
 end
 
-local function queueLaunch(character, humanoid, velocity, now, duration)
+local function queueLaunch(character, humanoid, velocity, now, duration, pushDirection)
 	local previous = stunned[humanoid]
 	stunned[humanoid] = {
 		character = character,
@@ -198,14 +198,15 @@ local function queueLaunch(character, humanoid, velocity, now, duration)
 	humanoid:AddTag("Ragdoll")
 	Ragdoll.Set(humanoid, true)
 	Ragdoll.RefreshOwnership(humanoid)
-	pendingLaunches[humanoid] = {character = character, player = Players:GetPlayerFromCharacter(character), velocity = velocity}
+	pendingLaunches[humanoid] = {character = character, player = Players:GetPlayerFromCharacter(character),
+		velocity = velocity, pushDirection = pushDirection}
 end
 
 local function launch(humanoid, state, now)
 	local character = state.character
 	if not character.Parent or humanoid.Parent ~= character or humanoid.Health <= 0 then return end
 	if state.player and state.player.Character ~= character then return end
-	-- NEXT Heartbeat: allow a full physics step to rebuild the ragdoll assemblies.
+	-- Bombs launch on Heartbeat; pushes launch just before physics simulation.
 	humanoid:SetAttribute("PhysicsServerUntil", now + SERVER_HOLD)
 	Ragdoll.RefreshOwnership(humanoid)
 	local assemblies = {}
@@ -234,7 +235,18 @@ local function launch(humanoid, state, now)
 			end
 		end
 	end
-	BombPhysics.LaunchMotion(bodies, state.velocity, Config.bombTumbleSpeed or 3.5, Config.bombLimbKickSpeed or 3)
+	if state.pushDirection then
+		-- A shove tips the body in the direction of travel without random blast
+		-- kicks pulling individual limbs in different directions.
+		local direction = state.pushDirection
+		local spin = Vector3.new(direction.Z, 0, -direction.X) * 2
+		for _, body in ipairs(bodies) do
+			body.velocity = state.velocity
+			body.angular = spin
+		end
+	else
+		BombPhysics.LaunchMotion(bodies, state.velocity, Config.bombTumbleSpeed or 3.5, Config.bombLimbKickSpeed or 3)
+	end
 	for _, body in ipairs(bodies) do
 		-- One bounded launch per assembly, under server ownership. No persistent
 		-- mover fights the joint limits/collisions or keeps spinning after landing.
@@ -264,7 +276,9 @@ local function explode(bomb, position)
 		Debris:AddItem(flash, 0.4)
 	end
 	for _, humanoid in ipairs(workspace:GetDescendants()) do
-		if humanoid:IsA("Humanoid") and humanoid.Health > 0 then
+		if humanoid:IsA("Humanoid") and humanoid.Health > 0
+			and not humanoid:GetAttribute("GrapplePhysicsLocked")
+			and not humanoid:GetAttribute("GrappledBy") then
 			local character = humanoid.Parent
 			local root = character:FindFirstChild("HumanoidRootPart")
 			if root and root:IsA("BasePart") and not root.Anchored then
@@ -279,6 +293,9 @@ end
 local function scanPush(state, now)
 	local character, root = state.character, state.root
 	if not character.Parent or state.player.Character ~= character or not root.Parent then return false end
+	local actor = character:FindFirstChildOfClass("Humanoid")
+	if not actor or actor.Health <= 0 or actor:GetAttribute("CapsuleLocked")
+		or actor:GetAttribute("GrapplePhysicsLocked") then return false end
 	-- Follow the user's current position and facing throughout the short active window.
 	local look = root.CFrame.LookVector
 	local forward = Vector3.new(look.X, 0, look.Z)
@@ -287,8 +304,8 @@ local function scanPush(state, now)
 	local center = root.Position + forward * (Config.pushRange / 2)
 	state.hitbox.CFrame = CFrame.lookAt(center, center + forward)
 	state.params.FilterDescendantsInstances = {character}
-	for _, victim in ipairs(workspace:GetDescendants()) do
-		if not victim:IsA("Humanoid") or state.hit[victim] then continue end
+	for _, victim in ipairs(state.candidates) do
+		if not victim.Parent or state.hit[victim] then continue end
 		local model = victim.Parent
 		local targetRoot = model and model:FindFirstChild("HumanoidRootPart")
 		if model == character or victim.Health <= 0 or not targetRoot or targetRoot.Anchored then continue end
@@ -302,7 +319,9 @@ local function scanPush(state, now)
 		state.hit[victim] = true
 		local horizontal = Vector3.new(offset.X, 0, offset.Z)
 		local direction = horizontal.Magnitude > 0.01 and horizontal.Unit or forward
-		queueLaunch(model, victim, direction * Config.pushSpeed + Vector3.new(0, 6, 0), now, Config.pushRagdollDuration)
+		local vertical = math.clamp(targetRoot.AssemblyLinearVelocity.Y, -40, 2)
+		queueLaunch(model, victim, direction * Config.pushSpeed + Vector3.new(0, vertical, 0),
+			now, Config.pushRagdollDuration, direction)
 	end
 	return true
 end
@@ -335,8 +354,12 @@ Remotes.UsePush.OnServerEvent:Connect(function(player)
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = {character}
 	params.RespectCanCollide = true
+	local candidates = {}
+	for _, instance in ipairs(workspace:GetDescendants()) do
+		if instance:IsA("Humanoid") then table.insert(candidates, instance) end
+	end
 	local state = {player = player, character = character, root = root, hitbox = hitbox,
-		params = params, hit = {}, expiresAt = now + duration}
+		params = params, hit = {}, candidates = candidates, expiresAt = now + duration}
 	activePushes[player] = state
 	scanPush(state, now)
 end)
@@ -350,7 +373,7 @@ Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	local tool = character and character:FindFirstChild(Config.bombToolName)
-	if not root or not humanoid or humanoid.Health <= 0 or humanoid:GetAttribute("GrapplePhysicsLocked")
+	if not root or not humanoid or humanoid.Health <= 0
 		or humanoid:GetAttribute("CapsuleLocked") then return end
 	if not tool or not tool:IsA("Tool") or not tool:GetAttribute("BombTool") then return end
 	local now = os.clock()
@@ -379,7 +402,7 @@ Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 	Debris:AddItem(bomb, Config.bombFuse + 1)
 end)
 
-RunService.Heartbeat:Connect(function()
+RunService.PreSimulation:Connect(function()
 	local now = os.clock()
 	for player, state in pairs(activePushes) do
 		if now > state.expiresAt or not state.hitbox.Parent or not scanPush(state, now) then
@@ -387,6 +410,17 @@ RunService.Heartbeat:Connect(function()
 		end
 	end
 	for humanoid, state in pairs(pendingLaunches) do
+		if state.pushDirection then
+			pendingLaunches[humanoid] = nil
+			launch(humanoid, state, now)
+		end
+	end
+end)
+
+RunService.Heartbeat:Connect(function()
+	local now = os.clock()
+	for humanoid, state in pairs(pendingLaunches) do
+		if state.pushDirection then continue end
 		pendingLaunches[humanoid] = nil
 		launch(humanoid, state, now)
 	end

@@ -64,10 +64,15 @@ function Service.RefreshSelfCollisions(humanoid)
 		if not constraint:IsA("NoCollisionConstraint") then continue end
 		local a, b = constraint.Part0, constraint.Part1
 		if not a or not b or a.Parent ~= character or b.Parent ~= character then continue end
+		-- Avatar-authored exclusions may protect overlapping package geometry.
+		-- Only our generated pair filters should be rewritten by this policy.
+		if constraint.Parent.Name ~= "GrappleSelfCollision" then continue end
 		if rig.collisionRestore[constraint] == nil then rig.collisionRestore[constraint] = constraint.Enabled end
-		-- Leave joint neighbors and the invisible root exempt. Non-neighboring
-		-- limbs/torso parts collide, so a folded limb cannot pass through the body.
+		-- Mesh collision hulls can overlap even in the neutral pose, especially
+		-- on scaled bundles. Avoid forcing those hulls apart against their joints.
+		-- These pair filters do not affect world or other-character collisions.
 		constraint.Enabled = a.Name == "HumanoidRootPart" or b.Name == "HumanoidRootPart"
+			or a:IsA("MeshPart") or b:IsA("MeshPart")
 			or (adjacent[a] ~= nil and adjacent[a][b] == true)
 	end
 end
@@ -525,7 +530,12 @@ function Service.Set(humanoid, enabled, preserveMotion)
 	local rig = Service.Prepare(humanoid)
 	local grappleLocked = humanoid:GetAttribute("GrapplePhysicsLocked") == true
 	if enabled and grappleLocked then
-		humanoid:UnequipTools()
+		local player = Players:GetPlayerFromCharacter(humanoid.Parent)
+		local backpack = player and player:FindFirstChildOfClass("Backpack")
+		local config = require(game:GetService("ReplicatedStorage"):WaitForChild("GrappleConfig"))
+		for _, tool in ipairs(humanoid.Parent:GetChildren()) do
+			if tool:IsA("Tool") and tool.Name ~= config.bombToolName and backpack then tool.Parent = backpack end
+		end
 	end
 	if rig.active == enabled then
 		Service.RefreshJointFriction(humanoid)
@@ -783,6 +793,13 @@ function Service.InitClient()
 		end
 		for humanoid in pairs(activeRigs) do
 			if not humanoid.Parent then activeRigs[humanoid] = nil continue end
+			if humanoid.Health <= 0 then
+				activeRigs[humanoid] = nil
+				humanoid.EvaluateStateMachine = true
+				humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
+				humanoid:ChangeState(Enum.HumanoidStateType.Dead)
+				continue
+			end
 			humanoid.EvaluateStateMachine = false
 			humanoid.PlatformStand = humanoid:GetAttribute("GrapplePhysicsLocked") == true
 				or humanoid:GetAttribute("GrappleLocalPhysicsLock") == true

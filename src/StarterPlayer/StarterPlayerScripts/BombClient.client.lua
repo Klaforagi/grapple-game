@@ -32,7 +32,7 @@ local function fire(tool, aimPosition)
 	local camera = workspace.CurrentCamera
 	if tool.Parent ~= character or not camera or not humanoid or humanoid.Health <= 0 then return end
 	if not tool.Enabled or tool:GetAttribute("BombCoolingDown") then return end
-	if humanoid:GetAttribute("GrapplePhysicsLocked") or UIS:GetFocusedTextBox() then return end
+	if humanoid:GetAttribute("CapsuleLocked") or UIS:GetFocusedTextBox() then return end
 	local now = os.clock()
 	-- Only debounce input locally. The server starts the real cooldown on an
 	-- accepted throw, so a rejected request cannot strand the tool for six seconds.

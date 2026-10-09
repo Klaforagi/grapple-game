@@ -1,6 +1,7 @@
 -- Runs the real game modules against a small Roblox API mock.
 -- This validates state/cleanup, not the engine's physics solver or GUI rendering.
 return function(sources)
+	assert(loadstring(sources.coinTests))()(sources.coins)
 	local objects, delayed = {}, {}
 	local now = 10
 	local function signal()
@@ -66,7 +67,7 @@ return function(sources)
 		return object
 	end
 	function methods:IsA(class)
-		return self.ClassName == class or class == "BasePart" and self.ClassName == "Part"
+		return self.ClassName == class or class == "BasePart" and (self.ClassName == "Part" or self.ClassName == "MeshPart")
 	end
 	function methods:IsDescendantOf(ancestor) return descendant(self, ancestor) end
 	function methods:GetChildren()
@@ -206,7 +207,7 @@ return function(sources)
 		Color3 = {fromRGB = function() return {} end}, ColorSequence = {new = function() return {} end},
 		PhysicalProperties = {new = function(d, f) return {Density = d, Friction = f} end},
 		RaycastParams = {new = function() return {} end}, OverlapParams = {new = function() return {} end},
-		Enum = {HumanoidStateType = {Physics = "Physics", Ragdoll = "Ragdoll", GettingUp = "GettingUp", Freefall = "Freefall"},
+		Enum = {HumanoidStateType = {Physics = "Physics", Ragdoll = "Ragdoll", GettingUp = "GettingUp", Freefall = "Freefall", Dead = "Dead"},
 			RenderPriority = {Camera = {Value = 200}},
 			ForceLimitMode = {PerAxis = "PerAxis"}, ActuatorRelativeTo = {World = "World"},
 			PositionAlignmentMode = {OneAttachment = "OneAttachment"}, RaycastFilterType = {Exclude = "Exclude"},
@@ -268,7 +269,7 @@ return function(sources)
 	handle.Anchored, handle.CanCollide = true, true
 	local firePoint = instance("Attachment", "FirePoint", handle)
 	local function fire()
-		now += 0.4
+		now += 1.6
 		remotes.FireGrapple.OnServerEvent:Emit(attacker, V.new(0, 0, 20), V.new(0, 0, 0))
 	end
 	local starterGun = instance("Tool", config.toolName, services.StarterPack)
@@ -438,7 +439,14 @@ return function(sources)
 	local nativeIgnore = instance("NoCollisionConstraint", "NativeLimbFilter", r6)
 	nativeIgnore.Part0, nativeIgnore.Part1 = r6Limb1, r6Limb2
 	r6.DescendantAdded:Emit(nativeIgnore)
-	assert(not nativeIgnore.Enabled, "native self-collision filter defeated the new collision policy")
+	assert(nativeIgnore.Enabled, "ragdoll discarded an avatar-authored collision exclusion")
+	r6Limb1.ClassName = "MeshPart"
+	ragdoll.RefreshSelfCollisions(hum6)
+	assert(oppositeLimbs.Enabled and r6Limb1.CanCollide,
+		"mesh limb must ignore its own body while retaining world collision")
+	r6Limb1.ClassName = "Part"
+	ragdoll.RefreshSelfCollisions(hum6)
+	assert(not oppositeLimbs.Enabled, "block limbs lost their self-collision policy")
 	-- A ragdoll can spin in flight, but recovery should retain its original yaw.
 	root6.CFrame = {LookVector = V.new(-1, 0, 0)}
 	ragdoll.Set(hum6, false)
@@ -560,7 +568,7 @@ return function(sources)
 				end
 			end
 			hitParts = {targetRoot}
-			now += 0.4
+			now += 1.6
 			remotes.FireGrapple.OnServerEvent:Emit(shooter, targetRoot.Position, shooterRoot.Position)
 			assert(targetHumanoid:GetAttribute("GrappledBy") == shooter.UserId, "role matrix missed capture")
 			for _, part in ipairs(target.Character:GetChildren()) do
@@ -626,6 +634,9 @@ return function(sources)
 	gun:SetAttribute("InCooldown", true)
 	hitParts = {victimRoot}
 	now += 0.2
+	remotes.FireGrapple.OnServerEvent:Emit(attacker, victimRoot.Position, V.new(0, 0, -100))
+	assert(not victimHumanoid:GetAttribute("GrappledBy"), "unequip cooldown allowed an early shot")
+	now += 1.11
 	remotes.FireGrapple.OnServerEvent:Emit(attacker, victimRoot.Position, V.new(0, 0, -100))
 	assert(victimHumanoid:GetAttribute("GrappledBy") == attacker.UserId and not gun:GetAttribute("WallMode"), "wall mode player hit did not become a normal grapple and disable wall mode")
 	fire()
@@ -1105,13 +1116,13 @@ return function(sources)
 	remotes.EquipRagdollTool.OnServerEvent:Emit(equipPlayer, config.bombToolName, true)
 	equipHumanoid:SetAttribute("GrapplePhysicsLocked", true)
 	ragdoll.Set(equipHumanoid, true)
-	assert(ragdollBomb.Parent ~= equipCharacter, "grapple lock did not unequip an already-ragdolled victim")
+	assert(ragdollBomb.Parent == equipCharacter, "grapple lock unequipped the victim's bomb")
 	ragdollBomb.Parent = victimToolBackpack
 	remotes.EquipRagdollTool.OnServerEvent:Emit(equipPlayer, config.bombToolName, true)
-	assert(ragdollBomb.Parent == victimToolBackpack, "grapple-locked victim equipped a tool")
+	assert(ragdollBomb.Parent == equipCharacter, "grapple-locked victim could not equip bomb")
 	ragdollBomb.Parent = equipCharacter
 	equipCharacter.ChildAdded:Emit(ragdollBomb)
-	assert(ragdollBomb.Parent ~= equipCharacter, "grappled victim could equip a tool")
+	assert(ragdollBomb.Parent == equipCharacter, "grappled victim lost bomb after equip")
 	equipHumanoid:SetAttribute("GrapplePhysicsLocked", nil)
 	ragdoll.Set(equipHumanoid, false)
 	equipHumanoid:RemoveTag("Ragdoll")
@@ -1165,6 +1176,10 @@ return function(sources)
 	nativeBackpackEnabled = true
 	equipHumanoid:SetAttribute("Ragdolled", true)
 	equipHumanoid.Health = 0
+	equipHumanoid:GetPropertyChangedSignal("Health"):Emit()
+	assert(equipHumanoid:GetState() == env.Enum.HumanoidStateType.Dead
+		and equipHumanoid.EvaluateStateMachine and equipCharacter.BreakJointsCount == 1,
+		"zero-health ragdoll waited for Died instead of completing death")
 	equipHumanoid.Died:Emit()
 	assert(not equipHumanoid:GetAttribute("Ragdolled") and equipCharacter.BreakJointsCount == 1,
 		"normal death retained the ragdoll assembly")
@@ -1360,7 +1375,7 @@ return function(sources)
 	attackerHumanoid:SetAttribute("Ragdolled", true)
 	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", true)
 	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(100, 0, 0))
-	assert(not world:FindFirstChild("ThrownBomb"), "grapple-locked player threw a bomb")
+	assert(world:FindFirstChild("ThrownBomb"), "grapple-locked player could not throw a bomb")
 	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", nil)
 	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(100, 0, 0))
 	local thrown = assert(world:FindFirstChild("ThrownBomb"))
@@ -1485,14 +1500,17 @@ return function(sources)
 	attackerRoot.AssemblyLinearVelocity = V.new(2000, 2000, 0)
 	now = sweptAt + config.bombFuse + 0.01
 	runService.Heartbeat:Emit(0.02)
-	assert(not gun:GetAttribute("HasGrappled") and not blastRoot:FindFirstChildWhichIsA("RopeConstraint"), "blast retained grapple tether")
+	assert(gun:GetAttribute("HasGrappled") and blastRoot:FindFirstChildWhichIsA("RopeConstraint"), "blast removed grapple tether")
+	assert(not blastHumanoid:GetAttribute("BombRagdollUntil") and not blastHumanoid:GetAttribute("BombBlastRevision"),
+		"bomb affected a grappled victim")
 	now += 1 / 60
 	runService.Heartbeat:Emit(1 / 60)
-	assert(attackerRoot.AssemblyLinearVelocity.Magnitude < 200 and blastRoot.AssemblyLinearVelocity.Magnitude > 100, "repeat launch stacked speed or failed to launch grappled NPC")
+	assert(attackerRoot.AssemblyLinearVelocity.Magnitude < 200, "repeat launch stacked owner speed")
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
 	now += config.bombRagdollDuration + 0.01
 	runService.Heartbeat:Emit(0.1)
-	assert(not blastHumanoid:GetAttribute("Ragdolled"), "grapple-created ragdoll remained stuck after blast stun")
+	assert(blastHumanoid:GetAttribute("Ragdolled") and gun:GetAttribute("HasGrappled"), "bomb recovery freed grappled victim")
+	fire()
 	assert(manualHumanoid:GetAttribute("Ragdolled"), "blast recovery removed a voluntary ragdoll")
 	-- The client obeys server cooldown state but only debounces unacknowledged
 	-- requests, so a rejected throw does not start a phantom six-second cooldown.
@@ -1506,21 +1524,21 @@ return function(sources)
 	now += 0.2
 	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", true)
 	bombTool.Activated:Emit()
-	assert(#remotes.ThrowBomb.sent == 1, "grapple-locked player threw a bomb")
+	assert(#remotes.ThrowBomb.sent == 2, "grapple-locked player could not throw a bomb")
 	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", nil)
 	now += 0.2
 	bombTool.Activated:Emit()
-	assert(#remotes.ThrowBomb.sent == 2, "unacknowledged throw caused full client cooldown")
+	assert(#remotes.ThrowBomb.sent == 3, "unacknowledged throw caused full client cooldown")
 	input.TouchEnabled = true
 	now += 0.2
 	input.TouchTapInWorld:Emit({X = 640, Y = 420, kind = "Vector2"}, false)
-	assert(#remotes.ThrowBomb.sent == 3 and aimPixels[1] == 640 and aimPixels[2] == 420, "mobile bomb did not use the firing tap")
+	assert(#remotes.ThrowBomb.sent == 4 and aimPixels[1] == 640 and aimPixels[2] == 420, "mobile bomb did not use the firing tap")
 	input.TouchEnabled = false
 	bombTool.Enabled = false
 	bombTool:SetAttribute("BombCoolingDown", true)
 	now += 0.2
 	bombTool.Activated:Emit()
-	assert(#remotes.ThrowBomb.sent == 3, "bomb client ignored authoritative cooldown")
+	assert(#remotes.ThrowBomb.sent == 4, "bomb client ignored authoritative cooldown")
 	local pushTool = assert(attackerBackpack:FindFirstChild(config.pushToolName))
 	assert(pushTool.RequiresHandle == false and not pushTool:FindFirstChild("Handle"), "Push must be a handle-free ability")
 	bombTool.Parent = attackerBackpack
@@ -1544,8 +1562,10 @@ return function(sources)
 	assert(not attackerHumanoid:GetAttribute("BombRagdollUntil"), "Push hit its own user")
 	remotes.UsePush.OnServerEvent:Emit(attacker)
 	assert(pushHumanoid:GetAttribute("BombRagdollUntil") == pushDeadline, "Push cooldown failed")
-	runService.Heartbeat:Emit(1 / 60)
+	runService.PreSimulation:Emit(1 / 60)
 	assert(pushRoot.AssemblyLinearVelocity.X > 0 and pushRoot.AssemblyLinearVelocity.Magnitude < 50, "Push launch was missing or excessive")
+	assert(pushRoot.AssemblyLinearVelocity.Y <= 2 and pushRoot.AssemblyAngularVelocity.Magnitude <= 2.01,
+		"Push used upward blast motion or excessive tumble")
 	ragdoll.Set(pushHumanoid, false)
 	assert(pushHumanoid:GetAttribute("Ragdolled"), "Push recovery bypassed stun")
 	assert(not pushHumanoid:GetAttribute("GrapplePhysicsLocked"), "Push disabled tool access")
@@ -1558,7 +1578,7 @@ return function(sources)
 	assert(config.pushActiveDuration == 0.35, "Push active window changed unexpectedly")
 	attackerRoot.Position = attackerRoot.Position + V.new(-8, 0, 0)
 	now += 0.2
-	runService.Heartbeat:Emit(0.2)
+	runService.PreSimulation:Emit(0.2)
 	assert(pushHumanoid:GetAttribute("Ragdolled"), "Push did not acquire a target during its active window")
 	execute(sources.capsuleTests)({execute = execute, sources = sources, instance = instance,
 		methods = methods, signal = signal, env = env, services = services, world = world,

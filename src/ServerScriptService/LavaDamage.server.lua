@@ -91,9 +91,13 @@ RunService.Heartbeat:Connect(function(dt)
 			continue
 		end
 
-		for _, touchingPart in ipairs(Workspace:GetPartsInPart(lavaBrick, overlapParams)) do
+		-- Resting limbs can touch the surface without penetrating its volume.
+		local contacts = Workspace:GetPartsInPart(lavaBrick, overlapParams)
+		for _, part in ipairs(lavaBrick:GetTouchingParts()) do table.insert(contacts, part) end
+		for _, touchingPart in ipairs(contacts) do
 			local humanoid = humanoidFromPart(touchingPart)
-			if not humanoid or humanoid.Health <= 0 or damagedThisScan[humanoid] then continue end
+			if not humanoid or humanoid.Health <= 0
+				or (damagedThisScan[humanoid] and lavaBrick.Name ~= "LavaBrick1Tap") then continue end
 			damagedThisScan[humanoid] = true
 			damageHumanoid(humanoid, lavaBrick)
 		end

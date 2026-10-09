@@ -90,7 +90,7 @@ function M.Init()
 		RagdollService.NoteRagdollInput()
 		Remotes.ToggleRagdoll:FireServer()
 	end
-	-- A compact touch-only reel replaces the former full-screen grapple panel.
+	-- A compact reel replaces the former full-screen grapple panel.
 	-- Its normalized position keeps it at 75% across and 95% down on any screen.
 	local reelControls = make("Frame", screen, {
 		Name = "ReelControls", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.75, 0, 0.95, 0),
@@ -115,6 +115,13 @@ function M.Init()
 	local longButton = button(reelControls, "+", UDim2.fromOffset(44, 0), UDim2.fromOffset(34, 36))
 	longButton.Font, longButton.TextSize = Enum.Font.GothamBold, 22
 	make("UIStroke", longButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
+	if UIS.KeyboardEnabled and not UIS.TouchEnabled then
+		for _, hint in ipairs({{"(Q)", -34}, {"(E)", 84}}) do
+			local text = label(reelControls, hint[1], UDim2.fromOffset(hint[2], 0), UDim2.fromOffset(28, 36))
+			text.TextSize, text.TextXAlignment = 13, Enum.TextXAlignment.Center
+			styleReelLabel(text)
+		end
+	end
 	local reelHint = label(reelControls, "Hold to adjust length", UDim2.fromOffset(-36, 39), UDim2.fromOffset(150, 18))
 	reelHint.TextSize, reelHint.TextXAlignment = 11, Enum.TextXAlignment.Center
 	styleReelLabel(reelHint)
@@ -126,6 +133,7 @@ function M.Init()
 	local wallLabel = label(wallControls, "Wall Mode", UDim2.fromOffset(-36, -22), UDim2.fromOffset(150, 18))
 	wallLabel.TextSize, wallLabel.TextXAlignment = 11, Enum.TextXAlignment.Center
 	styleReelLabel(wallLabel)
+	if UIS.KeyboardEnabled and not UIS.TouchEnabled then wallLabel.Text = "Wall Mode (X)" end
 	local wallButton = button(wallControls, "OFF", UDim2.fromOffset(0, 0), UDim2.fromOffset(78, 36), toggleWallMode)
 	wallButton.Font, wallButton.TextSize = Enum.Font.GothamBold, 14
 	make("UIStroke", wallButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
@@ -140,8 +148,29 @@ function M.Init()
 	make("UIStroke", inventoryButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
 	local ragdollButton = button(screen, "RAG", UDim2.new(0, 18, 0.5, 30), UDim2.fromOffset(44, 44), ragdoll)
 	ragdollButton.Name = "RagdollButton"
+	local coins = make("Frame", screen, {
+		Name = "Coins", Position = UDim2.new(0, 18, 0.5, 82),
+		Size = UDim2.fromOffset(150, 36), BackgroundTransparency = 1,
+	})
+	make("ImageLabel", coins, {
+		Name = "Icon", Size = UDim2.fromOffset(36, 36), BackgroundTransparency = 1,
+		Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
+	})
+	local coinAmount = label(coins, "0", UDim2.fromOffset(42, 0), UDim2.fromOffset(108, 36))
+	styleReelLabel(coinAmount)
+	coinAmount.TextSize = 18
+	local function updateCoins()
+		coinAmount.Text = tostring(player:GetAttribute("Coins") or 0)
+	end
+	player:GetAttributeChangedSignal("Coins"):Connect(updateCoins)
+	updateCoins()
 	ragdollButton.Font, ragdollButton.TextSize = Enum.Font.GothamBold, 12
 	make("UIStroke", ragdollButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
+	if UIS.KeyboardEnabled and not UIS.TouchEnabled then
+		local hint = label(ragdollButton, "(R)", UDim2.new(1, 6, 0, 0), UDim2.fromOffset(28, 44))
+		hint.TextSize, hint.TextXAlignment = 13, Enum.TextXAlignment.Center
+		styleReelLabel(hint)
+	end
 	local inventory = make("Frame", screen, {Name = "GrappleInventory", Position = UDim2.new(0, 72, 0.5, -104), Size = UDim2.fromOffset(184, 208), BackgroundColor3 = Color3.fromRGB(39, 51, 65), Visible = false})
 	rounded(inventory)
 	make("UIStroke", inventory, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})

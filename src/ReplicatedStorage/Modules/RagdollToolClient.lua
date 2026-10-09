@@ -13,8 +13,9 @@ function M.Select(toolName)
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0
 		or humanoid:GetAttribute("Ragdolled") ~= true
-		or humanoid:GetAttribute("GrapplePhysicsLocked") == true
-		or humanoid:GetAttribute("GrappleLocalPhysicsLock") == true then return end
+		or humanoid:GetAttribute("CapsuleLocked")
+		or (toolName ~= Config.bombToolName and (humanoid:GetAttribute("GrapplePhysicsLocked") == true
+			or humanoid:GetAttribute("GrappleLocalPhysicsLock") == true)) then return end
 	local backpack = player:FindFirstChildOfClass("Backpack")
 	local tool = character:FindFirstChild(toolName) or (backpack and backpack:FindFirstChild(toolName))
 	if not tool or not tool:IsA("Tool") then return end

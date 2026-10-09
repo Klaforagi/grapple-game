@@ -40,6 +40,16 @@ local GrappleOwners: {[number]: Player} = {}
 local WallMode: {[Player]: boolean} = {}
 local lastFire: {[Player]: number} = {}
 local cooldownUntil: {[Player]: number} = {}
+local function startCooldown(player, tool, duration)
+	local deadline = math.max(cooldownUntil[player] or 0, os.clock() + duration)
+	cooldownUntil[player] = deadline
+	tool:SetAttribute("InCooldown", true)
+	task.delay(math.max(0, deadline - os.clock()), function()
+		if cooldownUntil[player] == deadline and tool.Parent then
+			tool:SetAttribute("InCooldown", false)
+		end
+	end)
+end
 local lastModeToggle: {[Player]: number} = {}
 local preparedTools = setmetatable({}, {__mode = "k"})
 -- Includes detached victims awaiting handoff. Identity guards invalidate old timers.
@@ -210,11 +220,8 @@ disconnectRope = function(player: Player, skipCooldown: boolean?, preserveVictim
 		tool:SetAttribute("InUse", false)
 		tool:SetAttribute("HasGrappled", false)
 		if not skipCooldown then
-			cooldownUntil[player] = os.clock() + (Config.GrappleCooldown or 0.1)
-			tool:SetAttribute("InCooldown", true)
-			task.delay(Config.GrappleCooldown or 0.1, function()
-				if tool.Parent then tool:SetAttribute("InCooldown", false) end
-			end)
+			local cooldown = preserveVictimMomentum and state.victimHumanoid and 1.5 or (Config.GrappleCooldown or 0.1)
+			startCooldown(player, tool, cooldown)
 		else
 			cooldownUntil[player] = nil
 			tool:SetAttribute("InCooldown", false)
@@ -529,12 +536,7 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	PlaySound(tool:FindFirstChild("Handle"), sound("Fire"))
 	state.connections.ownerDied = humanoid.Died:Connect(function() disconnectRope(player, true) end)
 	state.connections.ownerBlasted = humanoid:GetAttributeChangedSignal("BombBlastRevision"):Connect(function()
-		if Active[player] == state then disconnectRope(player, true) end
-	end)
-	state.connections.toolUnequipped = tool.Unequipped:Connect(function()
-		disconnectRope(player)
-		-- The Backpack owns tool selection. A delayed UnequipTools here could
-		-- put away a newly re-equipped gun after this old rope was released.
+		if Active[player] == state and not state.victimHumanoid then disconnectRope(player, true) end
 	end)
 	state.connections.toolDestroyed = tool.Destroying:Connect(function() disconnectRope(player, true) end)
 	local hitbox = createHitbox(state, origin, direction)
@@ -670,6 +672,16 @@ end)
 
 local function watchPlayer(player: Player)
 	local watched = setmetatable({}, {__mode = "k"})
+	local watchedTools = setmetatable({}, {__mode = "k"})
+	local function watchTool(tool)
+		ToolSetup.Prepare(tool, true)
+		if not tool:IsA("Tool") or tool.Name ~= Config.toolName or watchedTools[tool] then return end
+		watchedTools[tool] = true
+		tool.Unequipped:Connect(function()
+			if Active[player] and Active[player].tool == tool then disconnectRope(player) end
+			startCooldown(player, tool, 1.5)
+		end)
+	end
 	local function refreshCosmetics()
 		applyCosmetics(player, findInventoryTool(player, Config.toolName))
 		local bomb = findInventoryTool(player, Config.bombToolName)
@@ -683,8 +695,8 @@ local function watchPlayer(player: Player)
 	local function watchInventory(container)
 		if watched[container] then return end
 		watched[container] = true
-		container.ChildAdded:Connect(function(tool) ToolSetup.Prepare(tool, true) refreshCosmetics() end)
-		for _, tool in ipairs(container:GetChildren()) do ToolSetup.Prepare(tool, true) end
+		container.ChildAdded:Connect(function(tool) watchTool(tool) refreshCosmetics() end)
+		for _, tool in ipairs(container:GetChildren()) do watchTool(tool) end
 	end
 	player.ChildAdded:Connect(function(child)
 		if child:IsA("Backpack") then watchInventory(child) end

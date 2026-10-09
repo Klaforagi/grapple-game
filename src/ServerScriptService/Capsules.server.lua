@@ -137,6 +137,41 @@ local function createHealthDisplay(occupant)
 	gui.Parent = occupant.character
 end
 
+local function straightenPose(occupant)
+	local character = occupant.character
+	local positioned = {[occupant.root] = true}
+	local joints = {}
+	for _, joint in ipairs(character:GetDescendants()) do
+		local a, b, c0, c1
+		if joint:IsA("Motor6D") then
+			joint.Transform = CFrame.new()
+			a, b, c0, c1 = joint.Part0, joint.Part1, joint.C0, joint.C1
+		elseif joint:IsA("AnimationConstraint") and joint.Attachment0 and joint.Attachment1 then
+			a, b = joint.Attachment0.Parent, joint.Attachment1.Parent
+			c0, c1 = joint.Attachment0.CFrame, joint.Attachment1.CFrame
+		end
+		if a and b and a.Parent == character and b.Parent == character then
+			table.insert(joints, {a, b, c0, c1})
+		end
+	end
+	-- Anchored limbs cannot be repositioned by the restored animation joints.
+	-- Place each body explicitly in its unanimated joint frame before freezing.
+	for _ = 1, #joints do
+		local changed = false
+		for _, joint in ipairs(joints) do
+			local a, b, c0, c1 = unpack(joint)
+			if positioned[a] and not positioned[b] then
+				b.CFrame = a.CFrame * c0 * c1:Inverse()
+				positioned[b], changed = true, true
+			elseif positioned[b] and not positioned[a] then
+				a.CFrame = b.CFrame * c1 * c0:Inverse()
+				positioned[a], changed = true, true
+			end
+		end
+		if not changed then break end
+	end
+end
+
 local function freezePose(occupant)
 	for _, part in ipairs(occupant.character:GetDescendants()) do
 		if part:IsA("BasePart") then
@@ -163,7 +198,8 @@ local function restoreCharacter(state, rescued)
 		humanoid:SetAttribute("CapsuleLocked", nil)
 		humanoid.BreakJointsOnDeath = occupant.breakJointsOnDeath
 		humanoid.WalkSpeed = occupant.walkSpeed
-		humanoid.AutoRotate = occupant.autoRotate
+		-- Capture starts during grapple ragdoll, where AutoRotate is temporarily false.
+		humanoid.AutoRotate = true
 		humanoid.UseJumpPower = occupant.useJumpPower
 		humanoid.JumpPower = occupant.jumpPower
 		humanoid.JumpHeight = occupant.jumpHeight
@@ -286,12 +322,15 @@ local function capture(state, owner, character, humanoid)
 	task.delay(math.max(0.3, (Config.playerOwnershipReleaseDelay or 0.2) + 0.1), function()
 		if state.occupant ~= occupant or humanoid.Health <= 0 then return end
 		humanoid:SetAttribute("ForcedRagdollUntil", nil)
+		humanoid:SetAttribute("FallRagdollUntil", nil)
+		humanoid:SetAttribute("BombRagdollUntil", nil)
 		humanoid:RemoveTag("Ragdoll")
 		Ragdoll.Set(humanoid, false, true)
 		-- Recovery restores AutoRotate and reconnects the limbs. Reapply the
 		-- capsule pose only after those joints have been restored.
 		humanoid.AutoRotate = false
 		root.CFrame = captureCFrame(state, humanoid, root)
+		straightenPose(occupant)
 		freezePose(occupant)
 	end)
 end
@@ -327,7 +366,8 @@ local function configure(model)
 	prompt.Triggered:Connect(function(player)
 		local playerRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 		local actor = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-		if not actor or actor.Health <= 0 or actor:GetAttribute("CapsuleLocked") then return end
+		if not actor or actor.Health <= 0 or actor:GetAttribute("CapsuleLocked")
+			or actor:GetAttribute("GrapplePhysicsLocked") or actor:GetAttribute("GrappledBy") then return end
 		if not playerRoot or distanceToPart(trigger, playerRoot.Position) > (Config.capsulePromptDistance or 10) + 2 then return end
 		if state.occupant then
 			if state.occupant.waitingForRespawn then return end

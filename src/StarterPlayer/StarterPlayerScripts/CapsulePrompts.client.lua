@@ -1,6 +1,8 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+local savedHealthGui
 
 local Config = require(ReplicatedStorage:WaitForChild("GrappleConfig"))
 local localPlayer = Players.LocalPlayer
@@ -82,9 +84,31 @@ RunService.PreAnimation:Connect(function()
 	for humanoid in pairs(humanoids) do updateAnimationLock(humanoid) end
 end)
 
+RunService.PreSimulation:Connect(function()
+	for humanoid in pairs(animationLocks) do
+		if humanoid.Parent and humanoid:GetAttribute("CapsuleLocked") then
+			for _, joint in ipairs(humanoid.Parent:GetDescendants()) do
+				if joint:IsA("Motor6D") then joint.Transform = CFrame.new() end
+			end
+		end
+	end
+end)
+
 local accumulator = 0
 local rescan = 0
 RunService.Heartbeat:Connect(function(dt)
+	local character = localPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local locked = humanoid and humanoid:GetAttribute("CapsuleLocked") == true
+	pcall(function()
+		if locked then
+			if savedHealthGui == nil then savedHealthGui = StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.Health) end
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
+		elseif savedHealthGui ~= nil then
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, savedHealthGui)
+			savedHealthGui = nil
+		end
+	end)
 	rescan += dt
 	if rescan >= 1 then
 		rescan = 0
@@ -108,6 +132,7 @@ RunService.Heartbeat:Connect(function(dt)
 		local ownHumanoid = ownCharacter and ownCharacter:FindFirstChildOfClass("Humanoid")
 		if not model or not ownRoot or not ownHumanoid or ownHumanoid.Health <= 0
 			or ownHumanoid:GetAttribute("CapsuleLocked")
+			or ownHumanoid:GetAttribute("GrapplePhysicsLocked") or ownHumanoid:GetAttribute("GrappledBy")
 			or distanceToPart(prompt.Parent, ownRoot.Position) > (Config.capsulePromptDistance or 10) then
 			prompt.Enabled = false
 			continue

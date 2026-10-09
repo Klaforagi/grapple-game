@@ -50,6 +50,18 @@ local function ensureRespawn(player, deadCharacter)
 	end)
 end
 
+local completedDeaths = setmetatable({}, {__mode = "k"})
+local function finishDeath(player, character, humanoid)
+	if completedDeaths[humanoid] then return end
+	completedDeaths[humanoid] = true
+	ensureRespawn(player, character)
+	-- Physics ragdolls suspend automatic state transitions, including Dead.
+	humanoid.EvaluateStateMachine = true
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
+	humanoid:ChangeState(Enum.HumanoidStateType.Dead)
+	if not humanoid:GetAttribute("CapsuleLocked") then Ragdoll.BreakApart(humanoid) end
+end
+
 local function configure(player, character)
 	local humanoid = character:WaitForChild("Humanoid", 10)
 	local root = character:WaitForChild("HumanoidRootPart", 10)
@@ -63,16 +75,20 @@ local function configure(player, character)
 	for _, instance in ipairs(character:GetDescendants()) do collision(instance) end
 	character.DescendantAdded:Connect(collision)
 	character.ChildAdded:Connect(function(instance)
-		if instance:IsA("Tool") and humanoid:GetAttribute("GrapplePhysicsLocked") == true then humanoid:UnequipTools() end
+		if instance:IsA("Tool") and instance.Name ~= Config.bombToolName
+			and humanoid:GetAttribute("GrapplePhysicsLocked") == true then
+			local backpack = player:FindFirstChildOfClass("Backpack")
+			if backpack then instance.Parent = backpack end
+		end
 	end)
 	Ragdoll.Prepare(humanoid)
 	fallStates[humanoid] = {character = character}
 	if humanoid:HasTag("Ragdoll") then Ragdoll.Set(humanoid, true) end
 	humanoid.Died:Connect(function()
-		ensureRespawn(player, character)
-		-- Capsule victims remain assembled in the tube until their replacement
-		-- character spawns. All other deaths use the normal break-apart effect.
-		if not humanoid:GetAttribute("CapsuleLocked") then Ragdoll.BreakApart(humanoid) end
+		finishDeath(player, character, humanoid)
+	end)
+	humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+		if humanoid.Health <= 0 then finishDeath(player, character, humanoid) end
 	end)
 end
 CollectionService:GetInstanceAddedSignal("Ragdoll"):Connect(function(humanoid)
@@ -127,7 +143,7 @@ Remotes.EquipRagdollTool.OnServerEvent:Connect(function(player, toolName, should
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not character or not humanoid or humanoid.Health <= 0
 		or humanoid:GetAttribute("Ragdolled") ~= true
-		or humanoid:GetAttribute("GrapplePhysicsLocked") == true
+		or (humanoid:GetAttribute("GrapplePhysicsLocked") == true and toolName ~= Config.bombToolName)
 		or humanoid:GetAttribute("CapsuleLocked") == true then return end
 	local equipped = character:FindFirstChild(toolName)
 	local backpack = player:FindFirstChildOfClass("Backpack")
@@ -253,6 +269,11 @@ bodyLanded = function(character, humanoid, root)
 end
 
 local function commitFallRagdoll(humanoid, state, now)
+	local gun = humanoid.Parent and humanoid.Parent:FindFirstChild(Config.toolName)
+	if gun and gun:GetAttribute("HasGrappled") then
+		state.fallPeakY, state.arrestedAt = nil, nil
+		return
+	end
 	if state.triggered then return end
 	state.triggered = true
 	state.fallPeakY, state.arrestedAt = nil, nil
@@ -381,6 +402,7 @@ RunService.Heartbeat:Connect(function()
 			and root.Position.Y <= destroyHeight + VOID_KILL_PADDING then
 			humanoid.Health = 0
 		end
+		if humanoid and humanoid.Health <= 0 then finishDeath(player, character, humanoid) end
 		if not healthy(character) then ensureRespawn(player, character) end
 	end
 end)
