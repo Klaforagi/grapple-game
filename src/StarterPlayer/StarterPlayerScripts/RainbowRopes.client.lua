@@ -1,0 +1,61 @@
+local Palettes = require(game:GetService("ReplicatedStorage"):WaitForChild("ItemColors"))
+local RunService = game:GetService("RunService")
+local beams = {}
+local parts = {}
+local function watch(instance)
+	if instance:IsA("Beam") then beams[instance] = {active = false, original = instance.Color} end
+	if instance:IsA("BasePart") and (instance:GetAttribute("RainbowPart") ~= nil
+		or instance:FindFirstAncestorOfClass("Tool")) then
+		parts[instance] = {active = false, original = instance.Color}
+	end
+end
+workspace.DescendantAdded:Connect(watch)
+for _, instance in ipairs(workspace:GetDescendants()) do watch(instance) end
+local elapsed = 0
+RunService.RenderStepped:Connect(function(dt)
+	elapsed += dt
+	if elapsed < 1 / 30 then return end
+	elapsed = 0
+	local hue = (workspace:GetServerTimeNow() * 0.2) % 1
+	for part, state in pairs(parts) do
+		if not part:IsDescendantOf(workspace) or not part:GetAttribute("RainbowPart") then
+			if state.active then part.Color = part:GetAttribute("SolidPartColor") or state.original end
+			state.active = false
+			if not part:IsDescendantOf(workspace) then parts[part] = nil end
+		else
+			if not state.active then state.original = part.Color end
+			state.active = true
+			part.Color = part:GetAttribute("RainbowPalette") == "Bomb" and Palettes.BombRainbow(hue) or Color3.fromHSV(hue, 1, 1)
+		end
+	end
+	local sequence
+	for beam, state in pairs(beams) do
+		if not beam:IsDescendantOf(workspace) then
+			if state.active then
+				local color = beam:GetAttribute("SolidRopeColor")
+				beam.Color = color and ColorSequence.new(color) or state.original
+			end
+			beams[beam] = nil
+		elseif beam:GetAttribute("RainbowRope") then
+			if not state.active then state.original = beam.Color end
+			state.active = true
+			if beam.Enabled then
+				if not sequence then
+					local points = {}
+					local phase = workspace:GetServerTimeNow() * 0.2
+					for index = 0, 12 do
+						local position = index / 12
+						table.insert(points, ColorSequenceKeypoint.new(position, Color3.fromHSV((position - phase) % 1, 1, 1)))
+					end
+					sequence = ColorSequence.new(points)
+				end
+				beam.Segments = math.max(beam.Segments, 24)
+				beam.Color = sequence
+			end
+		elseif state.active then
+			local color = beam:GetAttribute("SolidRopeColor")
+			beam.Color = color and ColorSequence.new(color) or state.original
+			state.active = false
+		end
+	end
+end)

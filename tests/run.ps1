@@ -2,6 +2,7 @@ param([Parameter(Mandatory = $true)][string]$LuauPath)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $sources = @{
+    itemColors = 'src/ReplicatedStorage/ItemColors.lua'
     coins = 'src/ServerScriptService/Coins.server.lua'
     coinTests = 'tests/coins.luau'
     config = 'src/ReplicatedStorage/GrappleConfig.lua'

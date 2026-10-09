@@ -55,16 +55,18 @@ local preparedTools = setmetatable({}, {__mode = "k"})
 -- Includes detached victims awaiting handoff. Identity guards invalidate old timers.
 local physicsSessions = {}
 local nextPhysicsSession = 0
-local cosmeticColors = {
-	Black = Color3.fromRGB(20, 20, 20), White = Color3.fromRGB(255, 255, 255), Red = Color3.fromRGB(220, 55, 55),
-	Orange = Color3.fromRGB(242, 143, 43), Yellow = Color3.fromRGB(245, 220, 55), Green = Color3.fromRGB(65, 180, 90),
-	Blue = Color3.fromRGB(55, 125, 230), Purple = Color3.fromRGB(145, 82, 210), Pink = Color3.fromRGB(240, 105, 175),
-	Cyan = Color3.fromRGB(35, 210, 225), Teal = Color3.fromRGB(35, 155, 145), Lime = Color3.fromRGB(150, 225, 55),
-}
+local Palettes = require(ReplicatedStorage:WaitForChild("ItemColors"))
+local cosmeticColors = Palettes.Gun
 
 local function applyCosmetics(player: Player, tool: Tool?)
 	if not tool then return end
 	local gunColor = cosmeticColors[player:GetAttribute("GrappleGunColor")]
+	for _, part in ipairs(tool:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part:SetAttribute("RainbowPart", player:GetAttribute("GrappleGunColor") == "Rainbow")
+			if gunColor then part:SetAttribute("SolidPartColor", gunColor) end
+		end
+	end
 	if gunColor then
 		for _, instance in ipairs(tool:GetDescendants()) do
 			if instance:IsA("BasePart") then instance.Color = gunColor end
@@ -72,11 +74,26 @@ local function applyCosmetics(player: Player, tool: Tool?)
 		local bolt = tool:FindFirstChild("Bolt", true)
 		if bolt and bolt:IsA("BasePart") then bolt.Color = gunColor end
 	end
-	local ropeColor = cosmeticColors[player:GetAttribute("GrappleRopeColor")]
+	local ropeColor = Palettes.Rope[player:GetAttribute("GrappleRopeColor")]
 	local beam = tool:FindFirstChild("Rope")
+	local rainbow = player:GetAttribute("GrappleRopeColor") == "Rainbow"
+	if beam and beam:IsA("Beam") then
+		beam:SetAttribute("RainbowRope", rainbow)
+		if ropeColor then beam:SetAttribute("SolidRopeColor", ropeColor) end
+	end
+	local activeState = Active[player]
+	local activeVisual = activeState and activeState.rope and activeState.rope:FindFirstChild("RopeVisual")
+	if activeVisual then
+		activeVisual:SetAttribute("RainbowRope", rainbow)
+		if ropeColor then activeVisual:SetAttribute("SolidRopeColor", ropeColor) end
+	end
 	if ropeColor and beam and beam:IsA("Beam") then beam.Color = ColorSequence.new(ropeColor) end
 	local state = Active[player]
-	if ropeColor and state and state.rope then state.rope.Color = BrickColor.new(ropeColor) end
+	if ropeColor and state and state.rope then
+		state.rope.Color = BrickColor.new(ropeColor)
+		local visual = state.rope:FindFirstChild("RopeVisual")
+		if visual then visual.Color = ColorSequence.new(ropeColor) end
+	end
 end
 
 local function findInventoryTool(player: Player, name: string): Tool?
@@ -273,12 +290,28 @@ local function makeRope(state, firePoint: Attachment, impactAttachment: Attachme
 	rope.Length = length
 	rope.WinchEnabled = false
 	rope.Restitution = 0
-	rope.Visible = true
+	rope.Visible = false
 	rope.Thickness = 0.1
 	rope.Color = ropeColorFromTool(state.tool)
 	rope.Parent = impactAttachment.Parent
-	local visual = rope:FindFirstChild("RopeVisual")
-	if visual and visual:IsA("Beam") then visual.Enabled = false end
+	local visual = Instance.new("Beam")
+	visual.Name = "RopeVisual"
+	visual.Attachment0, visual.Attachment1 = firePoint, impactAttachment
+	visual.Width0, visual.Width1 = rope.Thickness, rope.Thickness
+	visual.FaceCamera = true
+	visual.Color = ColorSequence.new(Palettes.Rope[state.owner:GetAttribute("GrappleRopeColor")]
+		or Color3.fromRGB(0, 0, 0))
+	local source = state.tool and state.tool:FindFirstChild("Rope")
+	if source and source:IsA("Beam") then
+		for _, property in ipairs({"Color", "Transparency", "LightEmission", "LightInfluence",
+			"Brightness", "Texture", "TextureLength", "TextureMode", "TextureSpeed", "Width0", "Width1"}) do
+			visual[property] = source[property]
+		end
+	end
+	visual.Enabled = true
+	visual.Segments = 24
+	visual:SetAttribute("RainbowRope", state.owner:GetAttribute("GrappleRopeColor") == "Rainbow")
+	visual.Parent = rope
 	state.rope = rope
 	state.impactAttachment = impactAttachment
 	return rope
@@ -485,12 +518,20 @@ Remotes.ToggleWallMode.OnServerEvent:Connect(function(player)
 end)
 
 Remotes.SetGrappleColor.OnServerEvent:Connect(function(player, target, colorName)
-	if (target ~= "Gun" and target ~= "Rope" and target ~= "Bomb") or typeof(colorName) ~= "string" or not cosmeticColors[colorName] then return end
+	if (target ~= "Gun" and target ~= "Rope" and target ~= "Bomb") or typeof(colorName) ~= "string"
+		or (not Palettes[target][colorName] and colorName ~= "Rainbow") then return end
 	if target == "Bomb" then
 		player:SetAttribute("BombColor", colorName)
 		local bomb = findInventoryTool(player, Config.bombToolName)
 		local handle = bomb and bomb:FindFirstChild("Handle")
-		if handle and handle:IsA("BasePart") then handle.Color = cosmeticColors[colorName] end
+		if handle and handle:IsA("BasePart") then
+			handle:SetAttribute("RainbowPalette", "Bomb")
+handle:SetAttribute("RainbowPart", colorName == "Rainbow")
+			if Palettes.Bomb[colorName] then
+				handle.Color = Palettes.Bomb[colorName]
+				handle:SetAttribute("SolidPartColor", Palettes.Bomb[colorName])
+			end
+		end
 		return
 	end
 	player:SetAttribute(target == "Gun" and "GrappleGunColor" or "GrappleRopeColor", colorName)
@@ -541,6 +582,7 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	state.connections.toolDestroyed = tool.Destroying:Connect(function() disconnectRope(player, true) end)
 	local hitbox = createHitbox(state, origin, direction)
 	local boltColor = cosmeticColors[player:GetAttribute("GrappleGunColor")]
+	hitbox:SetAttribute("RainbowPart", player:GetAttribute("GrappleGunColor") == "Rainbow")
 	if boltColor then
 		hitbox:SetAttribute("BoltColor", boltColor)
 	elseif bolt and bolt:IsA("BasePart") then
@@ -686,7 +728,12 @@ local function watchPlayer(player: Player)
 		applyCosmetics(player, findInventoryTool(player, Config.toolName))
 		local bomb = findInventoryTool(player, Config.bombToolName)
 		local handle = bomb and bomb:FindFirstChild("Handle")
-		local color = cosmeticColors[player:GetAttribute("BombColor")]
+		local color = Palettes.Bomb[player:GetAttribute("BombColor")]
+		if handle and handle:IsA("BasePart") then
+			handle:SetAttribute("RainbowPalette", "Bomb")
+handle:SetAttribute("RainbowPart", player:GetAttribute("BombColor") == "Rainbow")
+			if color then handle:SetAttribute("SolidPartColor", color) end
+		end
 		if color and handle and handle:IsA("BasePart") then handle.Color = color end
 	end
 	for _, key in ipairs({"GrappleGunColor", "GrappleRopeColor", "BombColor"}) do

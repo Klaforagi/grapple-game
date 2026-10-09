@@ -7,6 +7,7 @@ local CAS = game:GetService("ContextActionService")
 local RunService = game:GetService("RunService")
 local Config = require(storage:WaitForChild("GrappleConfig"))
 local Assets = require(storage:WaitForChild("Assets"))
+local Palettes = require(storage:WaitForChild("ItemColors"))
 local Remotes = require(script.Parent:WaitForChild("GrappleRemotes"))
 local ToolClient = require(script.Parent:WaitForChild("GrappleToolClient"))
 local ToolSetup = require(script.Parent:WaitForChild("GrappleToolSetup"))
@@ -137,11 +138,7 @@ function M.Init()
 	local wallButton = button(wallControls, "OFF", UDim2.fromOffset(0, 0), UDim2.fromOffset(78, 36), toggleWallMode)
 	wallButton.Font, wallButton.TextSize = Enum.Font.GothamBold, 14
 	make("UIStroke", wallButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
-	local palette = {
-		{"Black", Color3.fromRGB(20, 20, 20)}, {"White", Color3.fromRGB(255, 255, 255)}, {"Red", Color3.fromRGB(220, 55, 55)}, {"Orange", Color3.fromRGB(242, 143, 43)},
-		{"Yellow", Color3.fromRGB(245, 220, 55)}, {"Green", Color3.fromRGB(65, 180, 90)}, {"Blue", Color3.fromRGB(55, 125, 230)}, {"Purple", Color3.fromRGB(145, 82, 210)},
-		{"Pink", Color3.fromRGB(240, 105, 175)}, {"Cyan", Color3.fromRGB(35, 210, 225)}, {"Teal", Color3.fromRGB(35, 155, 145)}, {"Lime", Color3.fromRGB(150, 225, 55)},
-	}
+	local palette = Palettes.Order
 	local inventoryOpen, inventoryTab = false, "Gun"
 	local inventoryButton = button(screen, "INV", UDim2.new(0, 18, 0.5, -22), UDim2.fromOffset(44, 44), function() inventoryOpen = not inventoryOpen end)
 	inventoryButton.Font, inventoryButton.TextSize = Enum.Font.GothamBold, 12
@@ -166,6 +163,17 @@ function M.Init()
 	updateCoins()
 	ragdollButton.Font, ragdollButton.TextSize = Enum.Font.GothamBold, 12
 	make("UIStroke", ragdollButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
+	local ragdollBorder = make("UIStroke", ragdollButton, {
+		Name = "ManualRagdollBorder", ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Color = Color3.fromRGB(255, 255, 255), Thickness = 3, Enabled = false,
+	})
+	local ragdollBorderGradient = make("UIGradient", ragdollBorder, {
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 140, 180)),
+			ColorSequenceKeypoint.new(0.7, Color3.fromRGB(60, 255, 180)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(220, 255, 255)),
+		}),
+	})
 	if UIS.KeyboardEnabled and not UIS.TouchEnabled then
 		local hint = label(ragdollButton, "(R)", UDim2.new(1, 6, 0, 0), UDim2.fromOffset(28, 44))
 		hint.TextSize, hint.TextXAlignment = 13, Enum.TextXAlignment.Center
@@ -179,16 +187,30 @@ function M.Init()
 	local bombTab = button(inventory, "Bomb", UDim2.fromOffset(122, 10), UDim2.fromOffset(52, 28))
 	local colorButtons = {}
 	for index, entry in ipairs(palette) do
-		local colorName, color = entry[1], entry[2]
+		local colorName, color = entry, Palettes.Swatches.Gun[entry]
 		local column, row = (index - 1) % 4, math.floor((index - 1) / 4)
 		local swatch = button(inventory, colorName, UDim2.fromOffset(10 + column * 42, 48 + row * 48), UDim2.fromOffset(36, 42), function()
-			Remotes.SetGrappleColor:FireServer(inventoryTab, colorName)
+			Remotes.SetGrappleColor:FireServer(inventoryTab, inventoryTab == "Bomb" and colorName == "Teal" and "Mint" or colorName)
 		end)
 		swatch.BackgroundColor3, swatch.TextColor3, swatch.TextSize = color, Color3.fromRGB(27, 42, 53), 8
 		make("UIStroke", swatch, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
 		table.insert(colorButtons, swatch)
 	end
 	gunTab.Activated:Connect(function() inventoryTab = "Gun" end)
+	local rainbowButton = button(inventory, "Rainbow", UDim2.fromOffset(10, 198), UDim2.fromOffset(164, 30), function()
+		Remotes.SetGrappleColor:FireServer(inventoryTab, "Rainbow")
+	end)
+	rainbowButton.Visible = false
+	rainbowButton.Font = Enum.Font.GothamBold
+	rainbowButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	make("UIGradient", rainbowButton, {Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 60, 60)),
+		ColorSequenceKeypoint.new(0.25, Color3.fromRGB(255, 230, 40)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(40, 230, 110)),
+		ColorSequenceKeypoint.new(0.75, Color3.fromRGB(40, 140, 255)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(220, 60, 255)),
+	})})
+	make("UIStroke", rainbowButton, {Color = Color3.fromRGB(27, 42, 53), Thickness = 1})
 	ropeTab.Activated:Connect(function() inventoryTab = "Rope" end)
 	bombTab.Activated:Connect(function() inventoryTab = "Bomb" end)
 	local function hold(b, direction)
@@ -456,6 +478,14 @@ function M.Init()
 	if player.Character then task.spawn(characterAdded, player.Character) end
 	local accumulator, uiAccumulator = 0, 0
 	RunService.Heartbeat:Connect(function(dt)
+		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		ragdollBorder.Enabled = humanoid ~= nil and humanoid.Health > 0
+			and humanoid:GetAttribute("Ragdolled") == true
+			and humanoid:GetAttribute("ManualRagdoll") == true
+			and not humanoid:GetAttribute("CapsuleLocked")
+		if ragdollBorder.Enabled then
+			ragdollBorderGradient.Rotation = (ragdollBorderGradient.Rotation + dt * 150) % 360
+		end
 		accumulator += dt
 		local reelInterval = Config.ropeReelInterval or 1 / 15
 		if accumulator >= reelInterval then
@@ -482,6 +512,15 @@ function M.Init()
 		inventoryButton.Visible = player.Character ~= nil
 		ragdollButton.Visible = player.Character ~= nil
 		inventory.Visible = player.Character ~= nil and inventoryOpen
+		rainbowButton.Visible = true
+		for index, swatch in ipairs(colorButtons) do
+			local name = palette[index]
+			swatch.Text = inventoryTab == "Bomb" and name == "Teal" and "Mint" or name
+			swatch.Visible = Palettes[inventoryTab][name] ~= nil
+			if swatch.Visible then swatch.BackgroundColor3 = Palettes.Swatches[inventoryTab][name] end
+		end
+		rainbowButton.Position = UDim2.fromOffset(10, inventoryTab == "Bomb" and 198 or 246)
+		inventory.Size = UDim2.fromOffset(184, inventoryTab == "Bomb" and 238 or 286)
 		gunTab.BackgroundColor3 = inventoryTab == "Gun" and Color3.fromRGB(72, 165, 92) or Color3.fromRGB(178, 70, 70)
 		ropeTab.BackgroundColor3 = inventoryTab == "Rope" and Color3.fromRGB(72, 165, 92) or Color3.fromRGB(178, 70, 70)
 		bombTab.BackgroundColor3 = inventoryTab == "Bomb" and Color3.fromRGB(72, 165, 92) or Color3.fromRGB(178, 70, 70)

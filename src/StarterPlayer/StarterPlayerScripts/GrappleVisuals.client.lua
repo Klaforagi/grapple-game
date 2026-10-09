@@ -25,6 +25,7 @@ local function add(hitbox)
 		end
 	end
 	visual.CFrame = hitbox.CFrame
+	visual:SetAttribute("RainbowPart", hitbox:GetAttribute("RainbowPart") == true)
 	visual.Parent = workspace
 	visuals[hitbox] = visual
 end
@@ -33,6 +34,9 @@ for _, instance in ipairs(folder:GetChildren()) do add(instance) end
 RunService.RenderStepped:Connect(function()
 	for hitbox, visual in pairs(visuals) do
 		if not hitbox.Parent then visual:Destroy() visuals[hitbox] = nil
-		else visual.CFrame = hitbox.CFrame end
+		else
+			visual.CFrame = hitbox.CFrame
+			visual:SetAttribute("RainbowPart", hitbox:GetAttribute("RainbowPart") == true)
+		end
 	end
 end)

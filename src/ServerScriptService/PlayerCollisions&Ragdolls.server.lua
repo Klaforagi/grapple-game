@@ -121,6 +121,7 @@ Remotes.ToggleRagdoll.OnServerEvent:Connect(function(player)
 		if activatedAt and os.clock() - activatedAt < (Config.ragdollRelease_Cooldown or 2) then return end
 		humanoid:RemoveTag("Ragdoll")
 		Ragdoll.Set(humanoid, false)
+		if not humanoid:GetAttribute("Ragdolled") then humanoid:SetAttribute("ManualRagdoll", nil) end
 	else
 		local recoveredAt = humanoid:GetAttribute("RagdollRecoveredAt")
 		if recoveredAt and os.clock() - recoveredAt < Config.ragdollToggle_Cooldown then return end
@@ -130,6 +131,7 @@ Remotes.ToggleRagdoll.OnServerEvent:Connect(function(player)
 		-- Decide before Set. Ragdoll turns the state machine off, and FloorMaterial then sticks.
 		local duringFall = state and (state.fallPeakY or (root and root:IsA("BasePart")
 			and bodyLanded and not bodyLanded(character, humanoid, root)))
+		humanoid:SetAttribute("ManualRagdoll", true)
 		humanoid:SetAttribute("RagdollActivatedAt", os.clock())
 		humanoid:AddTag("Ragdoll")
 		Ragdoll.Set(humanoid, true)

@@ -185,6 +185,7 @@ return function(sources)
 	local storage = instance("ReplicatedStorage")
 	storage.Modules = instance("Folder", "Modules", storage)
 	local configModule = instance("ModuleScript", "GrappleConfig", storage)
+	instance("ModuleScript", "ItemColors", storage)
 	local remoteModule = instance("ModuleScript", "GrappleRemotes", storage.Modules)
 	local ragdollModule = instance("ModuleScript", "RagdollService", storage.Modules)
 	local soundModule = instance("ModuleScript", "PlaySound", storage.Modules)
@@ -230,6 +231,7 @@ return function(sources)
 	local playedSounds = {}
 	local toolSetup
 	env.require = function(module)
+		if module.Name == "ItemColors" then return execute(sources.itemColors) end
 		if module == configModule then return config end
 		if module == remoteModule then return remotes end
 		if module == ragdollModule then return ragdoll end
@@ -1196,6 +1198,7 @@ return function(sources)
 	now += 1
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid:HasTag("Ragdoll"), "ready player could not ragdoll")
+	assert(attackerHumanoid:GetAttribute("ManualRagdoll"), "manual ragdoll was not marked for the HUD")
 	assert(gun.Parent == attacker.Character, "non-grappled ragdoll unequipped the grapple gun")
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid:HasTag("Ragdoll"), "ragdoll could be cancelled without its cooldown")
@@ -1205,6 +1208,7 @@ return function(sources)
 	now += 0.01
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(not attackerHumanoid:HasTag("Ragdoll"), "ragdoll could not recover after its cooldown")
+	assert(not attackerHumanoid:GetAttribute("ManualRagdoll"), "recovery retained manual ragdoll highlight")
 	local recoveredAt = now
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(not attackerHumanoid:HasTag("Ragdoll"), "immediate re-ragdoll bypassed cooldown")
@@ -1566,6 +1570,14 @@ return function(sources)
 	assert(pushRoot.AssemblyLinearVelocity.X > 0 and pushRoot.AssemblyLinearVelocity.Magnitude < 50, "Push launch was missing or excessive")
 	assert(pushRoot.AssemblyLinearVelocity.Y <= 2 and pushRoot.AssemblyAngularVelocity.Magnitude <= 2.01,
 		"Push used upward blast motion or excessive tumble")
+	pushRoot.AssemblyLinearVelocity = V.new(2000, 500, 0)
+	pushRoot.AssemblyAngularVelocity = V.new(0, 100, 0)
+	runService.Heartbeat:Emit(1 / 60)
+	assert(pushRoot.AssemblyLinearVelocity.X <= 36 and pushRoot.AssemblyLinearVelocity.Y <= 8
+		and pushRoot.AssemblyAngularVelocity.Magnitude <= 5.01, "Push settling failed to contain a physics spike")
+	pushRoot.AssemblyLinearVelocity = V.new(10, -100, 0)
+	runService.Heartbeat:Emit(1 / 60)
+	assert(pushRoot.AssemblyLinearVelocity.Y == -100, "Push settling prevented natural falling")
 	ragdoll.Set(pushHumanoid, false)
 	assert(pushHumanoid:GetAttribute("Ragdolled"), "Push recovery bypassed stun")
 	assert(not pushHumanoid:GetAttribute("GrapplePhysicsLocked"), "Push disabled tool access")

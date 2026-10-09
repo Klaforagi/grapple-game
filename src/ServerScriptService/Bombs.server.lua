@@ -14,13 +14,10 @@ local issued = setmetatable({}, {__mode = "k"})
 local SERVER_HOLD = 0.3
 local bombCaster = FastCast.new()
 local lastPush = {}
+local settlingPushes = {}
 local activePushes = {}
 
-local bombColors = {
-	Black = Color3.fromRGB(20, 20, 20), White = Color3.fromRGB(255, 255, 255), Red = Color3.fromRGB(220, 55, 55), Orange = Color3.fromRGB(242, 143, 43),
-	Yellow = Color3.fromRGB(245, 220, 55), Green = Color3.fromRGB(65, 180, 90), Blue = Color3.fromRGB(55, 125, 230), Purple = Color3.fromRGB(145, 82, 210),
-	Pink = Color3.fromRGB(240, 105, 175), Cyan = Color3.fromRGB(35, 210, 225), Teal = Color3.fromRGB(35, 155, 145), Lime = Color3.fromRGB(150, 225, 55),
-}
+local bombColors = require(Storage:WaitForChild("ItemColors")).Bomb
 
 local function sphere(name, size, color)
 	local part = Instance.new("Part")
@@ -67,6 +64,8 @@ local function giveBomb(player, character)
 	tool.CanBeDropped = false
 	tool:SetAttribute("BombTool", true)
 	local handle = sphere("Handle", 1.2, bombColors[player:GetAttribute("BombColor")])
+	handle:SetAttribute("RainbowPalette", "Bomb")
+handle:SetAttribute("RainbowPart", player:GetAttribute("BombColor") == "Rainbow")
 	handle.CanCollide, handle.CanTouch, handle.CanQuery, handle.Massless = false, false, false, true
 	handle.Parent = tool
 	tool.Parent = backpack
@@ -181,6 +180,7 @@ local function newCastBehavior(state)
 end
 
 local function queueLaunch(character, humanoid, velocity, now, duration, pushDirection)
+	settlingPushes[humanoid] = nil
 	local previous = stunned[humanoid]
 	stunned[humanoid] = {
 		character = character,
@@ -189,7 +189,7 @@ local function queueLaunch(character, humanoid, velocity, now, duration, pushDir
 	}
 	-- Shared knockdown deadline prevents overlapping pushes/blasts shortening a stun.
 	humanoid:SetAttribute("BombRagdollUntil", math.max(humanoid:GetAttribute("BombRagdollUntil") or 0, now + (duration or Config.bombRagdollDuration)))
-	humanoid:SetAttribute("PhysicsServerUntil", now + SERVER_HOLD)
+	humanoid:SetAttribute("PhysicsServerUntil", now + (pushDirection and 0.65 or SERVER_HOLD))
 	humanoid:SetAttribute("RagdollActivatedAt", now)
 	humanoid:SetAttribute("BombRagdollDebug", Config.bombDebugRagdoll == true)
 	-- Release any grapple before launching so its rope cannot pin the victim.
@@ -207,7 +207,7 @@ local function launch(humanoid, state, now)
 	if not character.Parent or humanoid.Parent ~= character or humanoid.Health <= 0 then return end
 	if state.player and state.player.Character ~= character then return end
 	-- Bombs launch on Heartbeat; pushes launch just before physics simulation.
-	humanoid:SetAttribute("PhysicsServerUntil", now + SERVER_HOLD)
+	humanoid:SetAttribute("PhysicsServerUntil", now + (state.pushDirection and 0.65 or SERVER_HOLD))
 	Ragdoll.RefreshOwnership(humanoid)
 	local assemblies = {}
 	local bodies = {}
@@ -250,17 +250,30 @@ local function launch(humanoid, state, now)
 	for _, body in ipairs(bodies) do
 		-- One bounded launch per assembly, under server ownership. No persistent
 		-- mover fights the joint limits/collisions or keeps spinning after landing.
-		body.assembly:ApplyImpulse((body.velocity - body.assembly.AssemblyLinearVelocity) * body.mass)
+		if state.pushDirection then
+			-- Absolute velocity cannot multiply an impulse when assemblies split
+			-- during ragdoll entry, or stack force from simultaneous pushes.
+			body.assembly.AssemblyLinearVelocity = body.velocity
+		else
+			body.assembly:ApplyImpulse((body.velocity - body.assembly.AssemblyLinearVelocity) * body.mass)
+		end
 		body.assembly.AssemblyAngularVelocity = body.angular
+	end
+	if state.pushDirection then
+		settlingPushes[humanoid] = {character = character, untilTime = now + 0.6,
+			revision = humanoid:GetAttribute("BombBlastRevision")}
 	end
 end
 
 local function explode(bomb, position)
 	-- Remove the sticky weld before any victim is ragdolled/launched.
 	local bombColor = bomb.Color
+	local rainbow = bomb:GetAttribute("RainbowPart")
 	bomb:Destroy()
 	local radius = Config.bombRadius
 	local flash = sphere("BombBlast", 1, bombColor)
+	flash:SetAttribute("RainbowPalette", "Bomb")
+flash:SetAttribute("RainbowPart", rainbow)
 	flash.Anchored, flash.CanCollide, flash.CanTouch, flash.CanQuery = true, false, false, false
 	flash.Position, flash.Transparency = position, 0.35
 	flash.Parent = workspace
@@ -320,7 +333,7 @@ local function scanPush(state, now)
 		local horizontal = Vector3.new(offset.X, 0, offset.Z)
 		local direction = horizontal.Magnitude > 0.01 and horizontal.Unit or forward
 		local vertical = math.clamp(targetRoot.AssemblyLinearVelocity.Y, -40, 2)
-		queueLaunch(model, victim, direction * Config.pushSpeed + Vector3.new(0, vertical, 0),
+		queueLaunch(model, victim, direction * math.clamp(Config.pushSpeed or 26, 0, 32) + Vector3.new(0, vertical, 0),
 			now, Config.pushRagdollDuration, direction)
 	end
 	return true
@@ -380,6 +393,8 @@ Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 	if now - (lastThrow[player] or -math.huge) < Config.bombCooldown then return end
 	lastThrow[player] = now
 	local bomb = sphere("ThrownBomb", 1.2, bombColors[player:GetAttribute("BombColor")])
+	bomb:SetAttribute("RainbowPalette", "Bomb")
+bomb:SetAttribute("RainbowPart", player:GetAttribute("BombColor") == "Rainbow")
 	local handle = tool:FindFirstChild("Handle")
 	bomb.Position = handle and handle:IsA("BasePart") and handle.Position or root.Position + Vector3.new(0, 1.5, 0)
 	-- This is a cosmetic shell driven by FastCast, never a competing physics body.
@@ -419,6 +434,30 @@ end)
 
 RunService.Heartbeat:Connect(function()
 	local now = os.clock()
+	for humanoid, state in pairs(settlingPushes) do
+		if now >= state.untilTime or not state.character.Parent or humanoid.Health <= 0
+			or humanoid:GetAttribute("GrapplePhysicsLocked") or humanoid:GetAttribute("CapsuleLocked")
+			or humanoid:GetAttribute("BombBlastRevision") ~= state.revision then
+			settlingPushes[humanoid] = nil
+		else
+			local seen = {}
+			for _, part in ipairs(state.character:GetDescendants()) do
+				if not part:IsA("BasePart") then continue end
+				local assembly = part.AssemblyRootPart or part
+				if seen[assembly] or assembly.Anchored then continue end
+				seen[assembly] = true
+				local velocity = assembly.AssemblyLinearVelocity
+				local horizontal = Vector3.new(velocity.X, 0, velocity.Z)
+				if horizontal.Magnitude > 36 then horizontal = horizontal.Unit * 36 end
+				-- Allow natural downward acceleration when pushed off a ledge.
+				if horizontal.Magnitude < Vector3.new(velocity.X, 0, velocity.Z).Magnitude or velocity.Y > 8 then
+					assembly.AssemblyLinearVelocity = horizontal + Vector3.new(0, math.min(velocity.Y, 8), 0)
+				end
+				local spin = assembly.AssemblyAngularVelocity
+				if spin.Magnitude > 5 then assembly.AssemblyAngularVelocity = spin.Unit * 5 end
+			end
+		end
+	end
 	for humanoid, state in pairs(pendingLaunches) do
 		if state.pushDirection then continue end
 		pendingLaunches[humanoid] = nil

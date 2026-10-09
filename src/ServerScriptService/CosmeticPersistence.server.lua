@@ -26,7 +26,9 @@ end
 local function load(player)
 	local ok, data = pcall(function() return store:GetAsync("player_" .. player.UserId) end)
 	if ok and type(data) == "table" then
+		if data.BombColor == "Teal" then data.BombColor = "Mint" end
 		for _, key in ipairs(colorKeys) do
+			if key == "BombColor" and data[key] == "Lime" then data[key] = "Green" end
 			if type(data[key]) == "string" then player:SetAttribute(key, data[key]) end
 		end
 		for key, default in pairs(settingDefaults) do

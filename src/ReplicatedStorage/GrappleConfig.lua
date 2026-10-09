@@ -99,7 +99,7 @@ return {
 	pushCooldown = 4,
 	pushActiveDuration = 0.35,
 	pushRagdollDuration = 5,
-	pushSpeed = 32, -- Outward knockdown speed, studs/second
+	pushSpeed = 26, -- Outward knockdown speed, studs/second (capped at 32)
 	bombFuse = 3.5, -- Seconds from throw, including time in flight
 	bombCooldown = 6, -- Seconds after throwing before another throw
 	bombRadius = 8, -- Root-to-explosion distance in studs
@@ -114,7 +114,7 @@ return {
 	
 	ragdollRelease_Cooldown = 2, -- Seconds before a ragdoll you started yourself can be turned off
 	ragdollToggle_Cooldown = 0.5, -- Seconds after standing up before ragdoll can be triggered again
-	fallRagdollDistance = 30, -- Downward studs required; a jump is shorter than this and does not count
+	fallRagdollDistance = 40, -- Downward studs required; a jump is shorter than this and does not count
 	fallRagdollDuration = 3, -- Minimum ragdoll time after a long fall, starting the moment of landing
 
 

@@ -481,6 +481,7 @@ function Service.Prepare(humanoid)
 end
 
 function Service.BreakApart(humanoid)
+	humanoid:SetAttribute("ManualRagdoll", nil)
 	local character = humanoid.Parent
 	if not character then return end
 	local rig = rigs[humanoid]
@@ -528,6 +529,7 @@ function Service.Set(humanoid, enabled, preserveMotion)
 		return
 	end
 	local rig = Service.Prepare(humanoid)
+	if not enabled and RunService:IsServer() then humanoid:SetAttribute("ManualRagdoll", nil) end
 	local grappleLocked = humanoid:GetAttribute("GrapplePhysicsLocked") == true
 	if enabled and grappleLocked then
 		local player = Players:GetPlayerFromCharacter(humanoid.Parent)
