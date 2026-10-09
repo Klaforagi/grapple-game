@@ -25,10 +25,13 @@ RunService.RenderStepped:Connect(function(dt)
 		else
 			if not state.active then state.original = part.Color end
 			state.active = true
-			part.Color = part:GetAttribute("RainbowPalette") == "Bomb" and Palettes.BombRainbow(hue) or Color3.fromHSV(hue, 1, 1)
+			local palette = part:GetAttribute("RainbowPalette")
+			part.Color = palette == "Bomb" and Palettes.BombRainbow(hue)
+				or palette == "Gold" and Palettes.GoldAt(hue)
+				or Color3.fromHSV(hue, 1, 1)
 		end
 	end
-	local sequence
+	local sequence, goldSequence
 	for beam, state in pairs(beams) do
 		if not beam:IsDescendantOf(workspace) then
 			if state.active then
@@ -40,9 +43,18 @@ RunService.RenderStepped:Connect(function(dt)
 			if not state.active then state.original = beam.Color end
 			state.active = true
 			if beam.Enabled then
-				if not sequence then
+				local phase = workspace:GetServerTimeNow() * 0.2
+				local gold = beam:GetAttribute("RainbowPalette") == "Gold"
+				if gold and not goldSequence then
 					local points = {}
-					local phase = workspace:GetServerTimeNow() * 0.2
+					local count = #Palettes.GoldStops
+					for index = 0, count do
+						local position = index / count
+						table.insert(points, ColorSequenceKeypoint.new(position, Palettes.GoldAt((position - phase) % 1)))
+					end
+					goldSequence = ColorSequence.new(points)
+				elseif not gold and not sequence then
+					local points = {}
 					for index = 0, 12 do
 						local position = index / 12
 						table.insert(points, ColorSequenceKeypoint.new(position, Color3.fromHSV((position - phase) % 1, 1, 1)))
@@ -50,7 +62,7 @@ RunService.RenderStepped:Connect(function(dt)
 					sequence = ColorSequence.new(points)
 				end
 				beam.Segments = math.max(beam.Segments, 24)
-				beam.Color = sequence
+				beam.Color = gold and goldSequence or sequence
 			end
 		elseif state.active then
 			local color = beam:GetAttribute("SolidRopeColor")

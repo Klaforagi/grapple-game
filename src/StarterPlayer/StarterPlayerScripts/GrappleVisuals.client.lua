@@ -26,6 +26,7 @@ local function add(hitbox)
 	end
 	visual.CFrame = hitbox.CFrame
 	visual:SetAttribute("RainbowPart", hitbox:GetAttribute("RainbowPart") == true)
+	visual:SetAttribute("RainbowPalette", hitbox:GetAttribute("RainbowPalette"))
 	visual.Parent = workspace
 	visuals[hitbox] = visual
 end
@@ -37,6 +38,7 @@ RunService.RenderStepped:Connect(function()
 		else
 			visual.CFrame = hitbox.CFrame
 			visual:SetAttribute("RainbowPart", hitbox:GetAttribute("RainbowPart") == true)
+			visual:SetAttribute("RainbowPalette", hitbox:GetAttribute("RainbowPalette"))
 		end
 	end
 end)

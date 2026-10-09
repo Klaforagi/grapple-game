@@ -220,6 +220,15 @@ function M.Init()
 			Remotes.SetGrappleColor:FireServer(inventoryTab, inventoryTab == "Bomb" and colorName == "Teal" and "Mint" or colorName)
 		end)
 		swatch.BackgroundColor3, swatch.TextColor3, swatch.TextSize = color, Color3.fromRGB(27, 42, 53), 8
+		if colorName == "Gold" then
+			swatch.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+			make("UIGradient", swatch, {Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Palettes.GoldStops[1]),
+				ColorSequenceKeypoint.new(0.33, Palettes.GoldStops[2]),
+				ColorSequenceKeypoint.new(0.66, Palettes.GoldStops[3]),
+				ColorSequenceKeypoint.new(1, Palettes.GoldStops[4]),
+			})})
+		end
 		make("UIStroke", swatch, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
 		table.insert(colorButtons, swatch)
 	end
@@ -552,7 +561,10 @@ function M.Init()
 			local name = palette[index]
 			swatch.Text = inventoryTab == "Bomb" and name == "Teal" and "Mint" or name
 			swatch.Visible = Palettes[inventoryTab][name] ~= nil
-			if swatch.Visible then swatch.BackgroundColor3 = Palettes.Swatches[inventoryTab][name] end
+			if swatch.Visible then
+				swatch.BackgroundColor3 = name == "Gold" and inventoryTab ~= "Bomb" and Color3.fromRGB(255, 255, 255)
+					or Palettes.Swatches[inventoryTab][name]
+			end
 		end
 		rainbowButton.Position = UDim2.fromOffset(10, inventoryTab == "Bomb" and 198 or 246)
 		inventory.Size = UDim2.fromOffset(184, inventoryTab == "Bomb" and 238 or 286)
