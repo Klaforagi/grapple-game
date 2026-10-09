@@ -45,11 +45,14 @@ function M.Apply(character, direction, simulator, variation)
 		if horizontal.Magnitude > 40 then horizontal = horizontal.Unit * 40 end
 		local upward = math.clamp(velocity.Y + (Config.flopUpSpeed or 38) + flex * kick, -22, 45)
 		assembly.AssemblyLinearVelocity = horizontal + Vector3.new(0, upward, 0)
-		local strength = Config.flopSpinSpeed or 7
+		local strength = Config.flopSpinSpeed or 30
+		-- tipAxis is the shoulder line, so this term rolls stomach to back. The
+		-- other axes stay smaller so the flip is not turned into a diagonal spin.
 		local spin = tipAxis * (strength * variation.X * (1 + flex * 0.4))
-			+ direction * (strength * variation.Y + side * 2.5)
+			+ direction * (strength * 0.28 * variation.Y + side * 2.5)
 			+ Vector3.new(0, strength * variation.Z, 0)
-		if spin.Magnitude > 10 then spin = spin.Unit * 10 end
+		local cap = Config.flopSpinCap or 42
+		if spin.Magnitude > cap then spin = spin.Unit * cap end
 		assembly.AssemblyAngularVelocity = spin
 	end
 end

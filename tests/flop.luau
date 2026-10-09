@@ -20,8 +20,8 @@ return function(t)
 	humanoid:SetAttribute("GrapplePhysicsLocked", true)
 	assert(motion.CanFlop(character), "grapple lock incorrectly blocked flop")
 	motion.Apply(character, direction, nil, Vector3.new(-1, 0.8, 0.2))
-	assert(root.AssemblyAngularVelocity.Z > 0 and root.AssemblyAngularVelocity.X > 0
-		and root.AssemblyAngularVelocity.Magnitude <= 10.01, "flop variation did not reverse tumble and add bounded roll")
+	assert(root.AssemblyAngularVelocity.Z > 18 and root.AssemblyAngularVelocity.X > 0
+		and root.AssemblyAngularVelocity.Magnitude <= 42.01, "flop variation did not reverse tumble and add bounded roll")
 	assert(root.AssemblyLinearVelocity.X <= 40 and root.AssemblyLinearVelocity.Y <= 45,
 		"flops stacked into excessive velocity")
 	root.AssemblyLinearVelocity = Vector3.new(0, -50, 0)

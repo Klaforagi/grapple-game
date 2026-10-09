@@ -6,7 +6,7 @@ local Motion = require(Storage.Modules:WaitForChild("FlopMotion"))
 local lastRequest = {}
 Remotes.Flop.OnServerEvent:Connect(function(player, direction)
 	local now = os.clock()
-	if now - (lastRequest[player] or -math.huge) < (Config.flopCooldown or 2.2) then return end
+	if now - (lastRequest[player] or -math.huge) < (Config.flopCooldown or 1.5) then return end
 	lastRequest[player] = now
 	if typeof(direction) ~= "Vector3" then return end
 	for _, value in ipairs({direction.X, direction.Y, direction.Z}) do

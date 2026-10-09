@@ -49,31 +49,14 @@ function Service.RefreshSelfCollisions(humanoid)
 	local rig = rigs[humanoid]
 	if not rig or not rig.active then return end
 	local character = humanoid.Parent
-	local adjacent = {}
-	local function connect(a, b)
-		if not a or not b then return end
-		adjacent[a] = adjacent[a] or {}
-		adjacent[b] = adjacent[b] or {}
-		adjacent[a][b], adjacent[b][a] = true, true
-	end
-	for _, joint in ipairs(rig.joints) do
-		connect(attachmentBody(joint.socket.Attachment0, character), attachmentBody(joint.socket.Attachment1, character))
-	end
-	for _, entry in ipairs(rig.roots) do connect(entry.weld.Part0, entry.weld.Part1) end
 	for _, constraint in ipairs(character:GetDescendants()) do
 		if not constraint:IsA("NoCollisionConstraint") then continue end
 		local a, b = constraint.Part0, constraint.Part1
 		if not a or not b or a.Parent ~= character or b.Parent ~= character then continue end
-		-- Avatar-authored exclusions may protect overlapping package geometry.
-		-- Only our generated pair filters should be rewritten by this policy.
-		if constraint.Parent.Name ~= "GrappleSelfCollision" then continue end
 		if rig.collisionRestore[constraint] == nil then rig.collisionRestore[constraint] = constraint.Enabled end
-		-- Mesh collision hulls can overlap even in the neutral pose, especially
-		-- on scaled bundles. Avoid forcing those hulls apart against their joints.
-		-- These pair filters do not affect world or other-character collisions.
+		-- The invisible root must not shove the body. Every limb can hit every
+		-- other limb, including neighbors and mesh parts. World collisions are unchanged.
 		constraint.Enabled = a.Name == "HumanoidRootPart" or b.Name == "HumanoidRootPart"
-			or a:IsA("MeshPart") or b:IsA("MeshPart")
-			or (adjacent[a] ~= nil and adjacent[a][b] == true)
 	end
 end
 
@@ -293,8 +276,8 @@ function Service.Prepare(humanoid)
 	local folder = Instance.new("Folder")
 	folder.Name = "GrappleRagdollJoints"
 	folder.Parent = character
-	-- Normal animated poses suppress self-collision. Ragdoll enables collisions
-	-- between non-neighboring parts; the original pair filters return on recovery.
+	-- Normal animated poses suppress self-collision. Ragdoll lets every limb hit
+	-- every other limb; the original pair filters return on recovery.
 	local selfCollisions = Instance.new("Folder")
 	selfCollisions.Name = "GrappleSelfCollision"
 	selfCollisions.Parent = character

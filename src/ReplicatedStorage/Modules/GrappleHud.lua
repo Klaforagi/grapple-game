@@ -95,7 +95,7 @@ function M.Init()
 	local lastFlop = -math.huge
 	local function flop()
 		if UIS:GetFocusedTextBox() or not FlopMotion.CanFlop(player.Character)
-			or os.clock() - lastFlop < (Config.flopCooldown or 2.2) then return end
+			or os.clock() - lastFlop < (Config.flopCooldown or 1.5) then return end
 		local camera = workspace.CurrentCamera
 		if not camera then return end
 		local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
@@ -506,7 +506,7 @@ function M.Init()
 	local accumulator, uiAccumulator = 0, 0
 	RunService.Heartbeat:Connect(function(dt)
 		flopButton.Visible = UIS.TouchEnabled and FlopMotion.CanFlop(player.Character)
-		flopButton.Text = os.clock() - lastFlop < (Config.flopCooldown or 2.2) and "..." or "FLOP"
+		flopButton.Text = os.clock() - lastFlop < (Config.flopCooldown or 1.5) and "..." or "FLOP"
 		local touchGui = playerGui:FindFirstChild("TouchGui")
 		local jump = touchGui and touchGui:FindFirstChild("JumpButton", true)
 		if jump and jump:IsA("GuiObject") then

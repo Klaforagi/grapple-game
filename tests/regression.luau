@@ -436,16 +436,16 @@ return function(sources)
 	local r6Torso, r6Limb1, r6Limb2 = r6:FindFirstChild("Torso"), r6:FindFirstChild("Limb1"), r6:FindFirstChild("Limb2")
 	local oppositeLimbs = collisionPair(r6, r6Limb1, r6Limb2)
 	assert(not oppositeLimbs.Enabled, "non-neighboring limbs still pass through each other")
-	assert(collisionPair(r6, r6Torso, r6Limb1).Enabled, "joint neighbors can fight at their shared pivot")
+	assert(not collisionPair(r6, r6Torso, r6Limb1).Enabled, "joint neighbors still pass through each other")
 	assert(collisionPair(r6, root6, r6Limb2).Enabled, "invisible root can collide with its own limbs")
 	local nativeIgnore = instance("NoCollisionConstraint", "NativeLimbFilter", r6)
 	nativeIgnore.Part0, nativeIgnore.Part1 = r6Limb1, r6Limb2
 	r6.DescendantAdded:Emit(nativeIgnore)
-	assert(nativeIgnore.Enabled, "ragdoll discarded an avatar-authored collision exclusion")
+	assert(not nativeIgnore.Enabled, "avatar limb filter still blocks ragdoll self-collision")
 	r6Limb1.ClassName = "MeshPart"
 	ragdoll.RefreshSelfCollisions(hum6)
-	assert(oppositeLimbs.Enabled and r6Limb1.CanCollide,
-		"mesh limb must ignore its own body while retaining world collision")
+	assert(not oppositeLimbs.Enabled and r6Limb1.CanCollide,
+		"mesh limb lost collision with the rest of its body")
 	r6Limb1.ClassName = "Part"
 	ragdoll.RefreshSelfCollisions(hum6)
 	assert(not oppositeLimbs.Enabled, "block limbs lost their self-collision policy")
@@ -516,7 +516,7 @@ return function(sources)
 	local fallback = assert(upgradedFolder:FindFirstChild("LeftElbow"))
 	assert(fallback.UpperAngle == 80 and fallback.TwistUpperAngle == 10, "elbow retained excessive bend/twist")
 	assert(not collisionPair(upgradedRig, forearm, upgradedTorso).Enabled, "forearm cannot collide with non-neighboring torso")
-	assert(collisionPair(upgradedRig, forearm, upgradedArm).Enabled, "elbow neighbors can collide at the pivot")
+	assert(not collisionPair(upgradedRig, forearm, upgradedArm).Enabled, "elbow neighbors still pass through each other")
 	local fallbackA0, fallbackA1 = fallback.Attachment0, fallback.Attachment1
 	local lateSocket = instance("BallSocketConstraint", "LeftElbowBallSocket", upgradedArm)
 	lateSocket.Enabled, lateSocket.MaxFrictionTorque = false, 55
