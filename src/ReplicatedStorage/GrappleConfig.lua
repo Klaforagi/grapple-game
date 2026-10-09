@@ -100,6 +100,12 @@ return {
 	pushActiveDuration = 0.35,
 	pushRagdollDuration = 5,
 	pushSpeed = 26, -- Outward knockdown speed, studs/second (capped at 32)
+	flopCooldown = 2.2,
+	flopMaxSpeed = 22, -- Flops are only available while moving slowly
+	flopHorizontalSpeed = 24,
+	flopUpSpeed = 38,
+	flopLimbKickSpeed = 7,
+	flopSpinSpeed = 7,
 	bombFuse = 3.5, -- Seconds from throw, including time in flight
 	bombCooldown = 6, -- Seconds after throwing before another throw
 	bombRadius = 8, -- Root-to-explosion distance in studs

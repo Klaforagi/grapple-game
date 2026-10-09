@@ -1597,5 +1597,6 @@ return function(sources)
 		players = players, runService = runService, character = character,
 		advance = function(seconds) now += seconds end})
 	execute(sources.rigRespawnTests)(sources.rigRespawn)
+	execute(sources.flopTests)({execute = execute, source = sources.flopMotion, character = character})
 	print("PASS: bounded fall camera at 15/30/60/144 FPS, resting camera stability, four-player ownership, ragdolls, handoff/controls, momentum, ropes, bombs, capsule capture/rescue, NPC respawn")
 end

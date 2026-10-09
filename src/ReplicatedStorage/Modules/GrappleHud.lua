@@ -91,6 +91,33 @@ function M.Init()
 		RagdollService.NoteRagdollInput()
 		Remotes.ToggleRagdoll:FireServer()
 	end
+	local FlopMotion = require(script.Parent:WaitForChild("FlopMotion"))
+	local lastFlop = -math.huge
+	local function flop()
+		if UIS:GetFocusedTextBox() or not FlopMotion.CanFlop(player.Character)
+			or os.clock() - lastFlop < (Config.flopCooldown or 2.2) then return end
+		local camera = workspace.CurrentCamera
+		if not camera then return end
+		local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+		local direction = humanoid.MoveDirection
+		if direction.Magnitude < 0.1 then direction = camera.CFrame.LookVector end
+		direction = Vector3.new(direction.X, 0, direction.Z)
+		if direction.Magnitude < 0.01 then return end
+		lastFlop = os.clock()
+		Remotes.Flop:FireServer(direction.Unit)
+	end
+	local flopButton = button(screen, "FLOP", UDim2.new(1, -160, 1, -150), UDim2.fromOffset(52, 52), flop)
+	flopButton.Name, flopButton.Visible = "FlopButton", false
+	flopButton.Font = Enum.Font.GothamBold
+	make("UIStroke", flopButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 1})
+	CAS:BindActionAtPriority("GrappleHUD_Flop", function(_, state)
+		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if UIS:GetFocusedTextBox() or not humanoid or not humanoid:GetAttribute("Ragdolled") then
+			return Enum.ContextActionResult.Pass
+		end
+		if state == Enum.UserInputState.Begin then flop() end
+		return Enum.ContextActionResult.Sink
+	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.Space)
 	-- A compact reel replaces the former full-screen grapple panel.
 	-- Its normalized position keeps it at 75% across and 95% down on any screen.
 	local reelControls = make("Frame", screen, {
@@ -259,7 +286,7 @@ function M.Init()
 		escapeFill.Size = UDim2.fromScale(0, 1)
 		CAS:BindActionAtPriority(ACTION, function(_, state)
 			if UIS:GetFocusedTextBox() then return Enum.ContextActionResult.Pass end
-			if state == Enum.UserInputState.Begin then struggle() end
+			if state == Enum.UserInputState.Begin then struggle() flop() end
 			return Enum.ContextActionResult.Sink
 		end, false, Enum.ContextActionPriority.High.Value + 1, Enum.KeyCode.Space)
 	end)
@@ -478,6 +505,14 @@ function M.Init()
 	if player.Character then task.spawn(characterAdded, player.Character) end
 	local accumulator, uiAccumulator = 0, 0
 	RunService.Heartbeat:Connect(function(dt)
+		flopButton.Visible = UIS.TouchEnabled and FlopMotion.CanFlop(player.Character)
+		flopButton.Text = os.clock() - lastFlop < (Config.flopCooldown or 2.2) and "..." or "FLOP"
+		local touchGui = playerGui:FindFirstChild("TouchGui")
+		local jump = touchGui and touchGui:FindFirstChild("JumpButton", true)
+		if jump and jump:IsA("GuiObject") then
+			flopButton.Position = UDim2.fromOffset(jump.AbsolutePosition.X - screen.AbsolutePosition.X - 60,
+				jump.AbsolutePosition.Y - screen.AbsolutePosition.Y + (jump.AbsoluteSize.Y - 52) / 2)
+		end
 		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 		ragdollBorder.Enabled = humanoid ~= nil and humanoid.Health > 0
 			and humanoid:GetAttribute("Ragdolled") == true
