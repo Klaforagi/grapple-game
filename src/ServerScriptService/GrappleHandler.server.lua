@@ -332,13 +332,6 @@ local function makeRope(state, firePoint: Attachment, impactAttachment: Attachme
 	return rope
 end
 
-local function createStruggleRemote(state, victim: Player)
-	state.struggleTarget = math.random(Config.minStruggleValue, Config.maxStruggleValue)
-	state.struggleProgress = 0
-	state.lastDecay = os.clock()
-	Remotes.HasBeenGrappled:FireClient(victim, state.owner, state.struggleTarget)
-end
-
 local function characterFromPart(part)
 	local ancestor = part.Parent
 	while ancestor and ancestor ~= Workspace do
@@ -426,8 +419,10 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 		disconnectRope(state.owner, true)
 		return
 	end
+	state.tetherExpiresAt = os.clock() + (Config.playerTetherDuration or 30)
+	state.tetherDeadline = Workspace:GetServerTimeNow() + (Config.playerTetherDuration or 30)
 	if victimPlayer then
-		createStruggleRemote(state, victimPlayer)
+		Remotes.HasBeenGrappled:FireClient(victimPlayer, state.owner, state.tetherDeadline)
 	end
 	state.connections.victimDied = hitHumanoid.Died:Connect(function()
 		if Active[state.owner] == state then disconnectRope(state.owner, true) end
@@ -440,7 +435,7 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	end)
 	state.tool:SetAttribute("HasGrappled", true)
 	PlaySound(state.tool:FindFirstChild("Handle"), sound("Grapple"))
-	Remotes.GrappledPlayer:FireClient(state.owner, hitModel, rope)
+	Remotes.GrappledPlayer:FireClient(state.owner, hitModel, rope, state.tetherDeadline, victimPlayer and victimPlayer.Name or hitModel.Name)
 end
 
 local function isValidAim(player: Player, hitPosition: any, cameraPosition: any): boolean
@@ -676,32 +671,6 @@ Remotes.FireGrapple.OnServerEvent:Connect(function(player, hitPosition, cameraPo
 	end
 end)
 
-local function decayStruggle(state, now)
-	if not state.struggleTarget or not Config.struggleDecrease then return end
-	local interval = math.max(0.1, Config.struggleDecreaseInterval or 1)
-	local ticks = math.floor((now - state.lastDecay) / interval)
-	if ticks > 0 then
-		state.lastDecay += ticks * interval
-		state.struggleProgress = math.max(0, state.struggleProgress - ticks * Config.struggleDecreaseAmt)
-		if state.victimPlayer and state.victimPlayer.Parent == Players then
-			Remotes.StruggleProgress:FireClient(state.victimPlayer, state.struggleProgress, state.struggleTarget)
-		end
-	end
-end
-
-Remotes.StruggleInput.OnServerEvent:Connect(function(victim)
-	local owner = GrappleOwners[victim.UserId]
-	local state = owner and Active[owner]
-	if not state or state.victimPlayer ~= victim or not state.struggleTarget then return end
-	local now = os.clock()
-	if state.lastStruggleInput and now - state.lastStruggleInput < 0.075 then return end
-	state.lastStruggleInput = now
-	decayStruggle(state, now)
-	state.struggleProgress += Config.struggleIncrement
-	if state.struggleProgress >= state.struggleTarget then disconnectRope(owner) return end
-	Remotes.StruggleProgress:FireClient(victim, state.struggleProgress, state.struggleTarget)
-end)
-
 RunService.Heartbeat:Connect(function(dt)
 	local now = os.clock()
 	for owner, state in pairs(Active) do
@@ -711,7 +680,7 @@ RunService.Heartbeat:Connect(function(dt)
 				disconnectRope(owner)
 				continue
 			end
-			decayStruggle(state, now)
+			if state.tetherExpiresAt and now >= state.tetherExpiresAt then disconnectRope(owner) end
 		end
 	end
 end)

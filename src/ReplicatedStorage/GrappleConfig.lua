@@ -43,27 +43,11 @@ return {
 
 	--[[
 	+------------------------------------------------+
-	|                   STRUGGLE SETTINGS            |
+	|                   TETHER SETTINGS              |
 	+------------------------------------------------+
 	]]
 	
-	--[[
-	I made the struggle randomized so you
-	need to press the key a certain amount of times 
-	to be able to get free of the grasp, if you want it 
-	to be just one value and not randomized
-	then make the min and max the same value
-	]]
-	
-	
-	minStruggleValue = 25,
-	maxStruggleValue = 30,
-	
-	struggleIncrement = 1, -- How much struggle value it will add for each time the key is clicked
-	
-	struggleDecrease = true, -- Make this false if you dont want the struggle to slowly decrease
-	struggleDecreaseAmt = 1, -- By how much the struggle value decreases
-	struggleDecreaseInterval = 1, -- How often the struggle will decrease
+	playerTetherDuration = 30,
 
 	--[[
 	+------------------------------------------------+
@@ -132,7 +116,6 @@ return {
 	]]
 
 	
-	struggleKeybind = Enum.KeyCode.Space,
 	shortenRope = Enum.KeyCode.Q,
 	lengthenRope = Enum.KeyCode.E,
 	ragdollKeybind = Enum.KeyCode.R,

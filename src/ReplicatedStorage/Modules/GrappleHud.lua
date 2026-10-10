@@ -73,7 +73,7 @@ function M.Init()
 	local currentRope
 	local displayLength = 0
 	local shorten, lengthen = false, false
-	local struggling = false
+	local beingTethered = false
 	local function tool()
 		local candidate = player.Character and player.Character:FindFirstChild(Config.toolName)
 		return candidate and candidate:IsA("Tool") and candidate or nil
@@ -132,7 +132,7 @@ function M.Init()
 		make("UIStroke", textLabel, {Color = Color3.fromRGB(255, 255, 255), Thickness = 2})
 	end
 	local function toggleWallMode()
-		if tool() and not struggling then Remotes.ToggleWallMode:FireServer() end
+		if tool() and not beingTethered then Remotes.ToggleWallMode:FireServer() end
 	end
 	local ropeLength = label(reelControls, "", UDim2.fromOffset(-36, -22), UDim2.fromOffset(150, 18))
 	ropeLength.TextSize, ropeLength.TextXAlignment = 11, Enum.TextXAlignment.Center
@@ -265,43 +265,28 @@ function M.Init()
 	end
 	hold(shortButton, -1)
 	hold(longButton, 1)
-	local escape = make("Frame", screen, {
-		Name = "Escape", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -18),
-		Size = UDim2.fromOffset(380, 124), BackgroundColor3 = Color3.fromRGB(39, 22, 30), Visible = false,
+	local tetherInfo = {incoming = nil, outgoing = nil}
+	local tetherPanel = make("Frame", screen, {
+		Name = "TetherCountdown", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.75),
+		Size = UDim2.fromOffset(380, 56), BackgroundColor3 = Color3.fromRGB(27, 42, 53),
+		BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
 	})
-	rounded(escape)
-	local escapeScale = make("UIScale", escape, {Scale = 1})
-	local escapeTitle = label(escape, "YOU'VE BEEN GRAPPLED", UDim2.fromOffset(18, 10), UDim2.fromOffset(344, 24), Color3.fromRGB(255, 158, 158))
-	local escapeTrack = make("Frame", escape, {Position = UDim2.fromOffset(18, 43), Size = UDim2.fromOffset(344, 7), BackgroundColor3 = Color3.fromRGB(80, 44, 52), BorderSizePixel = 0})
-	local escapeFill = make("Frame", escapeTrack, {Size = UDim2.fromScale(0, 1), BackgroundColor3 = Color3.fromRGB(255, 158, 158), BorderSizePixel = 0})
-	local function struggle()
-		if struggling then Remotes.StruggleInput:FireServer() end
+	rounded(tetherPanel)
+	local tetherScale = make("UIScale", tetherPanel, {Scale = 1})
+	local tetherText = label(tetherPanel, "", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 1, -16), Color3.new(1, 1, 1))
+	styleReelLabel(tetherText)
+	tetherText.TextXAlignment, tetherText.TextYAlignment = Enum.TextXAlignment.Center, Enum.TextYAlignment.Center
+	tetherText.Font, tetherText.TextScaled = Enum.Font.GothamBold, true
+	make("UITextSizeConstraint", tetherText, {MinTextSize = 10, MaxTextSize = 18})
+	local function clearIncoming()
+		beingTethered = false
+		tetherInfo.incoming = nil
 	end
-	local escapeButton = button(escape, UIS.TouchEnabled and "Tap to struggle" or "Press Space to struggle", UDim2.fromOffset(18, 66), UDim2.fromOffset(344, 40))
-	escapeButton.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.Touch then struggle() end
-	end)
-	local ACTION = "GrappleHUD_Struggle"
-	local function stopStruggle()
-		struggling = false
-		escape.Visible = false
-		CAS:UnbindAction(ACTION)
-	end
-	Remotes.HasBeenGrappled.OnClientEvent:Connect(function(attacker)
-		stopStruggle()
-		if not attacker then return end
-		struggling = true
-		escape.Visible = true
-		escapeTitle.Text = "GRAPPLED BY " .. string.upper(attacker.DisplayName)
-		escapeFill.Size = UDim2.fromScale(0, 1)
-		CAS:BindActionAtPriority(ACTION, function(_, state)
-			if UIS:GetFocusedTextBox() then return Enum.ContextActionResult.Pass end
-			if state == Enum.UserInputState.Begin then struggle() flop() end
-			return Enum.ContextActionResult.Sink
-		end, false, Enum.ContextActionPriority.High.Value + 1, Enum.KeyCode.Space)
-	end)
-	Remotes.StruggleProgress.OnClientEvent:Connect(function(progress, target)
-		if struggling then escapeFill.Size = UDim2.fromScale(math.clamp(progress / math.max(1, target), 0, 1), 1) end
+	Remotes.HasBeenGrappled.OnClientEvent:Connect(function(attacker, deadline)
+		clearIncoming()
+		if not attacker or not deadline then return end
+		beingTethered = true
+		tetherInfo.incoming = {name = attacker.Name, deadline = deadline}
 	end)
 	local settingsOpen = false
 	local settingsWindow
@@ -437,7 +422,8 @@ function M.Init()
 		player:GetAttributeChangedSignal(key):Connect(applySavedSettings)
 	end
 	applySavedSettings()
-	local function grapple(target, rope)
+	local function grapple(target, rope, deadline, username)
+        tetherInfo.outgoing = target and deadline and {name = username or target.Name, deadline = deadline} or nil
 		currentRope = rope
 		displayLength = rope and rope.Length or 0
 		shorten, lengthen = false, false
@@ -445,7 +431,7 @@ function M.Init()
 	Remotes.GrappledPlayer.OnClientEvent:Connect(grapple)
 	Remotes.GrappledWall.OnClientEvent:Connect(grapple)
 	CAS:BindActionAtPriority("GrappleHUD_TargetMode", function(_, state)
-		if UIS:GetFocusedTextBox() or not tool() or struggling then return Enum.ContextActionResult.Pass end
+		if UIS:GetFocusedTextBox() or not tool() or beingTethered then return Enum.ContextActionResult.Pass end
 		if state == Enum.UserInputState.Begin then toggleWallMode() end
 		return Enum.ContextActionResult.Sink
 	end, false, Enum.ContextActionPriority.High.Value + 2, Config.toggleWallMode)
@@ -479,22 +465,33 @@ function M.Init()
 	watchBackpack(player:WaitForChild("Backpack"))
 	local characterConnection
 	local function characterAdded(character)
-		stopStruggle()
+		clearIncoming()
 		grapple()
 		if characterConnection then characterConnection:Disconnect() end
 		for _, instance in ipairs(character:GetChildren()) do watchTool(instance) end
 		characterConnection = character.ChildAdded:Connect(watchTool)
 		local humanoid = character:WaitForChild("Humanoid")
 		humanoid:GetAttributeChangedSignal("GrappledBy"):Connect(function()
-			if humanoid:GetAttribute("GrappledBy") == nil then stopStruggle() end
+			if humanoid:GetAttribute("GrappledBy") == nil then clearIncoming() end
 		end)
-		humanoid.Died:Once(function() stopStruggle() grapple() end)
+		humanoid.Died:Once(function() clearIncoming() grapple() end)
 	end
 	player.CharacterAdded:Connect(characterAdded)
-	player.CharacterRemoving:Connect(function() stopStruggle() grapple() end)
+	player.CharacterRemoving:Connect(function() clearIncoming() grapple() end)
 	if player.Character then task.spawn(characterAdded, player.Character) end
 	local accumulator, uiAccumulator = 0, 0
 	RunService.Heartbeat:Connect(function(dt)
+		local lines = {}
+		for _, side in ipairs({"incoming", "outgoing"}) do
+			local info = tetherInfo[side]
+			if info then
+				local seconds = math.max(0, math.ceil(info.deadline - workspace:GetServerTimeNow()))
+				table.insert(lines, string.format("Tethered %s %s for %d seconds", side == "incoming" and "by" or "to", info.name, seconds))
+			end
+		end
+		tetherPanel.Visible = #lines > 0
+		tetherPanel.Size = UDim2.fromOffset(380, #lines > 1 and 80 or 56)
+		tetherText.Text = table.concat(lines, "\n")
 		flopButton.Visible = UIS.TouchEnabled and FlopMotion.CanFlop(player.Character)
 		flopButton.Text = os.clock() - lastFlop < (Config.flopCooldown or 1.5) and "..." or "FLOP"
 		local touchGui = playerGui:FindFirstChild("TouchGui")
@@ -525,7 +522,7 @@ function M.Init()
 			local viewport = camera.ViewportSize
 			local scale = math.clamp(math.min(viewport.X / 800, viewport.Y / 450), 0.7, 1.2)
 			reelScale.Scale, wallScale.Scale = scale, scale
-			escapeScale.Scale = math.clamp(math.min(viewport.X / 480, viewport.Y / 800), 0.55, 1)
+			tetherScale.Scale = math.clamp(math.min(viewport.X / 480, viewport.Y / 800), 0.55, 1)
 			local settingsUiScale = math.clamp(math.min(viewport.X / 800, viewport.Y / 600), 0.7, 1)
 			settingsScale.Scale = settingsUiScale
 			settingsButtonScale.Scale = math.clamp(math.min(viewport.X / 800, viewport.Y / 450), 0.75, 1.1)

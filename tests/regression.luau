@@ -191,6 +191,7 @@ return function(sources)
 	local soundModule = instance("ModuleScript", "PlaySound", storage.Modules)
 	local toolSetupModule = instance("ModuleScript", "GrappleToolSetup", storage.Modules)
 	local world = instance("Workspace")
+	function world:GetServerTimeNow() return now end
 	world.Gravity = 196.2
 	local hitParts = {}
 	function world:GetPartBoundsInBox() return hitParts end
@@ -224,7 +225,7 @@ return function(sources)
 	end
 	local config = execute(sources.config)
 	local remotes = {}
-	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "StruggleInput", "StruggleProgress", "EquipRagdollTool", "SetGrappleColor", "SetPlayerSetting", "ServerRestartNotice", "FallLanded"}) do
+	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "EquipRagdollTool", "SetGrappleColor", "SetPlayerSetting", "ServerRestartNotice", "FallLanded"}) do
 		remotes[name] = instance("RemoteEvent", name)
 	end
 	local ragdoll = execute(sources.ragdoll)
@@ -330,17 +331,17 @@ return function(sources)
 	assert(rope.Length == 12, "rope length changed after input stopped")
 	remotes.ChangeLength.OnServerEvent:Emit(attacker, 25)
 	assert(rope.Length == 25, "reel-out did not permanently increase length")
-	local progressBefore = #(remotes.StruggleProgress.messages or {})
-	remotes.StruggleInput.OnServerEvent:Emit(attacker)
-	assert(#(remotes.StruggleProgress.messages or {}) == progressBefore, "attacker escaped for victim")
+	local tetherDeadline = remotes.HasBeenGrappled.messages[#remotes.HasBeenGrappled.messages].args[2]
+	assert(tetherDeadline and config.playerTetherDuration == 30, "tether did not send its expiration deadline")
 	victimRoot.CFrame = {LookVector = V.new(1, 0.8, 0)}
 	victimRoot.AssemblyAngularVelocity = V.new(4, 3, 2)
 	victimRoot.AssemblyLinearVelocity = V.new(10, 25, -3)
 	local releasePose = victimRoot.CFrame
-	for _ = 1, config.maxStruggleValue + 10 do
-		now += 0.08
-		remotes.StruggleInput.OnServerEvent:Emit(victim)
-	end
+	now = tetherDeadline - 0.01
+	runService.Heartbeat:Emit(0.1)
+	assert(not rope.destroyed, "tether expired before its deadline")
+	now = tetherDeadline + 0.01
+	runService.Heartbeat:Emit(0.1)
 	assert(victimHumanoid:GetAttribute("GrappledBy") == nil, "escape failed")
 	assert(victimHumanoid:GetAttribute("Ragdolled") == true and victimHumanoid:GetAttribute("GrapplePhysicsLocked"), "escape resumed simulation before ownership returned")
 	assert(rope.destroyed, "escape leaked physical rope")
@@ -406,12 +407,11 @@ return function(sources)
 	players.PlayerRemoving:Emit(victim)
 	assert(not gun:GetAttribute("HasGrappled") and not gun:GetAttribute("InCooldown"), "leave stuck grapple/cooldown")
 	assert(victimHumanoid:GetAttribute("GrappledBy") == nil, "leave left grapple marker")
-	-- A connected grapple must survive indefinitely; no automatic expiry.
+	-- Character tethers must also expire after a long server frame.
 	fire()
 	now += 3600
 	runService.Heartbeat:Emit(0.1)
-	assert(victimHumanoid:GetAttribute("GrappledBy") == attacker.UserId, "grapple expired automatically")
-	fire()
+	assert(victimHumanoid:GetAttribute("GrappledBy") == nil, "grapple survived its expiration")
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
 	-- R6 joints must disable and restore as well.
 	local r6, hum6, root6, motor6 = character("R6", V.new(), false)
