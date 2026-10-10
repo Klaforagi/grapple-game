@@ -3,6 +3,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local Storage = game:GetService("ReplicatedStorage")
 local PlaySound = require(Storage:WaitForChild("Modules"):WaitForChild("PlaySound"))
+local Flatten = require(Storage.Modules:WaitForChild("CrusherFlatten"))
 
 local DROP_DISTANCE = 14.4
 local DROP_TIME = 1
@@ -18,12 +19,14 @@ local function partNamed(parent, name)
 	return part and part:IsA("BasePart") and part or nil
 end
 
-local function killFromPart(part)
+local function killFromPart(part, groundY)
 	local parent = part.Parent
 	while parent and parent ~= Workspace do
 		local humanoid = parent:FindFirstChildOfClass("Humanoid")
 		if humanoid then
 			if humanoid.Health > 0 then
+				local ok, err = pcall(Flatten.Create, parent, groundY)
+				if not ok then warn("[Crusher] Flatten effect: " .. tostring(err)) end
 				-- Ragdolls disable state evaluation. Restore death processing as well
 				-- as health so players and NPCs both actually die immediately.
 				humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
@@ -69,6 +72,9 @@ local function register(model)
 	end
 	collect(mover, moving, movingAllowed)
 	collect(smasher, moving, movingAllowed)
+	local bottomPose = moving[smasher]
+	local groundY = bottomPose.Position.Y - DROP_DISTANCE - (math.abs(bottomPose.RightVector.Y) * smasher.Size.X
+		+ math.abs(bottomPose.UpVector.Y) * smasher.Size.Y + math.abs(bottomPose.LookVector.Y) * smasher.Size.Z) / 2
 	local function leverAllowed(part)
 		return part:IsDescendantOf(lever) and part ~= anchor and part ~= trigger
 	end
@@ -115,11 +121,11 @@ local function register(model)
 		local steps = math.max(1, math.ceil((to.Position - from.Position).Magnitude / 0.5))
 		for step = 0, steps do
 			for _, part in ipairs(Workspace:GetPartBoundsInBox(from:Lerp(to, step / steps), smasher.Size, params)) do
-				killFromPart(part)
+				killFromPart(part, groundY)
 			end
 		end
 	end
-	local touched = smasher.Touched:Connect(function(part) if lethal then killFromPart(part) end end)
+	local touched = smasher.Touched:Connect(function(part) if lethal then killFromPart(part, groundY) end end)
 	status(false)
 	prompt.Triggered:Connect(function(player)
 		local character = player.Character
