@@ -158,15 +158,20 @@ local function finishVictimHandoff(state, departingPlayer)
 		humanoid:SetAttribute("GrappleAppliedRagdoll", nil)
 		-- The rope is already gone. Preserve flight momentum and never teleport
 		-- to the server's possibly older copy of the owner's last position.
-		if victim and victim ~= departingPlayer and victim.Parent == Players and victim.Character == character then
-			Ragdoll.RefreshOwnership(humanoid)
-		else
-			restoreAutomaticNetworkOwnership(character)
+		local captive = humanoid:GetAttribute("CapsuleLocked") == true
+		-- The capsule already owns this body. Handing simulation back, or
+		-- rebuilding the ragdoll, puts the tilted pose on the server again.
+		if not captive then
+			if victim and victim ~= departingPlayer and victim.Parent == Players and victim.Character == character then
+				Ragdoll.RefreshOwnership(humanoid)
+			else
+				restoreAutomaticNetworkOwnership(character)
+			end
 		end
 		humanoid:SetAttribute("GrapplePhysicsLocked", nil)
 		humanoid:SetAttribute("GrapplePhysicsSession", nil)
-		if humanoid:HasTag("Ragdoll") then Ragdoll.Set(humanoid, true) end
-		if state.appliedRagdoll and humanoid.Health > 0
+		if not captive and humanoid:HasTag("Ragdoll") then Ragdoll.Set(humanoid, true) end
+		if not captive and state.appliedRagdoll and humanoid.Health > 0
 			and os.clock() >= (humanoid:GetAttribute("BombRagdollUntil") or 0)
 			and os.clock() >= (humanoid:GetAttribute("ForcedRagdollUntil") or 0) then
 			-- Set before removing the tag so its observer cannot run pose recovery.
@@ -220,6 +225,7 @@ disconnectRope = function(player: Player, skipCooldown: boolean?, preserveVictim
 				victimHumanoid:SetAttribute("ForcedRagdollUntil", nil)
 				if state.appliedRagdoll and victimHumanoid.Health > 0
 					and not victimHumanoid:GetAttribute("GrapplePhysicsLocked")
+					and not victimHumanoid:GetAttribute("CapsuleLocked")
 					and physicsSessions[state.victimCharacter] == nil
 					and os.clock() >= (victimHumanoid:GetAttribute("BombRagdollUntil") or 0) then
 					Ragdoll.Set(victimHumanoid, false, true)

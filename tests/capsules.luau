@@ -56,9 +56,42 @@ return function(t)
 	assert(not model:GetAttribute("CapsuleOccupied"), "server allowed distant capture")
 	root.Position = Vector3.zero
 	t.runService.Heartbeat:Emit(0.1)
+	local function frame(marker)
+		local value = {kind = "CFrame", marker = marker}
+		function value:Inverse() return frame("inv(" .. marker .. ")") end
+		return setmetatable(value, {__mul = function(a, b)
+			return frame(tostring(a.marker) .. ">" .. tostring(b.marker))
+		end})
+	end
+	local torso = mob:FindFirstChild("Torso")
+	torso.CFrame = frame("torso")
+	local hat = instance("Accessory", "Hat", mob)
+	local handle = instance("Part", "Handle", hat)
+	handle.CFrame = {fallen = true}
+	local weld = instance("Weld", "AccessoryWeld", handle)
+	weld.Part0, weld.Part1 = torso, handle
+	weld.C0, weld.C1 = frame("c0"), frame("c1")
+	local head = instance("Part", "Head", mob)
+	head.CFrame = frame("head")
+	local hair = instance("Accessory", "Hair", mob)
+	local hairHandle = instance("Part", "Handle", hair)
+	hairHandle.CFrame = {fallen = true}
+	local hairAttachment = instance("Attachment", "HairAttachment", hairHandle)
+	hairAttachment.CFrame = frame("hatt")
+	local headAttachment = instance("Attachment", "HairAttachment", head)
+	headAttachment.CFrame = frame("headatt")
 	prompt.Triggered:Emit(owner)
 	assert(model:GetAttribute("CapsuleOccupied") and root.Anchored, "NPC capture failed")
+	assert(not torso.Anchored, "R6 anchored a limb so the body pose never replicated")
+	assert(weld.Part0 == torso and weld.Part1 == handle and weld.Enabled and weld.C0.marker == "c0",
+		"accessory weld was not seated on the captive")
+	local hairWeld = hairHandle:FindFirstChild("AccessoryWeld")
+	assert(hairWeld and hairWeld.Part0 == head and hairWeld.Part1 == hairHandle and hairWeld.Enabled,
+		"attachment accessory was not welded to the captive")
 	assert(root.CFrame.placement ~= nil, "capture did not use Platform")
+	assert(humanoid.State == "Physics" and not humanoid.EvaluateStateMachine
+		and humanoid.PlatformStand and not humanoid:GetStateEnabled("GettingUp"),
+		"capsule played a get-up instead of holding still")
 	assert(humanoid:GetAttribute("CapsuleLocked") and humanoid.WalkSpeed == 0 and tool.Parent == nil, "capture did not lock mob")
 	assert(animate.Disabled and stopped > 0, "capture retained idle animation")
 	local stoppedBeforeClient = stopped
@@ -86,6 +119,9 @@ return function(t)
 	assert(not model:GetAttribute("CapsuleOccupied") and not root.Anchored, "rescue left capsule occupied")
 	assert(not mob:FindFirstChild("CapsuleHealth"), "rescue leaked health display")
 	assert(not humanoid:GetAttribute("CapsuleLocked") and humanoid.WalkSpeed == 16 and tool.Parent == mob, "rescue failed to restore mob")
+	assert(humanoid.EvaluateStateMachine and humanoid:GetStateEnabled("GettingUp")
+		and not humanoid.PlatformStand and humanoid.State == "Running",
+		"rescue left the captive in the capsule physics pose")
 	t.runService.PreAnimation:Emit()
 	assert(not animate.Disabled, "rescue did not restore animation controller")
 	assert(humanoid.AutoRotate, "rescue left rotation locked by the capture ragdoll")
@@ -104,10 +140,10 @@ return function(t)
 	t.runService.Heartbeat:Emit(0.1)
 	assert(humanoid.Health == 0 and model:GetAttribute("CapsuleOccupied")
 		and model:GetAttribute("CapsuleWaitingForRespawn"), "death freed capsule before respawn")
-	assert(root.Anchored and not prompt.Enabled, "dead captive broke apart or exposed rescue prompt")
-	for _, item in ipairs(mob:GetDescendants()) do
-		if item:IsA("BasePart") then assert(item.Anchored, "dead captive body was not frozen") end
-	end
+	assert(humanoid.State == "Dead" and humanoid.EvaluateStateMachine and not humanoid.BreakJointsOnDeath,
+		"dead NPC never entered Dead, so a non-player rig does not respawn")
+	assert(weld.Parent and weld.Part0 == torso and weld.Enabled, "accessory fell off when the captive died")
+	assert(root.Anchored and not torso.Anchored and not prompt.Enabled, "dead captive anchored a limb or exposed rescue prompt")
 	mob:Destroy()
 	t.runService.Heartbeat:Emit(0.1)
 	assert(not model:GetAttribute("CapsuleOccupied"), "capsule did not clear after NPC respawn replacement")
@@ -118,4 +154,31 @@ return function(t)
 	late.Name = "Capsule"
 	t.runService.Heartbeat:Emit(1)
 	assert(lateTrigger:FindFirstChild("CapsulePrompt"), "late-built capsule never registered")
+	-- A pitched ragdoll root has to be stored upright. Identity joint transforms
+	-- are local, so the captive otherwise looks straight while the server keeps the tilt.
+	local pitched = instance("Model", "Capsule", t.world)
+	local pitchedTrigger = instance("Part", "Trigger", pitched)
+	pitchedTrigger.CFrame = trigger.CFrame
+	local marker = instance("Part", "VictimPosition", pitched)
+	marker.CFrame = setmetatable({
+		kind = "CFrame", Position = Vector3.new(0, 5, 0),
+		LookVector = Vector3.new(0, 0.6, -0.8), RightVector = Vector3.new(1, 0, 0),
+	}, {})
+	local pitchedMob, pitchedHumanoid, pitchedRoot = t.character("PitchedMob", Vector3.zero, false)
+	pitchedHumanoid.MaxHealth = 100
+	pitchedHumanoid:SetAttribute("GrappledBy", owner.UserId)
+	t.runService.Heartbeat:Emit(1)
+	local pitchedPrompt = assert(pitchedTrigger:FindFirstChild("CapsulePrompt"), "pitched capsule never registered")
+	pitchedPrompt.Triggered:Emit(owner)
+	assert(pitched.GetAttribute and pitched:GetAttribute("CapsuleOccupied") and pitchedRoot.Anchored, "pitched capture failed")
+	assert(pitchedRoot.CFrame.LookVector and pitchedRoot.CFrame.LookVector.Y == 0, "capsule stored the ragdoll tilt")
+	assert(pitchedHumanoid.State == "Physics" and not pitchedHumanoid:GetStateEnabled("GettingUp"), "pitched capture played a get-up")
+	assert(pitchedRoot.Anchored and not pitchedMob:FindFirstChild("Torso").Anchored,
+		"pitched R6 anchored a limb so the body stays where it was grappled")
+	-- Health can reach 0 without Died while EvaluateStateMachine is off.
+	pitchedHumanoid.Health = 0
+	t.runService.Heartbeat:Emit(0.1)
+	assert(pitchedHumanoid.State == "Dead" and pitchedHumanoid.EvaluateStateMachine
+		and not pitchedHumanoid.BreakJointsOnDeath,
+		"silent NPC death never entered Dead, so the rig does not respawn")
 end

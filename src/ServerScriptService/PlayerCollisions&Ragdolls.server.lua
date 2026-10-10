@@ -95,7 +95,12 @@ CollectionService:GetInstanceAddedSignal("Ragdoll"):Connect(function(humanoid)
 	if humanoid:IsA("Humanoid") and humanoid.Parent then Ragdoll.Set(humanoid, true) end
 end)
 CollectionService:GetInstanceRemovedSignal("Ragdoll"):Connect(function(humanoid)
-	if humanoid:IsA("Humanoid") and humanoid.Parent and humanoid.Health > 0 then Ragdoll.Set(humanoid, false) end
+	-- Capsule settle removes the tag itself. The normal recovery plays a get-up
+	-- and moves the root, which is the slant the captive must not enter with.
+	if humanoid:IsA("Humanoid") and humanoid.Parent and humanoid.Health > 0
+		and not humanoid:GetAttribute("CapsuleLocked") then
+		Ragdoll.Set(humanoid, false)
+	end
 end)
 local function playerAdded(player)
 	player.CharacterAdded:Connect(function(character)

@@ -706,7 +706,7 @@ function Service.InitClient()
 		watched[humanoid] = true
 		local previousStateMachine = humanoid.EvaluateStateMachine
 		local previousGettingUp = humanoid:GetStateEnabled(Enum.HumanoidStateType.GettingUp)
-		local wasRagdolled, wasLocked = false, false
+		local wasRagdolled, wasLocked, wasCapsule = false, false, false
 		local reportedBlast
 		local function reportBlast()
 			local revision = humanoid:GetAttribute("BombBlastRevision")
@@ -725,6 +725,44 @@ function Service.InitClient()
 			local ragdolled = humanoid:GetAttribute("Ragdolled") == true
 			local locked = humanoid:GetAttribute("GrapplePhysicsLocked") == true
 				or humanoid:GetAttribute("GrappleLocalPhysicsLock") == true
+			local capsule = humanoid:GetAttribute("CapsuleLocked") == true
+			-- Leaving a ragdoll normally plays GettingUp. Inside a capsule that
+			-- animation is local-only, so this client looks straight while the
+			-- server is still holding the tilted ragdoll parts.
+			if capsule then
+				if not wasCapsule then
+					pendingEntryMotion[humanoid] = nil
+					activeRigs[humanoid] = nil
+					updateCameraSubject(humanoid, false)
+				end
+				wasRagdolled, wasLocked, wasCapsule = ragdolled, locked, true
+				humanoid.EvaluateStateMachine = false
+				humanoid.PlatformStand = true
+				humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
+				if humanoid.Health > 0 and humanoid:GetState() ~= Enum.HumanoidStateType.Physics then
+					humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+				end
+				return
+			end
+			if wasCapsule then
+				wasCapsule = false
+				if ragdolled or locked then
+					-- Run the normal transition below instead of treating it as unchanged.
+					wasRagdolled, wasLocked = not ragdolled, not locked
+				else
+					wasRagdolled, wasLocked = ragdolled, locked
+					local restoreStateMachine = humanoid:GetAttribute("RagdollRestoreStateMachine")
+					if restoreStateMachine == nil then restoreStateMachine = previousStateMachine end
+					humanoid.EvaluateStateMachine = restoreStateMachine
+					humanoid.PlatformStand = false
+					humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, previousGettingUp ~= false)
+					activeRigs[humanoid] = nil
+					if humanoid.Health > 0 then
+						humanoid:ChangeState(Enum.HumanoidStateType.Running)
+					end
+					return
+				end
+			end
 			local enabled = ragdolled or locked
 			if ragdolled == wasRagdolled and locked == wasLocked then return end
 			if ragdolled and not wasRagdolled and localPlayer and humanoid.Parent == localPlayer.Character then
@@ -750,6 +788,7 @@ function Service.InitClient()
 		humanoid:GetAttributeChangedSignal("Ragdolled"):Connect(update)
 		humanoid:GetAttributeChangedSignal("GrapplePhysicsLocked"):Connect(update)
 		humanoid:GetAttributeChangedSignal("GrappleLocalPhysicsLock"):Connect(update)
+		humanoid:GetAttributeChangedSignal("CapsuleLocked"):Connect(update)
 		update()
 	end
 	workspace.DescendantAdded:Connect(bind)

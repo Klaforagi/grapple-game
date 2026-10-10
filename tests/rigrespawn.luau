@@ -17,7 +17,7 @@ return function(source)
 	local methods = {}
 	local function new(class)
 		local item = setmetatable({ClassName = class, attributes = {}, Destroying = signal(),
-			Died = signal(), DescendantAdded = signal(), Health = 100, MaxHealth = 100, Archivable = true}, {__index = methods})
+			Died = signal(), DescendantAdded = signal(), Event = signal(), Health = 100, MaxHealth = 100, Archivable = true}, {__index = methods})
 		table.insert(objects, item)
 		return item
 	end
@@ -32,6 +32,9 @@ return function(source)
 		local result = {}
 		for _, item in ipairs(objects) do if item:IsDescendantOf(self) then table.insert(result, item) end end
 		return result
+	end
+	function methods:FindFirstChild(name)
+		for _, item in ipairs(objects) do if item.Parent == self and item.Name == name then return item end end
 	end
 	function methods:FindFirstChildOfClass(class)
 		for _, item in ipairs(objects) do if item.Parent == self and item:IsA(class) then return item end end
@@ -48,6 +51,7 @@ return function(source)
 		return clone
 	end
 	function methods:Destroy() self.Destroying:Emit() self.Parent = nil self.destroyed = true end
+	function methods:Fire(...) if self.Event then self.Event:Emit(...) end end
 	local world, storage = new("Workspace"), new("ServerStorage")
 	local playerRig = new("Model")
 	playerRig.Parent = world
@@ -89,4 +93,29 @@ return function(source)
 		end
 	end
 	assert(count == 2 and #timers == 2, "replacement rigs cannot respawn again")
+	-- Health can reach zero without Died while a capsule has the state machine off.
+	local quiet = new("Model")
+	quiet.Parent, quiet.pivot, quiet.skin = world, 4, "original"
+	local quietHumanoid = new("Humanoid")
+	quietHumanoid.Parent = quiet
+	quietHumanoid.HealthChanged = signal()
+	local deferredBefore = #deferred
+	world.DescendantAdded:Emit(quietHumanoid)
+	for index = deferredBefore + 1, #deferred do deferred[index]() end
+	local timersBefore = #timers
+	quietHumanoid.Health = 0
+	quietHumanoid.HealthChanged:Emit(0)
+	quietHumanoid.HealthChanged:Emit(0)
+	assert(#timers == timersBefore + 1, "health reaching zero did not schedule an NPC respawn")
+	local nudged = new("Model")
+	nudged.Parent, nudged.pivot, nudged.skin = world, 7, "original"
+	local nudgedHumanoid = new("Humanoid")
+	nudgedHumanoid.Parent = nudged
+	local deferredBeforeNudge = #deferred
+	world.DescendantAdded:Emit(nudgedHumanoid)
+	for index = deferredBeforeNudge + 1, #deferred do deferred[index]() end
+	local timersBeforeNudge = #timers
+	storage:FindFirstChild("RigRespawnRequest"):Fire(nudgedHumanoid)
+	storage:FindFirstChild("RigRespawnRequest"):Fire(nudgedHumanoid)
+	assert(#timers == timersBeforeNudge + 1, "capsule death did not ask the NPC rig to respawn")
 end

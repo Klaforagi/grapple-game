@@ -84,15 +84,61 @@ RunService.PreAnimation:Connect(function()
 	for humanoid in pairs(humanoids) do updateAnimationLock(humanoid) end
 end)
 
+-- Transform is not replicated. Zero it after the animator writes, or this
+-- client draws a straight bind pose over part positions the server still has tilted.
+local function clearJointTransforms(humanoid)
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if animator then
+		for _, track in ipairs(animator:GetPlayingAnimationTracks()) do track:Stop(0) end
+	end
+	for _, joint in ipairs(humanoid.Parent:GetDescendants()) do
+		if joint:IsA("Motor6D") or joint:IsA("AnimationConstraint") then
+			joint.Transform = CFrame.new()
+		end
+	end
+	-- The server moves the body into the bind pose. Until that replicates, this
+	-- client still has the hat at the ragdoll spot and the humanoid lets it fall.
+	for _, accessory in ipairs(humanoid.Parent:GetChildren()) do
+		if not (accessory:IsA("Accessory") or accessory:IsA("Hat") or accessory:IsA("Accoutrement")) then continue end
+		local handle = accessory:FindFirstChild("Handle")
+		if not handle or not handle:IsA("BasePart") then continue end
+		local weld
+		for _, joint in ipairs(handle:GetDescendants()) do
+			if joint:IsA("Weld") and (joint.Part0 == handle or joint.Part1 == handle)
+				and typeof(joint.C0) == "CFrame" and typeof(joint.C1) == "CFrame" then
+				weld = joint
+				break
+			end
+		end
+		if not weld then continue end
+		local host, c0, c1
+		if weld.Part1 == handle and weld.Part0 and weld.Part0:IsA("BasePart") then
+			host, c0, c1 = weld.Part0, weld.C0, weld.C1
+		elseif weld.Part0 == handle and weld.Part1 and weld.Part1:IsA("BasePart") then
+			host, c0, c1 = weld.Part1, weld.C1, weld.C0
+		end
+		if host and typeof(host.CFrame) == "CFrame" then
+			handle.CFrame = host.CFrame * c0 * c1:Inverse()
+		end
+	end
+end
+
 RunService.PreSimulation:Connect(function()
 	for humanoid in pairs(animationLocks) do
 		if humanoid.Parent and humanoid:GetAttribute("CapsuleLocked") then
-			for _, joint in ipairs(humanoid.Parent:GetDescendants()) do
-				if joint:IsA("Motor6D") then joint.Transform = CFrame.new() end
-			end
+			clearJointTransforms(humanoid)
 		end
 	end
 end)
+if RunService.PostSimulation then
+	RunService.PostSimulation:Connect(function()
+		for humanoid in pairs(animationLocks) do
+			if humanoid.Parent and humanoid:GetAttribute("CapsuleLocked") then
+				clearJointTransforms(humanoid)
+			end
+		end
+	end)
+end
 
 local accumulator = 0
 local rescan = 0
