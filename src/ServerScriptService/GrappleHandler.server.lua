@@ -176,7 +176,7 @@ local function finishVictimHandoff(state, departingPlayer)
 			and os.clock() >= (humanoid:GetAttribute("ForcedRagdollUntil") or 0) then
 			-- Set before removing the tag so its observer cannot run pose recovery.
 			Ragdoll.Set(humanoid, false, true)
-			humanoid:RemoveTag("Ragdoll")
+			if not humanoid:GetAttribute("Ragdolled") then humanoid:RemoveTag("Ragdoll") end
 		end
 	end
 	if victim and victim.Parent == Players then
@@ -229,7 +229,7 @@ disconnectRope = function(player: Player, skipCooldown: boolean?, preserveVictim
 					and physicsSessions[state.victimCharacter] == nil
 					and os.clock() >= (victimHumanoid:GetAttribute("BombRagdollUntil") or 0) then
 					Ragdoll.Set(victimHumanoid, false, true)
-					victimHumanoid:RemoveTag("Ragdoll")
+					if not victimHumanoid:GetAttribute("Ragdolled") then victimHumanoid:RemoveTag("Ragdoll") end
 				end
 			end)
 		end

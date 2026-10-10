@@ -26,6 +26,19 @@ return function(t)
 		"flops stacked into excessive velocity")
 	root.AssemblyLinearVelocity = Vector3.new(0, -50, 0)
 	assert(not motion.CanFlop(character), "fast falling ragdoll could flop")
+	local runway = Instance.new("Part")
+	runway.Name, runway.CanCollide = "Runway", true
+	character:FindFirstChild("Limb1").TouchingParts = {runway}
+	assert(motion.CanFlop(character), "runway contact did not bypass flop speed limit")
+	root.Anchored = true
+	assert(not motion.CanFlop(character), "runway contact bypassed anchored restriction")
+	root.Anchored = false
+	humanoid:SetAttribute("CapsuleLocked", true)
+	assert(not motion.CanFlop(character), "runway contact bypassed capsule restriction")
+	humanoid:SetAttribute("CapsuleLocked", nil)
+	character:FindFirstChild("Limb1").TouchingParts = {}
+	assert(not motion.CanFlop(character), "leaving runway did not restore flop speed limit")
+	runway:Destroy()
 	root.AssemblyLinearVelocity = Vector3.zero
 	humanoid:SetAttribute("CapsuleLocked", true)
 	assert(not motion.CanFlop(character), "capsule captive could flop")

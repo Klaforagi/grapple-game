@@ -469,9 +469,9 @@ RunService.Heartbeat:Connect(function()
 		elseif now >= (humanoid:GetAttribute("BombRagdollUntil") or 0) and not humanoid:GetAttribute("GrapplePhysicsLocked") then
 			stunned[humanoid] = nil
 			humanoid:SetAttribute("BombRagdollUntil", nil)
-			if state.recover then
+			if not humanoid:GetAttribute("ManualRagdoll") then
 				Ragdoll.Set(humanoid, false, true)
-				humanoid:RemoveTag("Ragdoll")
+				if not humanoid:GetAttribute("Ragdolled") then humanoid:RemoveTag("Ragdoll") end
 			end
 		end
 	end

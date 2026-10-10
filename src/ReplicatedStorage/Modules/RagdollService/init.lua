@@ -15,6 +15,7 @@ local SETTLING_FRICTION = 5
 -- catching on every individual step. Keep it above zero for stable rest poses.
 local RAGDOLL_SURFACE_FRICTION = 0.2
 local STAIR_SURFACE_FRICTION = 0.01
+local RUNWAY_SURFACE_FRICTION = 1
 local SOCKET_PROPERTIES = {"MaxFrictionTorque", "LimitsEnabled", "TwistLimitsEnabled", "UpperAngle", "TwistLowerAngle", "TwistUpperAngle", "Restitution"}
 
 local function attachmentBody(attachment, character)
@@ -78,23 +79,28 @@ function Service.RefreshSurfaceFriction(humanoid)
 	local rig = rigs[humanoid]
 	if not rig or not rig.active then return end
 	local touchingStair = false
+	local touchingRunway = false
 	for part in pairs(rig.parts) do
 		if part.Parent and part.Name ~= "HumanoidRootPart" and part.GetTouchingParts then
 			local ok, touching = pcall(function() return part:GetTouchingParts() end)
 			if ok then
 				for _, other in ipairs(touching) do
-					if (other.Name == "Stair" or other.Name == "StairFillW")
-						and not other:IsDescendantOf(humanoid.Parent) then
-						touchingStair = true
+					if other:IsDescendantOf(humanoid.Parent) then continue end
+					if other.Name == "Runway" then
+						touchingRunway = true
 						break
+					elseif other.Name == "Stair" or other.Name == "StairFillW" then
+						touchingStair = true
 					end
 				end
 			end
 		end
-		if touchingStair then break end
+		if touchingRunway then break end
 	end
 
-	local friction = touchingStair and STAIR_SURFACE_FRICTION or RAGDOLL_SURFACE_FRICTION
+	-- Runway grip wins at transitions where the body also touches a stair.
+	local friction = touchingRunway and RUNWAY_SURFACE_FRICTION
+		or touchingStair and STAIR_SURFACE_FRICTION or RAGDOLL_SURFACE_FRICTION
 	if rig.surfaceFriction == friction then return end
 	rig.surfaceFriction = friction
 	for part, previous in pairs(rig.parts) do
@@ -504,7 +510,9 @@ end
 
 function Service.Set(humanoid, enabled, preserveMotion)
 	-- All recovery paths (including grapple escape/tag removal) honor blast stun.
-	if not enabled and (humanoid:GetAttribute("GrapplePhysicsLocked")
+	if not enabled and (humanoid:GetAttribute("ManualRagdoll")
+		or humanoid:GetAttribute("CapsuleLocked")
+		or humanoid:GetAttribute("GrapplePhysicsLocked")
 		or os.clock() < (humanoid:GetAttribute("BombRagdollUntil") or 0)
 		or os.clock() < (humanoid:GetAttribute("ForcedRagdollUntil") or 0)
 		or os.clock() < (humanoid:GetAttribute("FallRagdollUntil") or 0)) then

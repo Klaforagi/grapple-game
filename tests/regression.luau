@@ -424,6 +424,9 @@ return function(sources)
 	r6:FindFirstChild("Limb1").TouchingParts = {instance("Part", "StairFillW", world)}
 	ragdoll.RefreshSurfaceFriction(hum6)
 	assert(r6:FindFirstChild("Limb1").CustomPhysicalProperties.Friction == 0.01, "stair contact did not lower ragdoll friction")
+	table.insert(r6:FindFirstChild("Limb1").TouchingParts, instance("Part", "Runway", world))
+	ragdoll.RefreshSurfaceFriction(hum6)
+	assert(r6:FindFirstChild("Limb1").CustomPhysicalProperties.Friction == 1, "runway grip did not override stair friction")
 	r6:FindFirstChild("Limb1").TouchingParts = {}
 	ragdoll.RefreshSurfaceFriction(hum6)
 	assert(r6:FindFirstChild("Limb1").CustomPhysicalProperties.Friction == 0.2, "leaving stairs did not restore ragdoll friction")
@@ -1053,9 +1056,8 @@ return function(sources)
 		"ragdolling during the fall did not lock on impact")
 	now += 3.01
 	runService.Heartbeat:Emit(0.1)
-	assert(equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),
-		"a ragdoll started during the fall was forced up after the lock")
-	remotes.ToggleRagdoll.OnServerEvent:Emit(equipPlayer)
+	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),
+		"fall did not recover with the manual toggle off")
 	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("Ragdolled")
 		and equipRoot:FindFirstChild("RootJoint").Enabled,
 		"could not stand after the fall override expired")
@@ -1201,23 +1203,10 @@ return function(sources)
 	assert(attackerHumanoid:GetAttribute("ManualRagdoll"), "manual ragdoll was not marked for the HUD")
 	assert(gun.Parent == attacker.Character, "non-grappled ragdoll unequipped the grapple gun")
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
-	assert(attackerHumanoid:HasTag("Ragdoll"), "ragdoll could be cancelled without its cooldown")
-	now += 1.99
+	assert(not attackerHumanoid:HasTag("Ragdoll"), "manual toggle off did not recover")
+	assert(not attackerHumanoid:GetAttribute("ManualRagdoll"), "toggle off retained the border")
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
-	assert(attackerHumanoid:HasTag("Ragdoll"), "ragdoll cancellation cooldown ended early")
-	now += 0.01
-	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
-	assert(not attackerHumanoid:HasTag("Ragdoll"), "ragdoll could not recover after its cooldown")
-	assert(not attackerHumanoid:GetAttribute("ManualRagdoll"), "recovery retained manual ragdoll highlight")
-	local recoveredAt = now
-	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
-	assert(not attackerHumanoid:HasTag("Ragdoll"), "immediate re-ragdoll bypassed cooldown")
-	now = recoveredAt + 0.49
-	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
-	assert(not attackerHumanoid:HasTag("Ragdoll"), "re-ragdoll cooldown ended early")
-	now = recoveredAt + 0.5
-	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
-	assert(attackerHumanoid:HasTag("Ragdoll"), "cooldown did not expire after half a second")
+	assert(attackerHumanoid:GetAttribute("ManualRagdoll"), "manual toggle could not reactivate")
 	-- Resetting an active ragdoll must still use normal break-apart death.
 	remotes.ResetCharacter.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid.Health == 0, "reset request did not kill a ragdolled player")
@@ -1479,8 +1468,14 @@ return function(sources)
 	assert(attackerRoot.NetworkOwner == attacker, "bomb server hold did not return standalone ragdoll to its player")
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid:GetAttribute("Ragdolled"), "bomb lock ended early")
+	assert(not attackerHumanoid:GetAttribute("ManualRagdoll"), "second press did not disable stay-down during bomb stun")
+	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
+	assert(attackerHumanoid:GetAttribute("ManualRagdoll"), "could not enable stay-down during bomb stun")
 	now = lockedUntil + 0.01
 	runService.Heartbeat:Emit(0.02)
+	assert(attackerHumanoid:GetAttribute("Ragdolled") and attackerHumanoid:HasTag("Ragdoll"),
+		"bomb expiration ignored the active stay-down toggle")
+	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(not attackerHumanoid:GetAttribute("Ragdolled") and attackerHumanoid.EvaluateStateMachine, "bomb victim did not automatically recover")
 	bombTool.Parent = attacker.Character
 	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(10, 0, 0))
@@ -1494,7 +1489,8 @@ return function(sources)
 	-- replace excessive existing velocity instead of adding more energy.
 	local blastTarget, blastHumanoid, blastRoot = character("GrappledBlastTarget", V.new(4, 0, 0), true)
 	local manualTarget, manualHumanoid = character("ManualBlastTarget", V.new(3, 0, 0), false)
-	manualHumanoid:AddTag("Ragdoll")
+	manualHumanoid:SetAttribute("ManualRagdoll", true)
+manualHumanoid:AddTag("Ragdoll")
 	ragdoll.Set(manualHumanoid, true)
 	bombTool.Parent = attackerBackpack
 	gun.Parent = attacker.Character

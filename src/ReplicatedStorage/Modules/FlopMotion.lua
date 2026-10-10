@@ -5,12 +5,22 @@ function M.CanFlop(character)
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	if not humanoid or humanoid.Health <= 0 or not root or root.Anchored
 		or humanoid:GetAttribute("Ragdolled") ~= true or humanoid:GetAttribute("CapsuleLocked") then return false end
+	local tooFast, touchingRunway = false, false
 	for _, part in ipairs(character:GetChildren()) do
-		if part:IsA("BasePart") and (part.Anchored or part.AssemblyLinearVelocity.Magnitude > (Config.flopMaxSpeed or 22)) then
-			return false
+		if part:IsA("BasePart") then
+			if part.Anchored then return false end
+			if part.AssemblyLinearVelocity.Magnitude > (Config.flopMaxSpeed or 22) then tooFast = true end
+			if not touchingRunway and part.Name ~= "HumanoidRootPart" then
+				for _, other in ipairs(part:GetTouchingParts()) do
+					if other.Name == "Runway" and other.CanCollide and not other:IsDescendantOf(character) then
+						touchingRunway = true
+						break
+					end
+				end
+			end
 		end
 	end
-	return true
+	return not tooFast or touchingRunway
 end
 function M.Apply(character, direction, simulator, variation)
 	if not M.CanFlop(character) then return end

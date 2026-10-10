@@ -116,31 +116,24 @@ for _, player in ipairs(Players:GetPlayers()) do playerAdded(player) end
 local bodyLanded
 Remotes.ToggleRagdoll.OnServerEvent:Connect(function(player)
 	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if not humanoid or humanoid.Health <= 0 or humanoid:GetAttribute("GrappledBy")
-		or humanoid:GetAttribute("CapsuleLocked") then return end
-	if os.clock() < (humanoid:GetAttribute("BombRagdollUntil") or 0)
-		or os.clock() < (humanoid:GetAttribute("ForcedRagdollUntil") or 0)
-		or os.clock() < (humanoid:GetAttribute("FallRagdollUntil") or 0) then return end
-	if humanoid:HasTag("Ragdoll") then
-		local activatedAt = humanoid:GetAttribute("RagdollActivatedAt")
-		if activatedAt and os.clock() - activatedAt < (Config.ragdollRelease_Cooldown or 2) then return end
-		humanoid:RemoveTag("Ragdoll")
+	if not humanoid or humanoid.Health <= 0 or humanoid:GetAttribute("CapsuleLocked") then return end
+	if humanoid:GetAttribute("ManualRagdoll") then
+		humanoid:SetAttribute("ManualRagdoll", nil)
+		-- If a knockdown still owns the body, retry when its lock expires.
+		humanoid:SetAttribute("RagdollRecoveryRequested", true)
 		Ragdoll.Set(humanoid, false)
-		if not humanoid:GetAttribute("Ragdolled") then humanoid:SetAttribute("ManualRagdoll", nil) end
+		if not humanoid:GetAttribute("Ragdolled") then
+			humanoid:RemoveTag("Ragdoll")
+			humanoid:SetAttribute("RagdollRecoveryRequested", nil)
+		end
 	else
-		local recoveredAt = humanoid:GetAttribute("RagdollRecoveredAt")
-		if recoveredAt and os.clock() - recoveredAt < Config.ragdollToggle_Cooldown then return end
-		local state = fallStates[humanoid]
-		local character = player.Character
-		local root = character and character:FindFirstChild("HumanoidRootPart")
-		-- Decide before Set. Ragdoll turns the state machine off, and FloorMaterial then sticks.
-		local duringFall = state and (state.fallPeakY or (root and root:IsA("BasePart")
-			and bodyLanded and not bodyLanded(character, humanoid, root)))
+		humanoid:SetAttribute("RagdollRecoveryRequested", nil)
 		humanoid:SetAttribute("ManualRagdoll", true)
-		humanoid:SetAttribute("RagdollActivatedAt", os.clock())
+		if not humanoid:GetAttribute("Ragdolled") then
+			humanoid:SetAttribute("RagdollActivatedAt", os.clock())
+		end
 		humanoid:AddTag("Ragdoll")
 		Ragdoll.Set(humanoid, true)
-		if duringFall then state.wasRagdolled = true end
 	end
 end)
 Remotes.EquipRagdollTool.OnServerEvent:Connect(function(player, toolName, shouldEquip)
@@ -284,10 +277,8 @@ local function commitFallRagdoll(humanoid, state, now)
 	if state.triggered then return end
 	state.triggered = true
 	state.fallPeakY, state.arrestedAt = nil, nil
-	local voluntary = state.wasRagdolled == true or humanoid:HasTag("Ragdoll")
-		or humanoid:GetAttribute("Ragdolled") == true
-	-- A fall you entered already ragdolled stays down after the lock. You get up yourself.
-	state.autoRecover = not voluntary
+	-- The current toggle, not the pose at impact, decides whether recovery is allowed.
+	state.autoRecover = true
 	local deadline = now + (Config.fallRagdollDuration or 3)
 	humanoid:SetAttribute("FallRagdollUntil", deadline)
 	humanoid:SetAttribute("RagdollActivatedAt", now)
@@ -334,6 +325,13 @@ RunService.Heartbeat:Connect(function()
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		if humanoid and humanoid.Health > 0 and root and root:IsA("BasePart") then
+			if humanoid:GetAttribute("RagdollRecoveryRequested") then
+				Ragdoll.Set(humanoid, false)
+				if not humanoid:GetAttribute("Ragdolled") then
+					humanoid:RemoveTag("Ragdoll")
+					humanoid:SetAttribute("RagdollRecoveryRequested", nil)
+				end
+			end
 			local state = fallStates[humanoid]
 			if not state then
 				state = {character = character}
@@ -353,7 +351,7 @@ RunService.Heartbeat:Connect(function()
 					if recover then
 						state.autoRecover = nil
 						Ragdoll.Set(humanoid, false, true)
-						humanoid:RemoveTag("Ragdoll")
+						if not humanoid:GetAttribute("Ragdolled") then humanoid:RemoveTag("Ragdoll") end
 					end
 				end
 			end
