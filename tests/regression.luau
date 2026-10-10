@@ -439,22 +439,30 @@ return function(sources)
 	local r6Torso, r6Limb1, r6Limb2 = r6:FindFirstChild("Torso"), r6:FindFirstChild("Limb1"), r6:FindFirstChild("Limb2")
 	local oppositeLimbs = collisionPair(r6, r6Limb1, r6Limb2)
 	assert(not oppositeLimbs.Enabled, "non-neighboring limbs still pass through each other")
-	assert(not collisionPair(r6, r6Torso, r6Limb1).Enabled, "joint neighbors still pass through each other")
+	assert(collisionPair(r6, r6Torso, r6Limb1).Enabled, "joint neighbors can fight their joint constraints")
 	assert(collisionPair(r6, root6, r6Limb2).Enabled, "invisible root can collide with its own limbs")
 	local nativeIgnore = instance("NoCollisionConstraint", "NativeLimbFilter", r6)
 	nativeIgnore.Part0, nativeIgnore.Part1 = r6Limb1, r6Limb2
 	r6.DescendantAdded:Emit(nativeIgnore)
-	assert(not nativeIgnore.Enabled, "avatar limb filter still blocks ragdoll self-collision")
+	assert(nativeIgnore.Enabled, "ragdoll disabled a native avatar collision safeguard")
 	r6Limb1.ClassName = "MeshPart"
 	ragdoll.RefreshSelfCollisions(hum6)
-	assert(not oppositeLimbs.Enabled and r6Limb1.CanCollide,
-		"mesh limb lost collision with the rest of its body")
+	assert(oppositeLimbs.Enabled and r6Limb1.CanCollide,
+		"mesh limb self-collision was not disabled while preserving world collision")
+	r6:SetAttribute("RagdollSelfCollision", true)
+	ragdoll.RefreshSelfCollisions(hum6)
+	assert(not oppositeLimbs.Enabled, "known-simple mesh avatar could not opt into self-collision")
+	assert(collisionPair(r6, r6Torso, r6Limb1).Enabled, "mesh override removed neighbor protection")
+	r6:SetAttribute("RagdollSelfCollision", nil)
 	r6Limb1.ClassName = "Part"
 	ragdoll.RefreshSelfCollisions(hum6)
 	assert(not oppositeLimbs.Enabled, "block limbs lost their self-collision policy")
 	-- A ragdoll can spin in flight, but recovery should retain its original yaw.
 	root6.CFrame = {LookVector = V.new(-1, 0, 0)}
+	hum6:SetAttribute("CapsuleLocked", true)
 	ragdoll.Set(hum6, false)
+	assert(not hum6:GetAttribute("Ragdolled"), "capsule lock prevented rebuilding the standing rig")
+	hum6:SetAttribute("CapsuleLocked", nil)
 	assert(root6.CFrame.LookVector.X == 1 and root6.CFrame.LookVector.Z == 0, "recovery used the loose root's final facing")
 	assert(oppositeLimbs.Enabled and nativeIgnore.Enabled, "normal self-collision filters were not restored")
 	assert(root6.Massless and root6.RootPriority == -10, "ragdoll recovery lost original mass/root settings")
@@ -519,7 +527,7 @@ return function(sources)
 	local fallback = assert(upgradedFolder:FindFirstChild("LeftElbow"))
 	assert(fallback.UpperAngle == 80 and fallback.TwistUpperAngle == 10, "elbow retained excessive bend/twist")
 	assert(not collisionPair(upgradedRig, forearm, upgradedTorso).Enabled, "forearm cannot collide with non-neighboring torso")
-	assert(not collisionPair(upgradedRig, forearm, upgradedArm).Enabled, "elbow neighbors still pass through each other")
+	assert(collisionPair(upgradedRig, forearm, upgradedArm).Enabled, "elbow neighbors can fight their joint constraints")
 	local fallbackA0, fallbackA1 = fallback.Attachment0, fallback.Attachment1
 	local lateSocket = instance("BallSocketConstraint", "LeftElbowBallSocket", upgradedArm)
 	lateSocket.Enabled, lateSocket.MaxFrictionTorque = false, 55

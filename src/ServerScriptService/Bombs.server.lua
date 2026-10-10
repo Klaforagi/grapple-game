@@ -30,6 +30,23 @@ local function sphere(name, size, color)
 	return part
 end
 
+local function bananaPart(name)
+	local templates = Storage:FindFirstChild("Templates")
+	local template = templates and templates:FindFirstChild("BananaPeel")
+	if not template or not template:IsA("MeshPart") then
+		warn("[Bomb] Missing MeshPart ReplicatedStorage.Templates.BananaPeel")
+		return nil
+	end
+	local part = template:Clone()
+	part.Name = name
+	for _, child in ipairs(part:GetChildren()) do
+		if not child:IsA("SurfaceAppearance") and not child:IsA("Decal") then child:Destroy() end
+	end
+	part.CanCollide, part.CanTouch, part.CanQuery, part.Massless = false, false, false, true
+	part.Anchored = false
+	return part
+end
+
 local function hideUntilReady(tool, readyAt)
 	local parts = coolingTools[tool] and coolingTools[tool].parts or {}
 	for _, part in ipairs(tool:GetDescendants()) do
@@ -68,6 +85,33 @@ local function giveBomb(player, character)
 handle:SetAttribute("RainbowPart", player:GetAttribute("BombColor") == "Rainbow")
 	handle.CanCollide, handle.CanTouch, handle.CanQuery, handle.Massless = false, false, false, true
 	handle.Parent = tool
+	local banana
+	local function refreshSkin()
+		local selected = player:GetAttribute("BombColor") == "Banana"
+		if selected and not banana then
+			banana = bananaPart("BananaVisual")
+			if banana then
+				banana.CFrame = handle.CFrame
+				local weld = Instance.new("WeldConstraint")
+				weld.Part0, weld.Part1 = handle, banana
+				weld.Parent = banana
+				banana.Parent = tool
+			end
+		elseif not selected and banana then
+			banana:Destroy()
+			banana = nil
+		end
+		local cooling = tool:GetAttribute("BombCoolingDown") == true
+		handle.Transparency = (banana or cooling) and 1 or 0
+		if banana then banana.Transparency = cooling and 1 or 0 end
+	end
+	local skinConnection = player:GetAttributeChangedSignal("BombColor"):Connect(refreshSkin)
+	tool.Destroying:Connect(function() skinConnection:Disconnect() end)
+	tool:GetAttributeChangedSignal("BombCoolingDown"):Connect(refreshSkin)
+	handle:GetPropertyChangedSignal("Transparency"):Connect(function()
+		if banana and handle.Transparency ~= 1 then handle.Transparency = 1 end
+	end)
+	refreshSkin()
 	tool.Parent = backpack
 	local readyAt = (lastThrow[player] or -math.huge) + Config.bombCooldown
 	if os.clock() < readyAt then hideUntilReady(tool, readyAt) end
@@ -267,7 +311,7 @@ end
 
 local function explode(bomb, position)
 	-- Remove the sticky weld before any victim is ragdolled/launched.
-	local bombColor = bomb.Color
+	local bombColor = bomb:GetAttribute("ExplosionColor") or bomb.Color
 	local rainbow = bomb:GetAttribute("RainbowPart")
 	bomb:Destroy()
 	local radius = Config.bombRadius
@@ -393,6 +437,11 @@ Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 	if now - (lastThrow[player] or -math.huge) < Config.bombCooldown then return end
 	lastThrow[player] = now
 	local bomb = sphere("ThrownBomb", 1.2, bombColors[player:GetAttribute("BombColor")])
+	if player:GetAttribute("BombColor") == "Banana" then
+		local banana = bananaPart("ThrownBomb")
+		if banana then bomb:Destroy() bomb = banana end
+		bomb:SetAttribute("ExplosionColor", bombColors.Banana)
+	end
 	bomb:SetAttribute("RainbowPalette", "Bomb")
 bomb:SetAttribute("RainbowPart", player:GetAttribute("BombColor") == "Rainbow")
 	local handle = tool:FindFirstChild("Handle")

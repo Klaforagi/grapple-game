@@ -217,7 +217,8 @@ function M.Init()
 		local colorName, color = entry, Palettes.Swatches.Gun[entry]
 		local column, row = (index - 1) % 4, math.floor((index - 1) / 4)
 		local swatch = button(inventory, colorName, UDim2.fromOffset(10 + column * 42, 48 + row * 48), UDim2.fromOffset(36, 42), function()
-			Remotes.SetGrappleColor:FireServer(inventoryTab, inventoryTab == "Bomb" and colorName == "Teal" and "Mint" or colorName)
+			local selected = inventoryTab == "Bomb" and (colorName == "Gray" and "Banana" or colorName == "Teal" and "Mint") or colorName
+			Remotes.SetGrappleColor:FireServer(inventoryTab, selected)
 		end)
 		swatch.BackgroundColor3, swatch.TextColor3, swatch.TextSize = color, Color3.fromRGB(27, 42, 53), 8
 		if colorName == "Gold" then
@@ -539,6 +540,7 @@ function M.Init()
 		rainbowButton.Visible = true
 		for index, swatch in ipairs(colorButtons) do
 			local name = palette[index]
+			if inventoryTab == "Bomb" and name == "Gray" then name = "Banana" end
 			swatch.Text = inventoryTab == "Bomb" and name == "Teal" and "Mint" or name
 			swatch.Visible = Palettes[inventoryTab][name] ~= nil
 			if swatch.Visible then

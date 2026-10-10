@@ -50,14 +50,46 @@ function Service.RefreshSelfCollisions(humanoid)
 	local rig = rigs[humanoid]
 	if not rig or not rig.active then return end
 	local character = humanoid.Parent
+	local generated = character:FindFirstChild("GrappleSelfCollision")
+	-- MeshPart alone cannot tell us whether an avatar mesh is simple or
+	-- irregular. Default custom body meshes to safe collisions; known-safe
+	-- mesh rigs can opt in with RagdollSelfCollision=true on their model.
+	local selfCollide = character:GetAttribute("RagdollSelfCollision")
+	if typeof(selfCollide) ~= "boolean" then
+		selfCollide = true
+		for _, part in ipairs(character:GetChildren()) do
+			-- Heads and accessories should not classify an otherwise blocky rig.
+			if part:IsA("MeshPart") and part.Name ~= "Head" and part.Name ~= "HumanoidRootPart" then
+				selfCollide = false
+				break
+			end
+		end
+	end
+	local neighbors = {}
+	for _, joint in ipairs(character:GetDescendants()) do
+		local a, b
+		if joint:IsA("Motor6D") then
+			a, b = joint.Part0, joint.Part1
+		elseif joint:IsA("AnimationConstraint") then
+			a, b = attachmentBody(joint.Attachment0, character), attachmentBody(joint.Attachment1, character)
+		end
+		if a and b then
+			neighbors[a] = neighbors[a] or {}
+			neighbors[b] = neighbors[b] or {}
+			neighbors[a][b], neighbors[b][a] = true, true
+		end
+	end
 	for _, constraint in ipairs(character:GetDescendants()) do
 		if not constraint:IsA("NoCollisionConstraint") then continue end
+		-- Native avatar filters account for overlapping custom collision hulls.
+		-- Only change the pair filters created by this ragdoll system.
+		if constraint.Parent ~= generated then continue end
 		local a, b = constraint.Part0, constraint.Part1
 		if not a or not b or a.Parent ~= character or b.Parent ~= character then continue end
 		if rig.collisionRestore[constraint] == nil then rig.collisionRestore[constraint] = constraint.Enabled end
-		-- The invisible root must not shove the body. Every limb can hit every
-		-- other limb, including neighbors and mesh parts. World collisions are unchanged.
 		constraint.Enabled = a.Name == "HumanoidRootPart" or b.Name == "HumanoidRootPart"
+			or not selfCollide
+			or (neighbors[a] ~= nil and neighbors[a][b] == true)
 	end
 end
 
@@ -282,8 +314,8 @@ function Service.Prepare(humanoid)
 	local folder = Instance.new("Folder")
 	folder.Name = "GrappleRagdollJoints"
 	folder.Parent = character
-	-- Normal animated poses suppress self-collision. Ragdoll lets every limb hit
-	-- every other limb; the original pair filters return on recovery.
+	-- Only separated blocky limbs self-collide during ragdoll. Mesh hulls and
+	-- joint neighbors can overlap at rest and must not push each other apart.
 	local selfCollisions = Instance.new("Folder")
 	selfCollisions.Name = "GrappleSelfCollision"
 	selfCollisions.Parent = character
@@ -511,7 +543,6 @@ end
 function Service.Set(humanoid, enabled, preserveMotion)
 	-- All recovery paths (including grapple escape/tag removal) honor blast stun.
 	if not enabled and (humanoid:GetAttribute("ManualRagdoll")
-		or humanoid:GetAttribute("CapsuleLocked")
 		or humanoid:GetAttribute("GrapplePhysicsLocked")
 		or os.clock() < (humanoid:GetAttribute("BombRagdollUntil") or 0)
 		or os.clock() < (humanoid:GetAttribute("ForcedRagdollUntil") or 0)

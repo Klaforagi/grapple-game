@@ -80,7 +80,11 @@ return function(t)
 	hairAttachment.CFrame = frame("hatt")
 	local headAttachment = instance("Attachment", "HairAttachment", head)
 	headAttachment.CFrame = frame("headatt")
+	humanoid:SetAttribute("ManualRagdoll", true)
+	humanoid:SetAttribute("RagdollRecoveryRequested", true)
 	prompt.Triggered:Emit(owner)
+	assert(not humanoid:GetAttribute("ManualRagdoll") and not humanoid:GetAttribute("RagdollRecoveryRequested"),
+		"capture retained the previous ragdoll toggle or pending recovery")
 	assert(model:GetAttribute("CapsuleOccupied") and root.Anchored, "NPC capture failed")
 	assert(not torso.Anchored, "R6 anchored a limb so the body pose never replicated")
 	assert(weld.Part0 == torso and weld.Part1 == handle and weld.Enabled and weld.C0.marker == "c0",

@@ -685,6 +685,10 @@ local function capture(state, owner, character, humanoid)
 	state.occupant = occupant
 	occupiedCharacters[character] = state
 	humanoid:SetAttribute("CapsuleLocked", true)
+	-- Captivity replaces the old ragdoll session. Rescue must restore a
+	-- standing rig, not resume a manual toggle or pending recovery request.
+	humanoid:SetAttribute("ManualRagdoll", nil)
+	humanoid:SetAttribute("RagdollRecoveryRequested", nil)
 	humanoid.BreakJointsOnDeath = false
 	-- Scaling rebuilds the rig when parts are anchored and pops hats off R6 and R15.
 	humanoid.RequiresNeck = false
