@@ -392,32 +392,12 @@ function M.Init()
 	rounded(musicKnob)
 	local adjustingMusic = false
 	local musicVolume = 1
-	-- Keep strong references to the Studio-authored values. A weak table can
-	-- forget an Instance key and accidentally use an already-scaled volume as
-	-- the new baseline, causing rapid slider movement to compound toward zero.
-	local musicBaseVolumes = {}
-	local function applyMusicSound(instance)
-		if not instance:IsA("Sound") then return end
-		if musicBaseVolumes[instance] == nil then musicBaseVolumes[instance] = instance.Volume end
-		instance.Volume = math.clamp(musicBaseVolumes[instance] * musicVolume, 0, 10)
-	end
-	local function applyMusicFolder(folder)
-		for _, instance in ipairs(folder:GetDescendants()) do applyMusicSound(instance) end
-		folder.DescendantAdded:Connect(applyMusicSound)
-	end
-	local musicFolder = storage:FindFirstChild("Music")
-	if musicFolder then applyMusicFolder(musicFolder) end
-	storage.ChildAdded:Connect(function(child)
-		if child.Name == "Music" then applyMusicFolder(child) end
-	end)
+	local MusicVolume = require(script.Parent:WaitForChild("MusicVolume"))
 	local function applyMusicVolume(value)
 		musicVolume = math.clamp(value, 0, 1)
 		musicKnob.Position = UDim2.fromScale(musicVolume, 0.5)
 		musicLabel.Text = string.format("Music Volume  %d%%", math.floor(musicVolume * 100 + 0.5))
-		local folder = storage:FindFirstChild("Music")
-		if folder then
-			for _, instance in ipairs(folder:GetDescendants()) do applyMusicSound(instance) end
-		end
+		MusicVolume.SetVolume(musicVolume)
 	end
 	local function setMusicFromPosition(position, shouldSave)
 		local fraction = math.clamp((position.X - musicTrack.AbsolutePosition.X) / math.max(1, musicTrack.AbsoluteSize.X), 0, 1)
