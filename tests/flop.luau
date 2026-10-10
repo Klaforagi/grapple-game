@@ -9,7 +9,7 @@ return function(t)
 	end
 	assert(motion.CanFlop(character), "slow ragdoll could not flop")
 	motion.Apply(character, direction, nil)
-	assert(root.AssemblyLinearVelocity.X == 24 and root.AssemblyLinearVelocity.Y == 38,
+	assert(root.AssemblyLinearVelocity.X == 24 and root.AssemblyLinearVelocity.Y == 42,
 		"flop did not apply bounded hop")
 	assert((character:FindFirstChild("Limb1").AssemblyLinearVelocity - root.AssemblyLinearVelocity).Magnitude > 0,
 		"flop left every limb moving in the same rigid pose")
@@ -22,7 +22,7 @@ return function(t)
 	motion.Apply(character, direction, nil, Vector3.new(-1, 0.8, 0.2))
 	assert(root.AssemblyAngularVelocity.Z > 18 and root.AssemblyAngularVelocity.X > 0
 		and root.AssemblyAngularVelocity.Magnitude <= 42.01, "flop variation did not reverse tumble and add bounded roll")
-	assert(root.AssemblyLinearVelocity.X <= 40 and root.AssemblyLinearVelocity.Y <= 45,
+	assert(root.AssemblyLinearVelocity.X <= 40 and root.AssemblyLinearVelocity.Y <= 49,
 		"flops stacked into excessive velocity")
 	root.AssemblyLinearVelocity = Vector3.new(0, -50, 0)
 	assert(not motion.CanFlop(character), "fast falling ragdoll could flop")

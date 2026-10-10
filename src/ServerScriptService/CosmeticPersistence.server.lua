@@ -33,7 +33,8 @@ local function load(player)
 		end
 		for key, default in pairs(settingDefaults) do
 			local value = data[key]
-			player:SetAttribute(key, validSetting(key, value) and value or default)
+			if not validSetting(key, value) then value = default end
+			player:SetAttribute(key, value)
 		end
 	elseif not ok then
 		warn("[Cosmetics] Could not load " .. player.Name)
@@ -49,7 +50,8 @@ local function save(player)
 	for _, key in ipairs(colorKeys) do data[key] = player:GetAttribute(key) end
 	for key, default in pairs(settingDefaults) do
 		local value = player:GetAttribute(key)
-		data[key] = validSetting(key, value) and value or default
+		if not validSetting(key, value) then value = default end
+		data[key] = value
 	end
 	local ok = pcall(function() store:SetAsync("player_" .. player.UserId, data) end)
 	if not ok then warn("[PlayerSettings] Could not save " .. player.Name) end

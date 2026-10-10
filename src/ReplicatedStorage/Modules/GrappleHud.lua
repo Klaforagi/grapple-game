@@ -83,6 +83,7 @@ function M.Init()
 	end
 	local function change(delta)
 		if not currentRope or not currentRope.Parent then return end
+		if delta > 0 then delta *= 2 end
 		local minimum = currentRope:GetAttribute("PlayerGrapple") and Config.playerMinDragDistance or Config.minRopeLength
 		displayLength = math.clamp(displayLength + delta, minimum, Config.maxRopeLength)
 		Remotes.ChangeLength:FireServer(displayLength)
@@ -95,7 +96,7 @@ function M.Init()
 	local lastFlop = -math.huge
 	local function flop()
 		if UIS:GetFocusedTextBox() or not FlopMotion.CanFlop(player.Character)
-			or os.clock() - lastFlop < (Config.flopCooldown or 1.5) then return end
+			or os.clock() - lastFlop < (Config.flopCooldown or 1.8) then return end
 		local camera = workspace.CurrentCamera
 		if not camera then return end
 		local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
@@ -106,10 +107,10 @@ function M.Init()
 		lastFlop = os.clock()
 		Remotes.Flop:FireServer(direction.Unit)
 	end
-	local flopButton = button(screen, "FLOP", UDim2.new(1, -160, 1, -150), UDim2.fromOffset(52, 52), flop)
-	flopButton.Name, flopButton.Visible = "FlopButton", false
-	flopButton.Font = Enum.Font.GothamBold
-	make("UIStroke", flopButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 1})
+	UIS.JumpRequest:Connect(function()
+		if UIS.TouchEnabled then flop() end
+	end)
+	local jumpFlop = {button = nil, connection = nil, forced = false}
 	CAS:BindActionAtPriority("GrappleHUD_Flop", function(_, state)
 		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 		if UIS:GetFocusedTextBox() or not humanoid or not humanoid:GetAttribute("Ragdolled") then
@@ -284,7 +285,7 @@ function M.Init()
 	end
 	Remotes.HasBeenGrappled.OnClientEvent:Connect(function(attacker, deadline)
 		clearIncoming()
-		if not attacker or not deadline then return end
+		if not attacker or typeof(deadline) ~= "number" then return end
 		beingTethered = true
 		tetherInfo.incoming = {name = attacker.Name, deadline = deadline}
 	end)
@@ -415,7 +416,8 @@ function M.Init()
 			timeKnob.Position = UDim2.fromScale(Lighting.ClockTime / 24, 0.5)
 		end
 		timeLabel.Text = string.format("Time of Day  %02d:%02d", math.floor(Lighting.ClockTime) % 24, math.floor((Lighting.ClockTime % 1) * 60))
-		applyShadows(typeof(savedShadows) == "boolean" and savedShadows or Lighting.GlobalShadows)
+		if typeof(savedShadows) ~= "boolean" then savedShadows = Lighting.GlobalShadows end
+		applyShadows(savedShadows)
 		applyMusicVolume(typeof(savedMusic) == "number" and savedMusic or 1)
 	end
 	for _, key in ipairs({"LocalClockTime", "ShadowsEnabled", "MusicVolume"}) do
@@ -423,13 +425,16 @@ function M.Init()
 	end
 	applySavedSettings()
 	local function grapple(target, rope, deadline, username)
-        tetherInfo.outgoing = target and deadline and {name = username or target.Name, deadline = deadline} or nil
+		tetherInfo.outgoing = target and typeof(deadline) == "number" and {name = username or target.Name, deadline = deadline} or nil
 		currentRope = rope
 		displayLength = rope and rope.Length or 0
 		shorten, lengthen = false, false
 	end
 	Remotes.GrappledPlayer.OnClientEvent:Connect(grapple)
-	Remotes.GrappledWall.OnClientEvent:Connect(grapple)
+	Remotes.GrappledWall.OnClientEvent:Connect(function(attachment, rope)
+		-- The wall event's third argument is a Beam, not a countdown deadline.
+		grapple(attachment, rope)
+	end)
 	CAS:BindActionAtPriority("GrappleHUD_TargetMode", function(_, state)
 		if UIS:GetFocusedTextBox() or not tool() or beingTethered then return Enum.ContextActionResult.Pass end
 		if state == Enum.UserInputState.Begin then toggleWallMode() end
@@ -492,15 +497,32 @@ function M.Init()
 		tetherPanel.Visible = #lines > 0
 		tetherPanel.Size = UDim2.fromOffset(380, #lines > 1 and 80 or 56)
 		tetherText.Text = table.concat(lines, "\n")
-		flopButton.Visible = UIS.TouchEnabled and FlopMotion.CanFlop(player.Character)
-		flopButton.Text = os.clock() - lastFlop < (Config.flopCooldown or 1.5) and "..." or "FLOP"
-		local touchGui = playerGui:FindFirstChild("TouchGui")
-		local jump = touchGui and touchGui:FindFirstChild("JumpButton", true)
-		if jump and jump:IsA("GuiObject") then
-			flopButton.Position = UDim2.fromOffset(jump.AbsolutePosition.X - screen.AbsolutePosition.X - 60,
-				jump.AbsolutePosition.Y - screen.AbsolutePosition.Y + (jump.AbsoluteSize.Y - 52) / 2)
-		end
 		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if UIS.TouchEnabled then
+			local touchGui = playerGui:FindFirstChild("TouchGui")
+			local jump = touchGui and touchGui:FindFirstChild("JumpButton", true)
+			if jump ~= jumpFlop.button then
+				if jumpFlop.connection then jumpFlop.connection:Disconnect() end
+				if jumpFlop.forced and jumpFlop.button and jumpFlop.button.Parent then jumpFlop.button.Visible = jumpFlop.visible end
+				jumpFlop.button, jumpFlop.connection, jumpFlop.forced = jump, nil, false
+				if jump and jump:IsA("GuiObject") then
+					-- Direct input still works while grapple controls disable normal jumping.
+					jumpFlop.connection = jump.InputBegan:Connect(function(input)
+						if input.UserInputType == Enum.UserInputType.Touch then flop() end
+					end)
+				end
+			end
+			local ragdolled = humanoid and humanoid.Health > 0 and humanoid:GetAttribute("Ragdolled")
+				and not humanoid:GetAttribute("CapsuleLocked")
+			if jump and jump:IsA("GuiObject") then
+				if ragdolled then
+					if not jumpFlop.forced then jumpFlop.visible = jump.Visible end
+					jumpFlop.forced, jump.Visible = true, true
+				elseif jumpFlop.forced then
+					jump.Visible, jumpFlop.forced = jumpFlop.visible, false
+				end
+			end
+		end
 		ragdollBorder.Enabled = humanoid ~= nil and humanoid.Health > 0
 			and humanoid:GetAttribute("Ragdolled") == true
 			and humanoid:GetAttribute("ManualRagdoll") == true

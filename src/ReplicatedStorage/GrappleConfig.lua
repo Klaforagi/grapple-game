@@ -84,10 +84,10 @@ return {
 	pushActiveDuration = 0.35,
 	pushRagdollDuration = 5,
 	pushSpeed = 26, -- Outward knockdown speed, studs/second (capped at 32)
-	flopCooldown = 1.5,
+	flopCooldown = 1.8,
 	flopMaxSpeed = 22, -- Flops are only available while moving slowly
 	flopHorizontalSpeed = 24,
-	flopUpSpeed = 38,
+	flopUpSpeed = 42,
 	flopLimbKickSpeed = 7,
 	flopSpinSpeed = 30, -- Radians/sec of the shoulder-axis roll; a short hop should land on the other side
 	flopSpinCap = 42,

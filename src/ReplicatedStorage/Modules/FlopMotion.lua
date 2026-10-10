@@ -53,7 +53,7 @@ function M.Apply(character, direction, simulator, variation)
 			+ direction * ((Config.flopHorizontalSpeed or 24) + flex * kick)
 			+ right * (side * kick)
 		if horizontal.Magnitude > 40 then horizontal = horizontal.Unit * 40 end
-		local upward = math.clamp(velocity.Y + (Config.flopUpSpeed or 38) + flex * kick, -22, 45)
+		local upward = math.clamp(velocity.Y + (Config.flopUpSpeed or 42) + flex * kick, -22, 49)
 		assembly.AssemblyLinearVelocity = horizontal + Vector3.new(0, upward, 0)
 		local strength = Config.flopSpinSpeed or 30
 		-- tipAxis is the shoulder line, so this term rolls stomach to back. The

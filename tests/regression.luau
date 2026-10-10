@@ -626,6 +626,9 @@ return function(sources)
 	attackerRoot.AssemblyLinearVelocity = V.new(12, 0, 0)
 	remotes.ChangeLength.OnServerEvent:Emit(attacker, -1e6)
 	assert(wallRope.Length == config.minRopeLength and not wallRope.WinchEnabled, "wall reel did not immediately set fixed length")
+	assert(wall:GetNetworkOwner() == attacker and not wall:GetNetworkOwnershipAuto(),
+		"unanchored wall target was not assigned to its grappler")
+	assert(wall:GetAttribute("WallGrappleOwner") == attacker.UserId, "wall simulation lock missing")
 	runService.Heartbeat:Emit(0.1)
 	assert(attackerRoot.AssemblyLinearVelocity.X == 12, "old wall velocity pull is still running")
 	now += 20
@@ -635,6 +638,8 @@ return function(sources)
 	assert(wallRope.Length == 80, "wall reel-out did not stick")
 	remotes.FireGrapple.OnServerEvent:Emit(attacker, V.new(0, 0, 100), V.new(0, 0, -100))
 	assert(wallRope.destroyed and not wall:FindFirstChildWhichIsA("RopeConstraint"), "wall click should release, not refire")
+	assert(wall:GetNetworkOwnershipAuto(), "wall release did not restore automatic ownership")
+	assert(wall:GetAttribute("WallGrappleOwner") == nil, "wall release retained its simulation lock")
 	now += 1
 	remotes.FireGrapple.OnServerEvent:Emit(attacker, V.new(0, 0, 100), V.new(0, 0, -100))
 	local unequipRope = assert(wall:FindFirstChildWhichIsA("RopeConstraint"))

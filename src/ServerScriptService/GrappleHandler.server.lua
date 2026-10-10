@@ -38,6 +38,7 @@ end
 local Active: {[Player]: {[string]: any}} = {}
 local GrappleOwners: {[number]: Player} = {}
 local WallMode: {[Player]: boolean} = {}
+local wallOwnership = {}
 local lastFire: {[Player]: number} = {}
 local cooldownUntil: {[Player]: number} = {}
 local function startCooldown(player, tool, duration)
@@ -192,6 +193,22 @@ disconnectRope = function(player: Player, skipCooldown: boolean?, preserveVictim
 
 	for _, connection in pairs(state.connections) do connection:Disconnect() end
 	if state.rope then state.rope:Destroy() end
+	local wallRoot = state.wallRoot
+	if wallRoot and wallOwnership[wallRoot] == state then
+		wallOwnership[wallRoot] = nil
+		if wallRoot.Parent then
+			wallRoot:SetAttribute("WallGrappleOwner", nil)
+			pcall(function()
+				if not wallRoot:CanSetNetworkOwnership() then return end
+				local previous = state.wallPreviousOwner
+				if state.wallWasAutomatic or (previous and previous.Parent ~= Players) then
+					wallRoot:SetNetworkOwnershipAuto()
+				else
+					wallRoot:SetNetworkOwner(previous)
+				end
+			end)
+		end
+	end
 	if state.ownerAttachment then state.ownerAttachment:Destroy() end
 	if state.impactAttachment then state.impactAttachment:Destroy() end
 	if state.hitbox then state.hitbox:Destroy() end
@@ -349,6 +366,22 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	local hitModel, hitHumanoid = characterFromPart(hit)
 	if not hitHumanoid then
 		if not WallMode[state.owner] then disconnectRope(state.owner) return end
+		local assembly = hit.AssemblyRootPart or hit
+		if not assembly.Anchored then
+			-- A physical assembly can only have one simulator. A new grapple
+			-- replaces the previous wall tether rather than fighting its owner.
+			local previous = wallOwnership[assembly]
+			if previous and Active[previous.owner] == previous then disconnectRope(previous.owner) end
+			pcall(function()
+				if not assembly:CanSetNetworkOwnership() then return end
+				state.wallWasAutomatic = assembly:GetNetworkOwnershipAuto()
+				state.wallPreviousOwner = assembly:GetNetworkOwner()
+				assembly:SetNetworkOwner(state.owner)
+				state.wallRoot = assembly
+				wallOwnership[assembly] = state
+				assembly:SetAttribute("WallGrappleOwner", state.owner.UserId)
+			end)
+		end
 		PlaySound(hit, sound("HitWall"))
 		local attachment = createImpactAttachment(state.owner, hit, position)
 		-- Wall ropes originate at the gun itself. FirePoint is part of the tool
