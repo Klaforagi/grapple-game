@@ -12,7 +12,7 @@ local KillCredit = require(ReplicatedStorage.Modules:WaitForChild("KillCredit"))
 local Remotes = require(ReplicatedStorage.Modules:WaitForChild("GrappleRemotes"))
 
 local PAGE_SIZE = 100
-local REFRESH_EVERY = 15
+local REFRESH_EVERY = 60
 
 local store, ordered
 local storeWarned = false
@@ -157,13 +157,27 @@ local function requestRefresh()
 	end)
 end
 
-local function writeRank(userId, kills)
-	if not ordered or type(userId) ~= "number" or kills <= 0 then return end
-	pcall(function()
-		ordered:UpdateAsync(tostring(userId), function(previous)
-			if kills > (tonumber(previous) or 0) then return math.floor(kills) end
+-- One ordered write per player each minute. A newer total replaces a queued one.
+local pendingRanks = {}
+local function queueRank(userId, kills)
+	if type(userId) ~= "number" then return end
+	kills = math.floor(tonumber(kills) or 0)
+	if kills <= 0 then return end
+	local queued = pendingRanks[userId]
+	if not queued or kills > queued then pendingRanks[userId] = kills end
+end
+
+local function flushRanks()
+	local batch = pendingRanks
+	pendingRanks = {}
+	if not ordered then return end
+	for userId, kills in pairs(batch) do
+		pcall(function()
+			ordered:UpdateAsync(tostring(userId), function(previous)
+				if kills > (tonumber(previous) or 0) then return kills end
+			end)
 		end)
-	end)
+	end
 end
 
 local function findEntry(userId)
@@ -217,8 +231,7 @@ local function persist(userId, killId, name)
 	end
 	inflight -= 1
 	if ok and type(err) == "table" then
-		writeRank(userId, math.max(0, math.floor(tonumber(err.kills) or 0)))
-		requestRefresh()
+		queueRank(userId, math.max(0, math.floor(tonumber(err.kills) or 0)))
 	elseif not ok then
 		warn("[Kills] Save failed for " .. tostring(userId) .. ": " .. tostring(err))
 	end
@@ -244,7 +257,6 @@ local function award(userId)
 	if entry then
 		entry.total += 1
 		publish(player, entry)
-		requestRefresh()
 	end
 	if store then persistLater(userId, killId, name) end
 end
@@ -294,8 +306,7 @@ local function applyQueued(player, entry, base)
 	entry.loaded = true
 	entry.total = math.max(0, base) + #queued
 	publish(player, entry)
-	writeRank(entry.userId, entry.total)
-	requestRefresh()
+	queueRank(entry.userId, entry.total)
 	local name = names[entry.userId]
 	for _, killId in ipairs(queued) do
 		persistLater(entry.userId, killId, name)
@@ -349,6 +360,7 @@ end
 RunService.Heartbeat:Connect(function()
 	if os.clock() >= nextRefresh then
 		nextRefresh = os.clock() + REFRESH_EVERY
+		flushRanks()
 		requestRefresh()
 	end
 end)
@@ -376,4 +388,5 @@ game:BindToClose(function()
 	end
 	local deadline = os.clock() + 20
 	while inflight > 0 and os.clock() < deadline do task.wait() end
+	flushRanks()
 end)

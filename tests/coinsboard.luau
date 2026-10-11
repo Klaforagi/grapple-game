@@ -31,7 +31,12 @@ return function(serverSource, clientSource)
 				ClassName = class, Name = name or class, Parent = parent, Visible = true, Enabled = true,
 				attributes = {}, DescendantAdded = signal(), ChildAdded = signal(),
 			}, {
-				__index = methods,
+				__index = function(object, key)
+					if key == "Parent" then return rawget(object, "Parent") end
+					local method = methods[key]
+					if method ~= nil then return method end
+					return methods.FindFirstChild(object, key)
+				end,
 				__newindex = function(object, key, value)
 					rawset(object, key, value)
 					if key ~= "Parent" or not value then return end
@@ -103,15 +108,16 @@ return function(serverSource, clientSource)
 		end
 	end
 
-	local function scenario(source, broken)
+	local function scenario(source, options)
+		options = options or {}
 		local now, session, orderedWrites = 0, 0, 0
-		local records, ranks, warnings = {}, {}, {}
+		local records, ranks = {}, {}
+		if options.record then records.player_77 = options.record end
 		local storeName, orderedName
-		local api = {}
 		local new = makeWorld()
 		local replicated = new("Folder", "ReplicatedStorage")
 		local longName = string.rep("A", 30)
-		local player = {Name = "TimerUser", DisplayName = longName, UserId = 77, attributes = {}}
+		local player = {Name = "CoinUser", DisplayName = longName, UserId = 77, attributes = {}}
 		function player:SetAttribute(key, value) self.attributes[key] = value end
 		function player:GetAttribute(key) return self.attributes[key] end
 		local players = {}
@@ -129,8 +135,9 @@ return function(serverSource, clientSource)
 				return {
 					GetAsync = function(_, key) return records[key] end,
 					UpdateAsync = function(_, key, transform)
-						records[key] = transform(records[key])
-						return records[key]
+						local updated = transform(records[key])
+						if updated ~= nil then records[key] = updated end
+						return updated
 					end,
 				}
 			end,
@@ -150,45 +157,43 @@ return function(serverSource, clientSource)
 					end,
 					UpdateAsync = function(_, key, transform)
 						local updated = transform(ranks[key])
-						if updated ~= nil then ranks[key] = updated orderedWrites += 1 end
+						if updated ~= nil then
+							ranks[key] = updated
+							orderedWrites += 1
+						end
 						return ranks[key]
 					end,
 				}
 			end,
 		}
-		if broken then
-			dataStores = {
-				GetDataStore = function() error("DataStore unavailable") end,
-				GetOrderedDataStore = function() error("DataStore unavailable") end,
-			}
+		if options.broken then
+			dataStores.GetOrderedDataStore = function() error("DataStore unavailable") end
 		end
 		local services = {
 			Players = setmetatable(players, {__index = {PlayerAdded = {Connect = function() end},
-				PlayerRemoving = {Connect = function(_, fn) api.leave = fn end}}}),
+				PlayerRemoving = {Connect = function() end}}}),
 			DataStoreService = dataStores,
-			HttpService = {GenerateGUID = function() session += 1 return tostring(session) end},
-			RunService = {Heartbeat = {Connect = function(_, fn) api.beat = fn end}},
 			ReplicatedStorage = replicated,
+			HttpService = {GenerateGUID = function() session += 1 return "coin-" .. tostring(session) end},
+			RunService = {Heartbeat = {Connect = function(_, fn) apiBeat(fn) end}},
 		}
+		local beat
+		function apiBeat(fn) beat = fn end
 		local env = setmetatable({
-			warn = function(message) table.insert(warnings, tostring(message)) end,
 			game = {GetService = function(_, name) return assert(services[name], name) end,
-				BindToClose = function(_, fn) api.close = fn end},
+				BindToClose = function() end},
 			Instance = {new = new},
 			os = {clock = function() return now end, time = function() return 1000 + now end},
 			task = {spawn = function(fn, ...) fn(...) end, wait = function() error("unexpected retry") end},
 		}, {__index = getfenv()})
-		local function boot()
-			local fn = assert(loadstring(source))
-			setfenv(fn, env)
-			fn()
-		end
-		boot()
-		local function board() return replicated:FindFirstChild("PlayedTimeBoard") end
+		local fn = assert(loadstring(source))
+		setfenv(fn, env)
+		fn()
+		local function board() return replicated:FindFirstChild("CoinsBoard") end
 		return {
-			boot = boot, player = player, records = records, ranks = ranks, warnings = warnings,
-			beat = function() api.beat() end, leave = function() api.leave(player) end,
-			close = function() api.close() end, setTime = function(t) now = t end,
+			player = player, records = records, ranks = ranks,
+			beat = function() beat() end,
+			setTime = function(t) now = t end,
 			published = function() return publishedOf(board()) end,
 			writes = function() return orderedWrites end,
 			names = function() return storeName, orderedName end,
@@ -197,118 +202,117 @@ return function(serverSource, clientSource)
 
 	local live = scenario(serverSource)
 	local storeName, orderedName = live.names()
-	expect(storeName, "GrapplePlayedTime_v1", "played time store")
-	expect(orderedName, "GrapplePlayedTimeRank_v1", "played time ranking")
-	live.beat()
-	expect(#live.published(), 0, "empty board count")
-	expect(live.player.attributes.PlayedSeconds, 0, "starting played time")
-	live.ranks["5"], live.ranks["3"], live.ranks["9"], live.ranks["-8"] = 5000, 40, 40, 100
-	live.setTime(15)
-	live.beat()
-	expect(live.player.attributes.PlayedSeconds, 15, "attribute before the board minute")
-	expect(#live.published(), 0, "board refreshed before a minute")
-	assert(live.records["player_77"] == nil, "leaderboard refresh wrote the save early")
-	live.setTime(60)
+	expect(storeName, "GrappleCoins_v1", "coins store")
+	expect(orderedName, "GrappleCoinsRank_v1", "coins ranking")
+	expect(#live.published(), 0, "empty coins board")
+	expect(live.player.attributes.Coins, 0, "held coins before a minute")
+	assert(live.player.attributes.CoinsEarned == nil, "earned coins set before any were earned")
+	live.ranks["5"], live.ranks["3"], live.ranks["9"], live.ranks["-8"] = 10, 4, 4, 8
+	live.setTime(20)
 	live.beat()
 	local page = live.published()
-	expect(#page, 5, "merged ranking count")
-	local ids, values = {}, {}
-	for index, child in ipairs(page) do
-		ids[index], values[index] = child:GetAttribute("UserId"), child.Value
-	end
-	expect(ids[1], 5, "first place") expect(values[1], 5000, "first seconds")
+	expect(#page, 4, "saved ranking count")
+	expect(page[1]:GetAttribute("UserId"), 5, "first place")
+	expect(page[1].Value, 10, "first coins")
 	expect(page[1]:GetAttribute("DisplayName"), "Ace", "offline name")
 	expect(page[1]:GetAttribute("Username"), "Ace", "offline username")
-	expect(ids[2], -8, "second place") expect(page[2]:GetAttribute("DisplayName"), "Player", "studio username")
+	expect(page[2]:GetAttribute("UserId"), -8, "second place")
+	expect(page[2]:GetAttribute("DisplayName"), "Player", "studio username")
 	expect(page[2]:GetAttribute("Username"), "Player", "missing username")
-	expect(ids[3], 77, "live player rank") expect(values[3], 60, "saved live seconds")
-	expect(page[3]:GetAttribute("DisplayName"), string.rep("A", 24), "truncated name")
-	expect(page[3]:GetAttribute("Username"), "TimerUser", "live username")
-	expect(ids[4], 3, "tied user") expect(ids[5], 9, "later tied user")
-	expect(values[4], 40, "tie seconds") expect(values[5], 40, "tie seconds")
-	expect(live.records["player_77"].seconds, 60, "first checkpoint")
-	expect(live.records["player_77"].sessions["1"].seconds, 60, "session checkpoint")
-	expect(live.records["player_77"].name, string.rep("A", 30), "stored display name")
-	expect(live.records["player_77"].username, "TimerUser", "stored username")
-	expect(live.ranks["77"], 60, "ordered rank")
+	expect(page[3]:GetAttribute("UserId"), 3, "tied user")
+	expect(page[4]:GetAttribute("UserId"), 9, "later tied user")
+	expect(live.player.attributes.Coins, 0, "coin awarded before a full minute")
+	live.setTime(60)
+	live.beat()
+	expect(live.player.attributes.Coins, 1, "held coins after a minute")
+	expect(live.player.attributes.CoinsEarned, 1, "earned coins after a minute")
+	expect(live.records.player_77.coins, 1, "saved held coins")
+	expect(live.records.player_77.earned, 1, "saved earned coins")
+	expect(live.records.player_77.name, string.rep("A", 30), "stored display name")
+	expect(live.records.player_77.username, "CoinUser", "stored username")
+	expect(live.writes(), 0, "coin wrote the ordered rank early")
+	assert(byId(live.published(), 77) == nil, "board refreshed on the coin")
+	live.setTime(80)
+	live.beat()
+	expect(live.ranks["77"], 1, "ordered rank")
 	expect(live.writes(), 1, "ordered writes")
-	expect(live.player.attributes.PlayedSeconds, 60, "attribute after save")
-	live.setTime(90)
-	live.beat()
-	expect(live.records["player_77"].seconds, 60, "store between checkpoints")
-	expect(byId(live.published(), 77).Value, 60, "board refreshed between minutes")
-	expect(live.player.attributes.PlayedSeconds, 90, "attribute between checkpoints")
-	expect(live.writes(), 1, "ordered write between minutes")
+	local row = byId(live.published(), 77)
+	expect(row.Value, 1, "board after a coin")
+	expect(row:GetAttribute("DisplayName"), string.rep("A", 24), "truncated name")
+	expect(row:GetAttribute("Username"), "CoinUser", "live username")
 	live.setTime(120)
 	live.beat()
-	expect(live.records["player_77"].seconds, 120, "second checkpoint")
-	expect(live.records["player_77"].sessions["1"].seconds, 120, "same session advanced")
-	expect(live.ranks["77"], 120, "ordered rank advanced")
-	expect(live.ranks["5"], 5000, "higher rank overwritten")
-	expect(live.writes(), 2, "ordered writes after second save")
-	expect(byId(live.published(), 77).Value, 120, "board after second save")
-	live.leave()
-	expect(live.records["player_77"].seconds, 120, "leave duplicated the checkpoint")
-	live.ranks["77"] = 10000
-	live.setTime(120)
-	live.boot()
-	expect(live.player.attributes.PlayedSeconds, 120, "rejoin loaded total")
-	live.setTime(180)
+	expect(live.player.attributes.Coins, 2, "second minute held")
+	expect(live.player.attributes.CoinsEarned, 2, "second minute earned")
+	expect(live.records.player_77.earned, 2, "second minute save")
+	expect(live.writes(), 1, "second coin wrote the ordered rank early")
+	expect(byId(live.published(), 77).Value, 1, "board refreshed between minutes")
+	live.setTime(140)
 	live.beat()
-	expect(live.records["player_77"].seconds, 180, "rejoin checkpoint")
-	expect(live.records["player_77"].sessions["1"].seconds, 120, "old session kept")
-	expect(live.records["player_77"].sessions["2"].seconds, 60, "new session checkpoint")
-	expect(live.ranks["77"], 10000, "ordered rank decreased")
-	expect(live.writes(), 2, "lower total still wrote")
-	expect(live.player.attributes.PlayedSeconds, 180, "rejoin attribute")
+	expect(live.ranks["77"], 2, "ordered rank advanced")
+	expect(live.ranks["5"], 10, "higher rank overwritten")
+	expect(live.writes(), 2, "ordered writes after the next minute")
+	expect(byId(live.published(), 77).Value, 2, "board after the second minute")
+	for index = 1, 110 do live.ranks[tostring(2000 + index)] = 1000 + index end
 	live.setTime(200)
-	live.close()
-	expect(live.records["player_77"].seconds, 200, "shutdown save")
-	expect(live.records["player_77"].sessions["2"].seconds, 80, "shutdown checkpoint")
-	expect(live.ranks["77"], 10000, "shutdown lowered the rank")
-	live.close()
-	expect(live.records["player_77"].seconds, 200, "second shutdown duplicated time")
-	expect(#live.warnings, 0, "unexpected warning")
-	for index = 1, 110 do live.ranks[tostring(2000 + index)] = 100000 + index end
-	live.setTime(240)
 	live.beat()
 	page = live.published()
 	expect(#page, 100, "ranking cap")
 	expect(page[1]:GetAttribute("UserId"), 2110, "capped first place")
-	expect(page[1].Value, 100110, "capped first seconds")
-	assert(byId(page, 77) == nil, "full board kept a lower live total")
-	expect(live.records["player_77"].seconds, 200, "cap refresh saved again")
+	expect(page[1].Value, 1110, "capped first coins")
+	assert(byId(page, 77) == nil, "full board kept a lower total")
 
-	local studio = scenario(serverSource, true)
-	studio.beat()
+	local legacy = scenario(serverSource, {record = {coins = 6}})
+	expect(legacy.player.attributes.Coins, 6, "legacy held coins")
+	expect(legacy.player.attributes.CoinsEarned, 6, "legacy earned coins")
+	legacy.beat()
+	expect(byId(legacy.published(), 77).Value, 6, "legacy board")
+	legacy.setTime(60)
+	legacy.beat()
+	expect(legacy.player.attributes.Coins, 7, "legacy held after a minute")
+	expect(legacy.player.attributes.CoinsEarned, 7, "legacy earned after a minute")
+	expect(legacy.records.player_77.coins, 7, "legacy save doubled held")
+	expect(legacy.records.player_77.earned, 7, "legacy save doubled earned")
+
+	local spent = scenario(serverSource, {record = {coins = 0, earned = 10}})
+	expect(spent.player.attributes.Coins, 0, "spent held coins")
+	expect(spent.player.attributes.CoinsEarned, 10, "spent earned coins")
+	spent.beat()
+	expect(byId(spent.published(), 77).Value, 10, "board ignores held coins")
+	spent.setTime(60)
+	spent.beat()
+	expect(spent.player.attributes.Coins, 1, "held after earning with an empty balance")
+	expect(spent.player.attributes.CoinsEarned, 11, "earned after spending")
+	expect(spent.records.player_77.coins, 1, "saved held after spending")
+	expect(spent.records.player_77.earned, 11, "saved earned after spending")
+	expect(byId(spent.published(), 77).Value, 11, "board after earning more")
+
+	local studio = scenario(serverSource, {broken = true})
 	expect(#studio.published(), 0, "studio empty board")
-	studio.setTime(15)
-	studio.beat()
-	expect(studio.player.attributes.PlayedSeconds, 15, "studio played time")
-	expect(#studio.published(), 0, "studio board refreshed before a minute")
 	studio.setTime(60)
 	studio.beat()
-	expect(studio.player.attributes.PlayedSeconds, 60, "studio minute")
+	expect(studio.player.attributes.Coins, 1, "studio held coins")
+	expect(studio.player.attributes.CoinsEarned, 1, "studio earned coins")
 	page = studio.published()
 	expect(#page, 1, "studio personal row")
-	expect(page[1].Value, 60, "studio seconds")
+	expect(page[1].Value, 1, "studio coins")
 	expect(page[1]:GetAttribute("DisplayName"), string.rep("A", 24), "studio name")
-	expect(page[1]:GetAttribute("Username"), "TimerUser", "studio username")
-	assert(studio.records["player_77"] == nil, "studio save wrote without a store")
-	studio.close()
-	studio.close()
-	assert(studio.records["player_77"] == nil, "studio shutdown wrote without a store")
-	expect(#studio.warnings, 0, "studio warning")
+	expect(page[1]:GetAttribute("Username"), "CoinUser", "studio username")
+	assert(studio.ranks["77"] == nil, "studio rank wrote without an ordered store")
 
 	local new = makeWorld()
 	local workspace = new("Workspace", "Workspace")
 	local replicated = new("Folder", "ReplicatedStorage")
-	local board = new("Folder", "PlayedTimeBoard", replicated)
-	local player = new("Player", "TimerUser")
+	local board = new("Folder", "CoinsBoard", replicated)
+	local player = new("Player", "CoinUser")
 	player.UserId = 77
-	player.DisplayName = "Timer"
+	player.DisplayName = "Coin"
 	local playerGui = new("PlayerGui", "PlayerGui", player)
-	local model = new("Model", "LeaderboardPlayedTime", workspace)
+	local played = new("Model", "LeaderboardPlayedTime", workspace)
+	new("Part", "Screen", played)
+	local killsBoard = new("Model", "LeaderboardKills", workspace)
+	new("Part", "Screen", killsBoard)
+	local model = new("Model", "LeaderboardCoins", workspace)
 	local trim = new("Part", "Trim", model)
 	trim.Size = {X = 100, Y = 80, Z = 4}
 	model.PrimaryPart = trim
@@ -351,11 +355,11 @@ return function(serverSource, clientSource)
 		local listBottom = list.Position.Y.Scale + list.Size.Y.Scale
 		local youTop = you.Position.Y.Scale - you.Size.Y.Scale
 		assert(youTop - listBottom > 0.01, "personal card overlaps the scrolling list")
-		assert(you:FindFirstChild("Rank") and you:FindFirstChild("PlayerName") and you:FindFirstChild("Time"),
+		assert(you:FindFirstChild("Rank") and you:FindFirstChild("PlayerName") and you:FindFirstChild("Coins"),
 			"personal card labels")
 		return list, you
 	end
-	local gui = playerGui:FindFirstChild("PlayedTime")
+	local gui = playerGui:FindFirstChild("Coins")
 	assert(gui and gui:IsA("SurfaceGui") and gui.Parent == playerGui, "board gui parent")
 	assert(gui.Adornee == screen, "named screen lost to the larger trim")
 	expect(gui.Face, "Back", "board face")
@@ -364,28 +368,24 @@ return function(serverSource, clientSource)
 	expect(gui.PixelsPerStud, 42, "board scale")
 	expect(oldGui.Enabled, false, "placeholder surface")
 	expect(decoy.Enabled, true, "unrelated surface")
-	assert(screen:FindFirstChild("PlayedTime") == nil, "shared surface was parented to the part")
+	assert(screen:FindFirstChild("Coins") == nil, "shared surface was parented to the part")
 	local root = gui:FindFirstChild("Board")
-	expect(root:FindFirstChild("Header"):FindFirstChild("Title").Text, "PLAYED TIME", "title")
+	expect(root:FindFirstChild("Header"):FindFirstChild("Title").Text, "COINS", "title")
 	expect(root:FindFirstChild("Header"):FindFirstChild("Subtitle").Text, "ALL-TIME RANKING", "subtitle")
 	local list, you = pinned(root)
 	local unranked = you:FindFirstChild("Rank").Text
-	assert(you:FindFirstChild("Tag") == nil, "personal card still says YOUR TIME")
+	assert(you:FindFirstChild("Tag") == nil, "personal card has a caption")
 	assert(you.Size.Y.Scale < 0.14 and you.Size.Y.Scale > 0.08, "personal card should be slightly shorter")
 	assert(you.Position.Y.Scale >= 0.98, "personal card should sit on the bottom")
-	expect(list:FindFirstChild("Empty").Text, "No times yet", "empty label")
+	expect(list:FindFirstChild("Empty").Text, "No coins yet", "empty label")
 	expect(list:FindFirstChild("Empty").Visible, true, "empty state")
-	expect(you:FindFirstChild("PlayerName").Text, "Timer", "personal name")
-	expect(you:FindFirstChild("Time").Text, "0s", "starting personal time")
+	expect(you:FindFirstChild("PlayerName").Text, "Coin", "personal name")
+	expect(you:FindFirstChild("Coins").Text, "0", "starting personal coins")
 	expect(you:FindFirstChild("Rank").Text, unranked, "unranked label")
-	player:SetAttribute("PlayedSeconds", 45)
-	expect(you:FindFirstChild("Time").Text, "45s", "seconds format")
-	player:SetAttribute("PlayedSeconds", 125)
-	expect(you:FindFirstChild("Time").Text, "2m 05s", "minutes format")
-	player:SetAttribute("PlayedSeconds", 3661)
-	expect(you:FindFirstChild("Time").Text, "1h 01m", "hours format")
-	player:SetAttribute("PlayedSeconds", 90000)
-	expect(you:FindFirstChild("Time").Text, "1d 1h", "days format")
+	player:SetAttribute("Coins", 99)
+	expect(you:FindFirstChild("Coins").Text, "0", "held coins changed the board")
+	player:SetAttribute("CoinsEarned", 12)
+	expect(you:FindFirstChild("Coins").Text, "12", "personal earned coins")
 	local function rowFor(parent, userId)
 		local needle = "id=" .. userId .. "&"
 		for _, child in ipairs(parent:GetChildren()) do
@@ -398,67 +398,62 @@ return function(serverSource, clientSource)
 		for _, child in ipairs(list:GetChildren()) do if child.Name == "Row" then count += 1 end end
 		return count
 	end
-	local function publish(count)
-		for _, child in ipairs(board:GetChildren()) do if child:IsA("IntValue") then child:Destroy() end end
-		for index = 1, count do
-			local value = new("IntValue", string.format("Rank%02d", index), board)
-			value.Value = 1000 - index
-			value:SetAttribute("UserId", 1000 + index)
-			value:SetAttribute("DisplayName", "P" .. index)
-		end
-		board:SetAttribute("Version", (board:GetAttribute("Version") or 0) + 1)
-	end
 	local ace = new("IntValue", "Rank01", board)
-	ace.Value = 5000
+	ace.Value = 20
 	ace:SetAttribute("UserId", 5)
 	ace:SetAttribute("DisplayName", "Ace")
 	ace:SetAttribute("Username", "AceUser")
 	local selfEntry = new("IntValue", "Rank02", board)
-	selfEntry.Value = 15
+	selfEntry.Value = 4
 	selfEntry:SetAttribute("UserId", 77)
 	selfEntry:SetAttribute("DisplayName", "Listed")
-	selfEntry:SetAttribute("Username", "TimerUser")
+	selfEntry:SetAttribute("Username", "CoinUser")
 	board:SetAttribute("Version", 1)
-	local row = rowFor(list, 77)
-	assert(row and row.Parent == list and row ~= you, "local player missing from the scrolling list")
-	expect(row:FindFirstChild("Rank").Text, "#2", "list rank")
-	expect(row:FindFirstChild("PlayerName").Text, "Listed", "list name")
-	expect(row:FindFirstChild("Username").Text, "@TimerUser", "list username")
-	expect(row.Size.Y.Offset >= 90, true, "list row height")
-	expect(row:FindFirstChild("PlayerName").TextSize >= 30, true, "list name size")
-	expect(row:FindFirstChild("Time").TextSize >= 30, true, "list time size")
-	expect(row:FindFirstChild("Time").Text, "15s", "list time")
+	local listed = rowFor(list, 77)
+	assert(listed and listed.Parent == list and listed ~= you, "local player missing from the scrolling list")
+	expect(listed:FindFirstChild("Rank").Text, "#2", "list rank")
+	expect(listed:FindFirstChild("PlayerName").Text, "Listed", "list name")
+	expect(listed:FindFirstChild("Username").Text, "@CoinUser", "list username")
+	expect(listed.Size.Y.Offset >= 90, true, "list row height")
+	expect(listed:FindFirstChild("PlayerName").TextSize >= 30, true, "list name size")
+	expect(listed:FindFirstChild("Coins").TextSize >= 30, true, "list coins size")
+	expect(listed:FindFirstChild("Coins").Text, "4", "list coins")
 	expect(you:FindFirstChild("Rank").Text, "#2", "personal rank")
-	expect(you:FindFirstChild("PlayerName").Text, "Timer", "personal name while listed")
-	expect(you:FindFirstChild("Time").Text, "1d 1h", "personal time while listed")
+	expect(you:FindFirstChild("PlayerName").Text, "Coin", "personal name while listed")
+	expect(you:FindFirstChild("Coins").Text, "12", "personal coins while listed")
+	player:SetAttribute("Coins", 3)
+	expect(you:FindFirstChild("Coins").Text, "12", "held coins replaced earned coins")
 	expect(list:FindFirstChild("Empty").Visible, false, "empty hidden")
 	expect(you.Parent, root, "listing the player reparented their card")
-	publish(99)
-	expect(rowCount(), 99, "row rebuild count")
-	expect(you:FindFirstChild("Rank").Text, unranked, "partial board rank")
-	expect(you.Parent, root, "rebuild reparented the personal card")
-	expect(you:FindFirstChild("Time").Text, "1d 1h", "rebuild cleared personal time")
-	publish(100)
+	for _, child in ipairs(board:GetChildren()) do if child:IsA("IntValue") then child:Destroy() end end
+	for index = 1, 100 do
+		local value = new("IntValue", string.format("Rank%03d", index), board)
+		value.Value = 1000 - index
+		value:SetAttribute("UserId", 1000 + index)
+		value:SetAttribute("DisplayName", "P" .. index)
+		value:SetAttribute("Username", "User" .. index)
+	end
+	board:SetAttribute("Version", 2)
 	expect(rowCount(), 100, "full list count")
 	expect(you:FindFirstChild("Rank").Text, "100+", "rank past the page")
 	expect(you.Parent, root, "full list absorbed the personal card")
 	for _, child in ipairs(board:GetChildren()) do if child:IsA("IntValue") then child:Destroy() end end
-	board:SetAttribute("Version", 9)
+	board:SetAttribute("Version", 3)
 	expect(rowCount(), 0, "cleared rows")
 	expect(list:FindFirstChild("Empty").Visible, true, "empty restored")
 	expect(you:FindFirstChild("Rank").Text, unranked, "cleared rank")
-	expect(you.Parent, root, "clear destroyed the personal card")
-	player.DisplayName = ""
-	player:SetAttribute("PlayedSeconds", 90001)
-	expect(you:FindFirstChild("PlayerName").Text, "TimerUser", "blank display name")
-	expect(you:FindFirstChild("Time").Text, "1d 1h", "extra second format")
-	local model2 = new("Model", "LeaderboardPlayedTime")
+	local boards = {}
+	for _, child in ipairs(playerGui:GetChildren()) do
+		if child:IsA("SurfaceGui") and child.Name == "Coins" then table.insert(boards, child) end
+	end
+	expect(#boards, 1, "other models mounted a coins board")
+	local model2 = new("Model", "LeaderboardCoins")
 	local display = new("Part", "Display", model2)
 	display.Size = {X = 10, Y = 16, Z = 1}
 	model2.Parent = workspace
-	local boards = {}
+	boards = {}
 	for _, child in ipairs(playerGui:GetChildren()) do
-		if child:IsA("SurfaceGui") and child.Name == "PlayedTime" then table.insert(boards, child) end
+		if child:IsA("SurfaceGui") and child.Name == "Coins" then table.insert(boards, child) end
 	end
 	expect(#boards, 2, "streamed board")
 	for _, other in ipairs(boards) do

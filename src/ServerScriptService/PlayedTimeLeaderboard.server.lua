@@ -6,7 +6,7 @@ local HttpService = game:GetService("HttpService")
 
 local PAGE_SIZE = 100
 local SAVE_EVERY = 60
-local REFRESH_EVERY = 15
+local REFRESH_EVERY = 60
 
 local store, ordered
 pcall(function()
@@ -144,6 +144,29 @@ local function requestRefresh()
 	end)
 end
 
+-- One ordered write per player each minute. A newer total replaces a queued one.
+local pendingRanks = {}
+local function queueRank(userId, total)
+	if type(userId) ~= "number" then return end
+	total = math.floor(tonumber(total) or 0)
+	if total <= 0 then return end
+	local queued = pendingRanks[userId]
+	if not queued or total > queued then pendingRanks[userId] = total end
+end
+
+local function flushRanks()
+	local batch = pendingRanks
+	pendingRanks = {}
+	if not ordered then return end
+	for userId, total in pairs(batch) do
+		pcall(function()
+			ordered:UpdateAsync(tostring(userId), function(previous)
+				if total > (tonumber(previous) or 0) then return total end
+			end)
+		end)
+	end
+end
+
 local function save(player, state)
 	while state.saving do task.wait() end
 	local session = currentSession(state)
@@ -177,14 +200,7 @@ local function save(player, state)
 		state.session = currentSession(state)
 		player:SetAttribute("PlayedSeconds", state.base + state.session)
 		remember(player.UserId, playerDisplay(player), player.Name)
-		if ordered and data.seconds > 0 then
-			pcall(function()
-				ordered:UpdateAsync(tostring(player.UserId), function(previous)
-					if data.seconds > (tonumber(previous) or 0) then return math.floor(data.seconds) end
-				end)
-			end)
-		end
-		requestRefresh()
+		queueRank(player.UserId, data.seconds)
 	else
 		warn("[PlayedTime] Save failed for " .. player.Name .. ": " .. tostring(data))
 	end
@@ -236,6 +252,7 @@ RunService.Heartbeat:Connect(function()
 	end
 	if os.clock() >= nextRefresh then
 		nextRefresh = os.clock() + REFRESH_EVERY
+		flushRanks()
 		requestRefresh()
 	end
 end)
@@ -258,4 +275,5 @@ game:BindToClose(function()
 		end)
 	end
 	while remaining > 0 do task.wait() end
+	flushRanks()
 end)
