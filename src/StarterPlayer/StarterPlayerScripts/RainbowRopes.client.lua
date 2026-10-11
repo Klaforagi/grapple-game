@@ -2,11 +2,23 @@ local Palettes = require(game:GetService("ReplicatedStorage"):WaitForChild("Item
 local RunService = game:GetService("RunService")
 local beams = {}
 local parts = {}
+local function paintPart(part, hue)
+	local palette = part:GetAttribute("RainbowPalette")
+	part.Color = palette == "Bomb" and Palettes.BombRainbow(hue)
+		or palette == "Gold" and Palettes.GoldAt(hue)
+		or Palettes.RainbowAt(hue)
+end
 local function watch(instance)
 	if instance:IsA("Beam") then beams[instance] = {active = false, original = instance.Color} end
 	if instance:IsA("BasePart") and (instance:GetAttribute("RainbowPart") ~= nil
 		or instance:FindFirstAncestorOfClass("Tool")) then
-		parts[instance] = {active = false, original = instance.Color}
+		local original = instance.Color
+		local rainbow = instance:GetAttribute("RainbowPart") == true
+		-- Paint before the first frame so a fresh part does not flash its fallback color.
+		if rainbow then
+			paintPart(instance, (workspace:GetServerTimeNow() * Palettes.CycleSpeed) % 1)
+		end
+		parts[instance] = {active = rainbow, original = original}
 	end
 end
 workspace.DescendantAdded:Connect(watch)
@@ -25,10 +37,7 @@ RunService.RenderStepped:Connect(function(dt)
 		else
 			if not state.active then state.original = part.Color end
 			state.active = true
-			local palette = part:GetAttribute("RainbowPalette")
-			part.Color = palette == "Bomb" and Palettes.BombRainbow(hue)
-				or palette == "Gold" and Palettes.GoldAt(hue)
-				or Palettes.RainbowAt(hue)
+			paintPart(part, hue)
 		end
 	end
 	local sequence, goldSequence

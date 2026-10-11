@@ -18,7 +18,15 @@ local lastPush = {}
 local settlingPushes = {}
 local activePushes = {}
 
-local bombColors = require(Storage:WaitForChild("ItemColors")).Bomb
+local Palettes = require(Storage:WaitForChild("ItemColors"))
+local bombColors = Palettes.Bomb
+
+local function bombPaint(name)
+	if name == "Rainbow" then
+		return Palettes.BombRainbow((workspace:GetServerTimeNow() * Palettes.CycleSpeed) % 1)
+	end
+	return bombColors[name]
+end
 
 local function sphere(name, size, color)
 	local part = Instance.new("Part")
@@ -81,9 +89,10 @@ local function giveBomb(player, character)
 	tool.ToolTip = "Throw a bomb / " .. Config.bombFuse .. " second fuse"
 	tool.CanBeDropped = false
 	tool:SetAttribute("BombTool", true)
-	local handle = sphere("Handle", 1.2, bombColors[player:GetAttribute("BombColor")])
+	local colorName = player:GetAttribute("BombColor")
+	local handle = sphere("Handle", 1.2, bombPaint(colorName))
 	handle:SetAttribute("RainbowPalette", "Bomb")
-handle:SetAttribute("RainbowPart", player:GetAttribute("BombColor") == "Rainbow")
+	handle:SetAttribute("RainbowPart", colorName == "Rainbow")
 	handle.CanCollide, handle.CanTouch, handle.CanQuery, handle.Massless = false, false, false, true
 	handle.Parent = tool
 	local banana
@@ -324,13 +333,13 @@ end
 
 local function explode(bomb, position, attacker, when)
 	-- Remove the sticky weld before any victim is ragdolled/launched.
-	local bombColor = bomb:GetAttribute("ExplosionColor") or bomb.Color
-	local rainbow = bomb:GetAttribute("RainbowPart")
+	local rainbow = bomb:GetAttribute("RainbowPart") == true
+	local bombColor = rainbow and bombPaint("Rainbow") or bomb:GetAttribute("ExplosionColor") or bomb.Color
 	bomb:Destroy()
 	local radius = Config.bombRadius
 	local flash = sphere("BombBlast", 1, bombColor)
 	flash:SetAttribute("RainbowPalette", "Bomb")
-flash:SetAttribute("RainbowPart", rainbow)
+	flash:SetAttribute("RainbowPart", rainbow)
 	flash.Anchored, flash.CanCollide, flash.CanTouch, flash.CanQuery = true, false, false, false
 	flash.Position, flash.Transparency = position, 0.35
 	flash.Parent = workspace
@@ -453,14 +462,15 @@ Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 	local now = os.clock()
 	if now - (lastThrow[player] or -math.huge) < Config.bombCooldown then return end
 	lastThrow[player] = now
-	local bomb = sphere("ThrownBomb", 1.2, bombColors[player:GetAttribute("BombColor")])
-	if player:GetAttribute("BombColor") == "Banana" then
+	local colorName = player:GetAttribute("BombColor")
+	local bomb = sphere("ThrownBomb", 1.2, bombPaint(colorName))
+	if colorName == "Banana" then
 		local banana = bananaPart("ThrownBomb")
 		if banana then bomb:Destroy() bomb = banana end
 		bomb:SetAttribute("ExplosionColor", bombColors.Banana)
 	end
 	bomb:SetAttribute("RainbowPalette", "Bomb")
-bomb:SetAttribute("RainbowPart", player:GetAttribute("BombColor") == "Rainbow")
+	bomb:SetAttribute("RainbowPart", colorName == "Rainbow")
 	local handle = tool:FindFirstChild("Handle")
 	bomb.Position = handle and handle:IsA("BasePart") and handle.Position or root.Position + Vector3.new(0, 1.5, 0)
 	-- This is a cosmetic shell driven by FastCast, never a competing physics body.
