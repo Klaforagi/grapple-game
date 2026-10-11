@@ -3,6 +3,7 @@ local RunService = game:GetService("RunService")
 local storage = game:GetService("ReplicatedStorage")
 local names = {"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "ThrowBomb", "EquipRagdollTool", "SetGrappleColor", "SetPlayerSetting", "ServerRestartNotice", "FallLanded", "KillFeed"}
 local folder
+table.insert(names, "SoccerAim")
 table.insert(names, "UsePush")
 table.insert(names, "Flop")
 table.insert(names, "ApplyFlop")

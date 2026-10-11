@@ -33,7 +33,7 @@ return {
 	HookSpeed = 80, -- Studs per second
 	-- The cooldown after it unhooks
 	GrappleCooldown = 0.1,
-	playerReleaseCooldown = 0.3, -- Ignore shoot-to-release briefly after catching a player
+	playerReleaseCooldown = 0.75, -- Ignore another click or tap briefly after catching a player
 	playerOwnershipReleaseDelay = 0.2, -- Keep the last simulator and victim controls locked after detaching
 	playerReleaseRagdollDuration = 1, -- Click/tap release keeps an auto-ragdolled victim loose to preserve momentum
 	

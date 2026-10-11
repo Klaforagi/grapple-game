@@ -1,6 +1,8 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Remotes = require(ReplicatedStorage.Modules:WaitForChild("GrappleRemotes"))
 
 local KICK_COOLDOWN = 1
 local KICK_SPEED = 40
@@ -8,6 +10,32 @@ local KICK_LIFT = 38 / 1.05
 local ROLL_DRAG = 0.7 -- Higher values make grounded balls slow down sooner.
 local STOP_SPEED = 0.6
 local balls = {}
+local aims = {}
+
+local function flatDirection(vector)
+	if typeof(vector) ~= "Vector3" then return end
+	if vector.X ~= vector.X or vector.Y ~= vector.Y or vector.Z ~= vector.Z then return end
+	local flat = Vector3.new(vector.X, 0, vector.Z)
+	if flat.Magnitude < 0.01 or flat.Magnitude > 1.5 then return end
+	return flat.Unit
+end
+
+-- Camera yaw from the owning client. Character facing is only a fallback, because
+-- standing still leaves the body pointed somewhere other than where the camera looks.
+Remotes.SoccerAim.OnServerEvent:Connect(function(player, direction)
+	local flat = flatDirection(direction)
+	if not flat then return end
+	aims[player] = {direction = flat, at = os.clock()}
+end)
+Players.PlayerRemoving:Connect(function(player)
+	aims[player] = nil
+end)
+
+local function aimDirection(player, root)
+	local aim = aims[player]
+	if aim and os.clock() - aim.at <= 0.5 then return aim.direction end
+	return flatDirection(root.CFrame.LookVector)
+end
 
 local function tethered(part)
 	local assembly = part.AssemblyRootPart or part
@@ -66,17 +94,12 @@ local function register(model)
 				or humanoid:GetAttribute("CapsuleLocked") then return end
 			local now = os.clock()
 			if now < (state.cooldowns[player] or 0) then return end
-			local delta = ball.Position - root.Position
-			local direction = Vector3.new(delta.X, 0, delta.Z)
-			if direction.Magnitude < 0.01 then
-				local look = root.CFrame.LookVector
-				direction = Vector3.new(look.X, 0, look.Z)
-			end
-			if direction.Magnitude < 0.01 then return end
+			local direction = aimDirection(player, root)
+			if not direction then return end
 			state.cooldowns[player] = now + KICK_COOLDOWN
 			ownAssembly(ball)
-			-- One bounded kick, with no lingering BodyVelocity fighting contacts.
-			ball.AssemblyLinearVelocity = direction.Unit * KICK_SPEED + Vector3.new(0, KICK_LIFT, 0)
+			-- One bounded kick along the camera's horizontal look, with the same upward pop.
+			ball.AssemblyLinearVelocity = direction * KICK_SPEED + Vector3.new(0, KICK_LIFT, 0)
 			ball.AssemblyAngularVelocity = Vector3.zero
 			local sound = model:FindFirstChild("Kick", true)
 			if sound and sound:IsA("Sound") then sound:Play() end

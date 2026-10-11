@@ -429,7 +429,7 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	local rope = makeRope(state, ownerAttachment, attachment, (ownerRoot.Position - attachmentPart.Position).Magnitude)
 	-- Both modes use a fixed maximum separation with no winch motor.
 	rope:SetAttribute("PlayerGrapple", true)
-	state.releaseAllowedAt = os.clock() + (Config.playerReleaseCooldown or 0.3)
+	state.releaseAllowedAt = os.clock() + (Config.playerReleaseCooldown or 0.75)
 	state.victimHumanoid = hitHumanoid
 	state.victimPlayer = victimPlayer
 	state.victimCharacter = hitModel

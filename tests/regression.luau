@@ -628,6 +628,7 @@ return function(sources)
 			now += 0.3
 			runService.Heartbeat:Emit(0.3)
 			assert(limb.OwnershipWrites == writes, "stable ownership was unnecessarily rewritten")
+			now += 0.2
 			remotes.FireGrapple.OnServerEvent:Emit(shooter, targetRoot.Position, shooterRoot.Position)
 			for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
 			assert(targetRoot.NetworkOwner == target and not targetHumanoid:GetAttribute("Ragdolled"), "role matrix release failed")

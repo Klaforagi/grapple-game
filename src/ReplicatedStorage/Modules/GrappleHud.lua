@@ -766,7 +766,10 @@ function M.Init()
 			local info = tetherInfo[side]
 			if info then
 				local seconds = math.max(0, math.ceil(info.deadline - workspace:GetServerTimeNow()))
-				table.insert(lines, string.format("Tethered %s %s for %d seconds", side == "incoming" and "by" or "to", info.name, seconds))
+				local line = side == "incoming"
+					and string.format("Tethered by %s for %d seconds", info.name, seconds)
+					or string.format("Tethering %s for %d seconds", info.name, seconds)
+				table.insert(lines, line)
 			end
 		end
 		tetherPanel.Visible = #lines > 0
