@@ -2,6 +2,7 @@
 -- This validates state/cleanup, not the engine's physics solver or GUI rendering.
 return function(sources)
 	assert(loadstring(sources.coinTests))()(sources.coins)
+	assert(loadstring(sources.playedTimeTests))()(sources.playedTime, sources.playedTimeClient)
 	local objects, delayed = {}, {}
 	local now = 10
 	local function signal()
