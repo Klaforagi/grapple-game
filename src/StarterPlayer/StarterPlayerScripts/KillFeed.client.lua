@@ -1,11 +1,13 @@
 -- Newest kills sit under the older ones at the top-right, left of the settings
--- button. Each line is one row: a headshot, then that player's name.
+-- button. Each line is one row: a headshot, then that player's name. Touch
+-- screens use a smaller column on the right half, smaller type, and at most two lines.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local KillCredit = require(ReplicatedStorage.Modules:WaitForChild("KillCredit"))
 local Palettes = require(ReplicatedStorage:WaitForChild("ItemColors"))
@@ -13,14 +15,20 @@ local Remotes = require(ReplicatedStorage.Modules:WaitForChild("GrappleRemotes")
 
 local HOLD = 6.5
 local FADE = 0.35
-local GAP = 8
 local MAX_ROWS = 6
 local FONT = Enum.Font.GothamBold
 local TEXT_SIZE = 16
 local ROW = 28
 local AVATAR = 22
 local NAME_GAP = 5
-local RIGHT_INSET = 80
+local MOBILE = UserInputService.TouchEnabled
+local GAP = MOBILE and 4 or 8
+local RIGHT_INSET = MOBILE and 64 or 80
+local MOBILE_TEXT = 12
+local MOBILE_MIN_TEXT = 10
+local MOBILE_AVATAR = 14
+local MOBILE_MIN_AVATAR = 12
+local MOBILE_WORD_GAP = 3
 local TEXT_COLOR = Color3.fromRGB(232, 240, 247)
 local DARK_STROKE = Color3.fromRGB(27, 42, 53)
 local SLIDE = TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -168,11 +176,11 @@ local function applyRopeColor(label, colorName)
 	if stroke and luminance < 0.35 then stroke.Color = Color3.new(1, 1, 1) end
 end
 
-local function wordLabel(text, color, textSize)
+local function wordLabel(text, color, textSize, lineHeight)
 	local label = Instance.new("TextLabel")
 	label.BackgroundTransparency = 1
 	label.AutomaticSize = Enum.AutomaticSize.X
-	label.Size = UDim2.fromOffset(0, ROW)
+	label.Size = UDim2.fromOffset(0, lineHeight)
 	label.Font = FONT
 	label.TextSize = textSize
 	label.TextColor3 = color
@@ -184,6 +192,13 @@ local function wordLabel(text, color, textSize)
 	label.Active = false
 	outline(label)
 	return label
+end
+
+local function clampWidth(label, textSize, lineHeight, limit)
+	if measure(label.Text, textSize) <= limit then return end
+	label.TextTruncate = Enum.TextTruncate.AtEnd
+	label.AutomaticSize = Enum.AutomaticSize.None
+	label.Size = UDim2.fromOffset(limit, lineHeight)
 end
 
 local function portrait(userId, avatarSize)
@@ -229,12 +244,12 @@ local function portrait(userId, avatarSize)
 	return photo
 end
 
-local function playerChip(userId, name, ropeName, textSize, avatarSize)
+local function playerChip(userId, name, ropeName, textSize, avatarSize, lineHeight, maxWidth)
 	local group = Instance.new("Frame")
 	group.Name = "Player"
 	group.BackgroundTransparency = 1
 	group.AutomaticSize = Enum.AutomaticSize.X
-	group.Size = UDim2.fromOffset(0, ROW)
+	group.Size = UDim2.fromOffset(0, lineHeight)
 	local list = Instance.new("UIListLayout")
 	list.FillDirection = Enum.FillDirection.Horizontal
 	list.VerticalAlignment = Enum.VerticalAlignment.Center
@@ -244,7 +259,11 @@ local function playerChip(userId, name, ropeName, textSize, avatarSize)
 	local photo = portrait(userId, avatarSize)
 	photo.LayoutOrder = 1
 	photo.Parent = group
-	local label = wordLabel(name, TEXT_COLOR, textSize)
+	local label = wordLabel(name, TEXT_COLOR, textSize, lineHeight)
+	if maxWidth then
+		local photoWidth = type(userId) == "number" and (avatarSize + NAME_GAP) or 0
+		clampWidth(label, textSize, lineHeight, math.max(28, maxWidth - photoWidth))
+	end
 	applyRopeColor(label, ropeName)
 	label.LayoutOrder = 2
 	label.Parent = group
@@ -273,6 +292,63 @@ local function fitted(killerName, victimName, middle, tail, killerId, victimId)
 		avatarSize = math.max(16, textSize + 6)
 	end
 	return textSize, avatarSize
+end
+
+-- Touch screens wrap between words. A name that still cannot fit is clipped.
+-- The column stays on the right half, clear of the center and the settings button.
+local function fitMobile(killerName, victimName, middle, tail, killerId, victimId)
+	local camera = workspace.CurrentCamera
+	local viewport = camera and camera.ViewportSize.X or 400
+	if viewport < 200 then viewport = 400 end
+	local room = math.floor(viewport * 0.5) - RIGHT_INSET - 18
+	local maxWidth = math.clamp(room, 96, 120)
+	local textSize = MOBILE_TEXT
+	local avatarSize = MOBILE_AVATAR
+	local function widths(size, avatar, cap)
+		local list = {}
+		local function addWords(text)
+			if type(text) ~= "string" then return end
+			for word in string.gmatch(text, "%S+") do
+				local width = measure(word, size)
+				if cap and width > maxWidth then width = maxWidth end
+				list[#list + 1] = width
+			end
+		end
+		local function addChip(name, userId)
+			if name == "" then return end
+			local width = measure(name, size)
+			if type(userId) == "number" then width += avatar + NAME_GAP end
+			if cap and width > maxWidth then width = maxWidth end
+			list[#list + 1] = width
+		end
+		addChip(killerName, killerId)
+		addWords(middle)
+		addChip(victimName, victimId)
+		addWords(tail)
+		return list
+	end
+	local function linesFor(size, avatar, cap)
+		local lines, used = 1, 0
+		for _, width in ipairs(widths(size, avatar, cap)) do
+			if width > maxWidth then return 99 end
+			if used == 0 then
+				used = width
+			elseif used + MOBILE_WORD_GAP + width > maxWidth - 8 then
+				lines += 1
+				used = width
+			else
+				used += MOBILE_WORD_GAP + width
+			end
+		end
+		return lines
+	end
+	while textSize > MOBILE_MIN_TEXT and linesFor(textSize, avatarSize, false) > 2 do
+		textSize -= 1
+		avatarSize = math.max(MOBILE_MIN_AVATAR, textSize + 2)
+	end
+	local lines = math.clamp(linesFor(textSize, avatarSize, true), 1, 2)
+	local lineHeight = math.max(avatarSize, textSize + 2)
+	return textSize, avatarSize, lineHeight, maxWidth, lines
 end
 
 local function push(killerName, victimName, cause, lineIndex, killerId, victimId, solo, killerRope, victimRope)
@@ -305,20 +381,33 @@ local function push(killerName, victimName, cause, lineIndex, killerId, victimId
 		end
 	end
 
-	local textSize, avatarSize = fitted(killerName, victimName, middle, tail, killerId, victimId)
+	local textSize, avatarSize, lineHeight, maxWidth, lineCount
+	if MOBILE then
+		textSize, avatarSize, lineHeight, maxWidth, lineCount = fitMobile(killerName, victimName, middle, tail, killerId, victimId)
+	else
+		textSize, avatarSize = fitted(killerName, victimName, middle, tail, killerId, victimId)
+		lineHeight = ROW
+		lineCount = 1
+	end
+	local rowHeightPx = lineCount * lineHeight + math.max(0, lineCount - 1) * MOBILE_WORD_GAP
 	local row = Instance.new("Frame")
 	row.Name = "Kill"
 	row.AnchorPoint = Vector2.new(1, 0)
-	row.AutomaticSize = Enum.AutomaticSize.X
-	row.Size = UDim2.fromOffset(0, ROW)
+	row.AutomaticSize = MOBILE and Enum.AutomaticSize.None or Enum.AutomaticSize.X
+	row.Size = MOBILE and UDim2.fromOffset(maxWidth, rowHeightPx) or UDim2.fromOffset(0, ROW)
 	row.BackgroundTransparency = 1
 	row.BorderSizePixel = 0
 	row.Active = false
-	state(row).expectedHeight = ROW
+	state(row).expectedHeight = MOBILE and rowHeightPx or ROW
 	local list = Instance.new("UIListLayout")
 	list.FillDirection = Enum.FillDirection.Horizontal
-	list.VerticalAlignment = Enum.VerticalAlignment.Center
+	list.VerticalAlignment = MOBILE and Enum.VerticalAlignment.Top or Enum.VerticalAlignment.Center
 	list.SortOrder = Enum.SortOrder.LayoutOrder
+	if MOBILE then
+		list.Wraps = true
+		list.HorizontalAlignment = Enum.HorizontalAlignment.Right
+		list.Padding = UDim.new(0, MOBILE_WORD_GAP)
+	end
 	list.Parent = row
 
 	local order = 1
@@ -327,10 +416,23 @@ local function push(killerName, victimName, cause, lineIndex, killerId, victimId
 		order += 1
 		child.Parent = row
 	end
-	if killerName ~= "" then add(playerChip(killerId, killerName, killerRope, textSize, avatarSize)) end
-	if middle ~= "" then add(wordLabel(middle, TEXT_COLOR, textSize)) end
-	if victimName ~= "" then add(playerChip(victimId, victimName, victimRope, textSize, avatarSize)) end
-	if tail ~= "" then add(wordLabel(tail, TEXT_COLOR, textSize)) end
+	local function addText(text)
+		if text == "" then return end
+		if not MOBILE then
+			add(wordLabel(text, TEXT_COLOR, textSize, lineHeight))
+			return
+		end
+		for word in string.gmatch(text, "%S+") do
+			local label = wordLabel(word, TEXT_COLOR, textSize, lineHeight)
+			clampWidth(label, textSize, lineHeight, maxWidth)
+			add(label)
+		end
+	end
+	local chipWidth = MOBILE and maxWidth or nil
+	if killerName ~= "" then add(playerChip(killerId, killerName, killerRope, textSize, avatarSize, lineHeight, chipWidth)) end
+	addText(middle)
+	if victimName ~= "" then add(playerChip(victimId, victimName, victimRope, textSize, avatarSize, lineHeight, chipWidth)) end
+	addText(tail)
 	row.Parent = feed
 
 	while #rows >= MAX_ROWS do
