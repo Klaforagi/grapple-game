@@ -65,9 +65,94 @@ return function(source)
 			"{Killer} made {Victim} fit into tight spaces.",
 		},
 	}
-	expect(credit.SoloLines.Lava, "{Player} took a lava bath", "solo lava")
-	expect(credit.SoloLines.Void, "{Player} is still falling", "solo fall")
-	expect(credit.SoloLines.Crusher, "{Player} became a pancake", "solo crusher")
+	local voidPush = {
+		"{Killer} gave {Victim} a friendly shove.",
+		"{Killer} helped {Victim} find the exit.",
+		"{Killer} told {Victim} to watch their step.",
+		"{Killer} gave {Victim} a little encouragement.",
+		"{Killer} decided {Victim} needed some fresh air.",
+		"{Killer} gave {Victim} a helping hand.",
+		"{Killer} showed {Victim} the shortcut.",
+		"{Killer} gave {Victim} a push in the right direction.",
+		"{Killer} reminded {Victim} that gravity exists.",
+		"{Killer} suggested {Victim} take a hike.",
+		"{Killer} helped {Victim} overcome their fear of heights.",
+		"{Killer} gave {Victim} some personal space.",
+		"{Killer} escorted {Victim} off the premises.",
+		"{Killer} helped {Victim} take their next big step.",
+		"{Killer} thought {Victim} looked better down there.",
+		"{Killer} sent {Victim} to explore the bottom of the map.",
+		"{Killer} insisted {Victim} go first.",
+		"{Killer} showed {Victim} where they belong.",
+		"{Killer} decided {Victim} had overstayed their welcome.",
+	}
+	local voidBomb = {
+		"{Killer} blasted {Victim} into the void.",
+		"{Killer} blew {Victim} off the map.",
+		"{Killer} sent {Victim} flying with a bang.",
+		"{Killer} gave {Victim} an explosive exit.",
+		"{Killer} launched {Victim} into oblivion.",
+		"{Killer} gave {Victim} a one-way flight.",
+		"{Killer} sent {Victim} out with a bang.",
+		"{Killer} turned {Victim} into a human cannonball.",
+		"{Killer} made {Victim} go out with a boom.",
+		"{Killer} gave {Victim} an unexpected blastoff.",
+		"{Killer} made {Victim} disappear with a bang.",
+		"{Killer} blew {Victim} into next week.",
+		"{Killer} gave {Victim} a blast they won't forget.",
+	}
+	expect(#credit.Lines.VoidPush, #voidPush, "push void count")
+	expect(#credit.Lines.VoidBomb, #voidBomb, "bomb void count")
+	for index, line in ipairs(voidPush) do
+		expect(credit.Lines.VoidPush[index], line, "push void line " .. index)
+	end
+	for index, line in ipairs(voidBomb) do
+		expect(credit.Lines.VoidBomb[index], line, "bomb void line " .. index)
+	end
+	expect(credit.FeedKey("Void", "Push"), "VoidPush", "push void feed")
+	expect(credit.FeedKey("Void", "Bomb"), "VoidBomb", "bomb void feed")
+	expect(credit.FeedKey("Void", nil), "Void", "grapple void feed")
+	expect(credit.FeedKey("Lava", "Push"), "Lava", "push lava feed")
+	local soloLines = {
+		Lava = {
+			"{Player} took a lava bath",
+			"{Victim} couldn't handle the heat.",
+			"{Victim} is extra crispy.",
+			"{Victim} forgot lava was hot.",
+			"{Victim} is having a meltdown.",
+			"{Victim} is well done.",
+			"{Victim} took a dip in the wrong pool.",
+			"{Victim} is feeling a little warm.",
+			"{Victim} is having a bad spa day.",
+		},
+		Void = {
+			"{Player} is still falling",
+			"{Victim} forgot how to fly.",
+			"{Victim} discovered gravity.",
+			"{Victim} missed a step.",
+			"{Victim} went sightseeing.",
+			"{Victim} forgot where the floor was.",
+			"{Victim} took a leap of faith.",
+		},
+		Crusher = {
+			"{Player} became a pancake",
+			"{Victim} got a little too comfortable.",
+			"{Victim} couldn't handle the pressure.",
+			"{Victim} made a crushing mistake.",
+			"{Victim} is feeling a little flat.",
+			"{Victim} volunteered for a pressure test.",
+			"{Victim} found out what the crusher does.",
+			"{Victim} tried to become two-dimensional.",
+			"{Victim} decided to flatten themselves.",
+			"{Victim} became one with the floor.",
+		},
+	}
+	for cause, expected in pairs(soloLines) do
+		assert(#credit.SoloLines[cause] == #expected, cause .. " solo count")
+		for index, line in ipairs(expected) do
+			expect(credit.SoloLines[cause][index], line, cause .. " solo line " .. index)
+		end
+	end
 	for cause, expected in pairs(lines) do
 		assert(#credit.Lines[cause] == 10, cause .. " needs 10 feed lines")
 		for index, line in ipairs(expected) do
@@ -173,6 +258,52 @@ return function(source)
 	assert(credit.Report(player, reported, 12).cause == "Void", "void report missed")
 	assert(credit.Report(player, reported, 12) == nil, "the same death was reported twice")
 	expect(heard, 1, "kill listener")
+
+	local bombed = humanoid()
+	credit.NoteHit(bombed, 77, "Bea", 10, "Bomb")
+	bombed:SetAttribute("DeathCause", "Lava")
+	local bombKill = credit.Resolve(victim, bombed, 30)
+	assert(bombKill and bombKill.killerId == 77 and bombKill.killerName == "Bea" and bombKill.count,
+		"bomb missed the 20 second lava window")
+	local lateBomb = credit.Resolve(victim, bombed, 30.01)
+	assert(lateBomb and lateBomb.solo and not lateBomb.count, "bomb stayed open after 20 seconds")
+	bombed:SetAttribute("DeathCause", "Void")
+	local bombVoid = credit.Resolve(victim, bombed, 15)
+	assert(bombVoid and bombVoid.killerId == 77 and bombVoid.source == "Bomb", "bomb missed the 5 second void window")
+	expect(credit.FeedKey(bombVoid.cause, bombVoid.source), "VoidBomb", "bomb void lines")
+	local lateBombVoid = credit.Resolve(victim, bombed, 15.01)
+	assert(lateBombVoid and lateBombVoid.solo and not lateBombVoid.count, "bomb used the lava window on a fall")
+
+	local pushed = humanoid()
+	credit.NoteAttach(pushed, grappler, "Ann")
+	credit.NoteHit(pushed, 77, "Bea", 10)
+	assert(credit.IsActive(pushed, grappler), "a hit cleared a grapple that is still on")
+	pushed:SetAttribute("DeathCause", "Lava")
+	expect(credit.Resolve(victim, pushed, 100).killerId, grappler, "held grapple lost to a hit")
+	credit.NoteRelease(pushed, grappler, 20)
+	credit.NoteHit(pushed, 77, "Bea", 25, "Push")
+	local pushLava = credit.Resolve(victim, pushed, 40)
+	expect(pushLava.killerId, 77, "newer push lost to the old grapple")
+	expect(credit.FeedKey(pushLava.cause, pushLava.source), "Lava", "push into lava kept the lava lines")
+	pushed:SetAttribute("DeathCause", "Void")
+	local pushVoid = credit.Resolve(victim, pushed, 29)
+	assert(pushVoid and pushVoid.killerId == 77 and pushVoid.source == "Push", "push void credit")
+	expect(credit.FeedKey(pushVoid.cause, pushVoid.source), "VoidPush", "push void lines")
+	pushed:SetAttribute("DeathCause", "Lava")
+	credit.NoteAttach(pushed, grappler, "Ann")
+	credit.NoteRelease(pushed, grappler, 30)
+	expect(credit.Resolve(victim, pushed, 45).killerId, grappler, "newer grapple lost to an older push")
+
+	local frozenBomb = humanoid({DeathCause = "Freeze", DeathFreezer = 44})
+	credit.NoteHit(frozenBomb, 77, "Bea", 0)
+	expect(credit.Resolve(victim, frozenBomb, 1).killerId, 44, "freeze used the bomb window")
+	local crushedBomb = humanoid({DeathCause = "Crusher", DeathPuller = 55})
+	credit.NoteHit(crushedBomb, 77, "Bea", 0)
+	expect(credit.Resolve(victim, crushedBomb, 5).killerId, 55, "bomb overrode the crusher lever")
+	credit.NoteHit(bombed, victim, "Self", 12)
+	bombed:SetAttribute("DeathCause", "Lava")
+	local selfBomb = credit.Resolve(victim, bombed, 14)
+	assert(selfBomb and selfBomb.solo and not selfBomb.count, "self bomb was stored as a kill")
 
 	local resetBody = humanoid({DeathCause = "Reset"})
 	credit.NoteAttach(resetBody, grappler, "Ann")

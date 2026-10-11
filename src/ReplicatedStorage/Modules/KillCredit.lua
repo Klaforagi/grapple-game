@@ -1,8 +1,8 @@
--- Environment kills are credited to a player. The grapple record is the last
--- person who caught this humanoid. Lava and the void only count when that
--- grapple is still on, or was released inside its window. Freeze uses the
--- player who closed the capsule. The crusher uses the lever, unless the
--- victim is grappled right then.
+-- Environment kills are credited to a player. The record is the last grapple,
+-- push, or bomb. Lava and the void count a grapple that is still on, or a
+-- grapple, push, or bomb from inside the window. Freeze uses the player who
+-- closed the capsule. The crusher uses the lever, unless the victim is
+-- grappled right then.
 
 local M = {}
 
@@ -34,6 +34,44 @@ M.Lines = {
 		"{Killer} removed {Victim} from the map.",
 		"{Killer} made {Victim} take the express route down.",
 	},
+	-- A void kill credited to a push, not a grapple.
+	VoidPush = {
+		"{Killer} gave {Victim} a friendly shove.",
+		"{Killer} helped {Victim} find the exit.",
+		"{Killer} told {Victim} to watch their step.",
+		"{Killer} gave {Victim} a little encouragement.",
+		"{Killer} decided {Victim} needed some fresh air.",
+		"{Killer} gave {Victim} a helping hand.",
+		"{Killer} showed {Victim} the shortcut.",
+		"{Killer} gave {Victim} a push in the right direction.",
+		"{Killer} reminded {Victim} that gravity exists.",
+		"{Killer} suggested {Victim} take a hike.",
+		"{Killer} helped {Victim} overcome their fear of heights.",
+		"{Killer} gave {Victim} some personal space.",
+		"{Killer} escorted {Victim} off the premises.",
+		"{Killer} helped {Victim} take their next big step.",
+		"{Killer} thought {Victim} looked better down there.",
+		"{Killer} sent {Victim} to explore the bottom of the map.",
+		"{Killer} insisted {Victim} go first.",
+		"{Killer} showed {Victim} where they belong.",
+		"{Killer} decided {Victim} had overstayed their welcome.",
+	},
+	-- A void kill credited to a bomb, not a grapple.
+	VoidBomb = {
+		"{Killer} blasted {Victim} into the void.",
+		"{Killer} blew {Victim} off the map.",
+		"{Killer} sent {Victim} flying with a bang.",
+		"{Killer} gave {Victim} an explosive exit.",
+		"{Killer} launched {Victim} into oblivion.",
+		"{Killer} gave {Victim} a one-way flight.",
+		"{Killer} sent {Victim} out with a bang.",
+		"{Killer} turned {Victim} into a human cannonball.",
+		"{Killer} made {Victim} go out with a boom.",
+		"{Killer} gave {Victim} an unexpected blastoff.",
+		"{Killer} made {Victim} disappear with a bang.",
+		"{Killer} blew {Victim} into next week.",
+		"{Killer} gave {Victim} a blast they won't forget.",
+	},
 	Freeze = {
 		"{Killer} turned {Victim} into a popsicle.",
 		"{Killer} put {Victim} on ice.",
@@ -61,10 +99,40 @@ M.Lines = {
 }
 
 -- A death with nobody else involved. Shown in the feed, not added to a total.
+-- The first line of each list is the original. The server picks one for every client.
 M.SoloLines = {
-	Lava = "{Player} took a lava bath",
-	Void = "{Player} is still falling",
-	Crusher = "{Player} became a pancake",
+	Lava = {
+		"{Player} took a lava bath",
+		"{Victim} couldn't handle the heat.",
+		"{Victim} is extra crispy.",
+		"{Victim} forgot lava was hot.",
+		"{Victim} is having a meltdown.",
+		"{Victim} is well done.",
+		"{Victim} took a dip in the wrong pool.",
+		"{Victim} is feeling a little warm.",
+		"{Victim} is having a bad spa day.",
+	},
+	Void = {
+		"{Player} is still falling",
+		"{Victim} forgot how to fly.",
+		"{Victim} discovered gravity.",
+		"{Victim} missed a step.",
+		"{Victim} went sightseeing.",
+		"{Victim} forgot where the floor was.",
+		"{Victim} took a leap of faith.",
+	},
+	Crusher = {
+		"{Player} became a pancake",
+		"{Victim} got a little too comfortable.",
+		"{Victim} couldn't handle the pressure.",
+		"{Victim} made a crushing mistake.",
+		"{Victim} is feeling a little flat.",
+		"{Victim} volunteered for a pressure test.",
+		"{Victim} found out what the crusher does.",
+		"{Victim} tried to become two-dimensional.",
+		"{Victim} decided to flatten themselves.",
+		"{Victim} became one with the floor.",
+	},
 }
 
 local records = setmetatable({}, {__mode = "k"})
@@ -105,6 +173,30 @@ function M.NoteAttach(humanoid, grapplerId, grapplerName)
 		name = type(grapplerName) == "string" and clipName(grapplerName) or nil,
 		active = true,
 	}
+end
+
+-- A push or bomb is an instant, so it counts from the hit the way a grapple
+-- counts from its release. A grapple that is still on stays in charge.
+function M.NoteHit(humanoid, attackerId, attackerName, now, source)
+	if not humanoid or type(attackerId) ~= "number" or type(now) ~= "number" then return end
+	local record = records[humanoid]
+	if record and record.active then return end
+	if source ~= "Push" and source ~= "Bomb" then source = nil end
+	records[humanoid] = {
+		id = attackerId,
+		name = type(attackerName) == "string" and clipName(attackerName) or nil,
+		active = false,
+		releasedAt = now,
+		source = source,
+	}
+end
+
+-- Void copy depends on who got the credit. Lava, freeze, and the crusher do not.
+function M.FeedKey(cause, source)
+	if cause == "Void" and (source == "Push" or source == "Bomb") then
+		return "Void" .. source
+	end
+	return cause
 end
 
 -- A stale disconnect must not clear a newer grappler's record.
@@ -151,7 +243,7 @@ local function solo(cause, victimId)
 	}
 end
 
-local function credit(cause, killerId, victimId, killerName, count)
+local function credit(cause, killerId, victimId, killerName, count, source)
 	if type(killerId) ~= "number" then return nil end
 	-- A crusher can list the victim as their own killer. That line is shown and
 	-- is not added to the kill total. Every other cause needs a different player.
@@ -163,6 +255,7 @@ local function credit(cause, killerId, victimId, killerName, count)
 		killerName = killerName,
 		count = count and not selfKill,
 		show = true,
+		source = source,
 	}
 end
 
@@ -178,14 +271,14 @@ function M.Resolve(victimId, humanoid, now)
 	if cause == "Lava" then
 		local killerId = recentGrappler(record, now, M.LavaWindow)
 		if killerId and killerId ~= victimId then
-			return credit("Lava", killerId, victimId, record.id == killerId and killerName or nil, true)
+			return credit("Lava", killerId, victimId, record.id == killerId and killerName or nil, true, record.source)
 		end
 		return solo("Lava", victimId)
 	end
 	if cause == "Void" then
 		local killerId = recentGrappler(record, now, M.VoidWindow)
 		if killerId and killerId ~= victimId then
-			return credit("Void", killerId, victimId, record.id == killerId and killerName or nil, true)
+			return credit("Void", killerId, victimId, record.id == killerId and killerName or nil, true, record.source)
 		end
 		return solo("Void", victimId)
 	end

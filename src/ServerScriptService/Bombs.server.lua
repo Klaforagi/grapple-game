@@ -9,6 +9,7 @@ local BombPhysics = require(Storage.Modules:WaitForChild("BombPhysics"))
 local FastCast = require(Storage.Modules:WaitForChild("FastCastRedux"))
 local Ragdoll = require(Storage.Modules:WaitForChild("RagdollService"))
 local PlaySound = require(Storage.Modules:WaitForChild("PlaySound"))
+local KillCredit = require(Storage.Modules:WaitForChild("KillCredit"))
 local lastThrow, liveBombs, coolingTools, pendingLaunches, stunned = {}, {}, {}, {}, {}
 local issued = setmetatable({}, {__mode = "k"})
 local SERVER_HOLD = 0.3
@@ -309,7 +310,18 @@ local function launch(humanoid, state, now)
 	end
 end
 
-local function explode(bomb, position)
+local function creditHit(humanoid, attacker, when, source)
+	if not attacker or type(attacker.UserId) ~= "number" or not humanoid then return end
+	local character = humanoid.Parent
+	local victim = character and Players:GetPlayerFromCharacter(character)
+	-- A player's own bomb must not erase someone else's open credit.
+	if not victim or victim.UserId == attacker.UserId then return end
+	local name = attacker.DisplayName
+	if type(name) ~= "string" or name == "" then name = attacker.Name end
+	KillCredit.NoteHit(humanoid, attacker.UserId, name, when, source)
+end
+
+local function explode(bomb, position, attacker, when)
 	-- Remove the sticky weld before any victim is ragdolled/launched.
 	local bombColor = bomb:GetAttribute("ExplosionColor") or bomb.Color
 	local rainbow = bomb:GetAttribute("RainbowPart")
@@ -341,7 +353,10 @@ flash:SetAttribute("RainbowPart", rainbow)
 			if root and root:IsA("BasePart") and not root.Anchored then
 				local velocity = BombPhysics.Knockback(root.Position - position, radius, workspace.Gravity,
 					Config.bombLaunchHeight, Config.bombLaunchDistance)
-				if velocity.Magnitude > 0 then queueLaunch(character, humanoid, velocity, os.clock()) end
+				if velocity.Magnitude > 0 then
+					queueLaunch(character, humanoid, velocity, when)
+					creditHit(humanoid, attacker, when, "Bomb")
+				end
 			end
 		end
 	end
@@ -379,6 +394,7 @@ local function scanPush(state, now)
 		local vertical = math.clamp(targetRoot.AssemblyLinearVelocity.Y, -40, 2)
 		queueLaunch(model, victim, direction * math.clamp(Config.pushSpeed or 26, 0, 32) + Vector3.new(0, vertical, 0),
 			now, Config.pushRagdollDuration, direction)
+		creditHit(victim, state.player, now, "Push")
 	end
 	return true
 end
@@ -541,7 +557,7 @@ RunService.Heartbeat:Connect(function()
 			cleanupBomb(bomb, state)
 		elseif now >= state.detonatesAt then
 			cleanupBomb(bomb, state)
-			explode(bomb, bomb.Position)
+			explode(bomb, bomb.Position, state.player, now)
 		end
 	end
 end)

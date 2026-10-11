@@ -209,7 +209,7 @@ return function(sources)
 		CFrame = {new = function() return identity end, lookAt = function(origin, target)
 			return setmetatable({LookVector = (target - origin).Unit}, {__mul = function(a) return a end})
 		end}, BrickColor = {new = function() return {} end},
-		Color3 = {fromRGB = function() return {} end}, ColorSequence = {new = function() return {} end},
+		Color3 = {fromRGB = function() return {} end, fromHSV = function() return {} end}, ColorSequence = {new = function() return {} end},
 		PhysicalProperties = {new = function(d, f) return {Density = d, Friction = f} end},
 		RaycastParams = {new = function() return {} end}, OverlapParams = {new = function() return {} end},
 		Enum = {HumanoidStateType = {Physics = "Physics", Ragdoll = "Ragdoll", GettingUp = "GettingUp", Freefall = "Freefall", Running = "Running", Dead = "Dead"},

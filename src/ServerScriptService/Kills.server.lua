@@ -129,13 +129,16 @@ local function onKill(result, victimPlayer)
 	if not result.show then return end
 	local victimId = victimPlayer and victimPlayer.UserId or result.victimId
 	if result.solo then
+		local lines = KillCredit.SoloLines[result.cause]
+		if type(lines) ~= "table" or #lines == 0 then return end
 		local rope = ropeColor(victimId)
-		Remotes.KillFeed:FireAllClients(victimName, victimName, result.cause, 0, victimId, victimId, true, rope, rope)
+		Remotes.KillFeed:FireAllClients(victimName, victimName, result.cause, math.random(1, #lines), victimId, victimId, true, rope, rope)
 		return
 	end
-	local lines = KillCredit.Lines[result.cause]
+	local lineKey = KillCredit.FeedKey(result.cause, result.source)
+	local lines = KillCredit.Lines[lineKey]
 	if type(lines) ~= "table" or #lines == 0 then return end
-	Remotes.KillFeed:FireAllClients(killerName, victimName, result.cause, math.random(1, #lines), result.killerId, victimId, false, ropeColor(result.killerId), ropeColor(victimId))
+	Remotes.KillFeed:FireAllClients(killerName, victimName, lineKey, math.random(1, #lines), result.killerId, victimId, false, ropeColor(result.killerId), ropeColor(victimId))
 end
 
 KillCredit.SetListener(onKill)

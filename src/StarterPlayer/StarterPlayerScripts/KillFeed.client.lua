@@ -281,9 +281,13 @@ local function push(killerName, victimName, cause, lineIndex, killerId, victimId
 	victimName = clean(victimName)
 	local middle, tail
 	if solo == true then
-		local template = KillCredit.SoloLines[cause]
+		local lines = KillCredit.SoloLines[cause]
+		local template = type(lines) == "table" and lines[lineIndex] or lines
 		if type(template) ~= "string" then return end
 		local nameAt, nameEnd = string.find(template, "{Player}", 1, true)
+		if not nameAt then
+			nameAt, nameEnd = string.find(template, "{Victim}", 1, true)
+		end
 		if not nameAt then return end
 		middle = string.sub(template, 1, nameAt - 1)
 		tail = string.sub(template, nameEnd + 1)
