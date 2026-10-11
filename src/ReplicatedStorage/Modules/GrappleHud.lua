@@ -241,13 +241,11 @@ function M.Init()
 	rainbowButton.Visible = false
 	rainbowButton.Font = Enum.Font.GothamBold
 	rainbowButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	make("UIGradient", rainbowButton, {Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 60, 60)),
-		ColorSequenceKeypoint.new(0.25, Color3.fromRGB(255, 230, 40)),
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(40, 230, 110)),
-		ColorSequenceKeypoint.new(0.75, Color3.fromRGB(40, 140, 255)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(220, 60, 255)),
-	})})
+	local rainbowPoints = {}
+	for index = 0, 16 do
+		rainbowPoints[index + 1] = ColorSequenceKeypoint.new(index / 16, Palettes.RainbowAt(index / 16))
+	end
+	make("UIGradient", rainbowButton, {Color = ColorSequence.new(rainbowPoints)})
 	make("UIStroke", rainbowButton, {Color = Color3.fromRGB(27, 42, 53), Thickness = 1})
 	ropeTab.Activated:Connect(function() inventoryTab = "Rope" end)
 	bombTab.Activated:Connect(function() inventoryTab = "Bomb" end)

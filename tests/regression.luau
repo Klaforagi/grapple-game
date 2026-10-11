@@ -3,6 +3,7 @@
 return function(sources)
 	assert(loadstring(sources.coinTests))()(sources.coins)
 	assert(loadstring(sources.playedTimeTests))()(sources.playedTime, sources.playedTimeClient)
+	assert(loadstring(sources.killTests))()(sources.killCredit)
 	local objects, delayed = {}, {}
 	local now = 10
 	local function signal()
@@ -191,6 +192,7 @@ return function(sources)
 	local ragdollModule = instance("ModuleScript", "RagdollService", storage.Modules)
 	local soundModule = instance("ModuleScript", "PlaySound", storage.Modules)
 	local toolSetupModule = instance("ModuleScript", "GrappleToolSetup", storage.Modules)
+	instance("ModuleScript", "KillCredit", storage.Modules)
 	local world = instance("Workspace")
 	function world:GetServerTimeNow() return now end
 	world.Gravity = 196.2
@@ -239,6 +241,10 @@ return function(sources)
 		if module == ragdollModule then return ragdoll end
 		if module == toolSetupModule then return toolSetup end
 		if module == soundModule then return function(source, sound) table.insert(playedSounds, {source = source, sound = sound}) end end
+		if module.Name == "KillCredit" then
+			if not services.killCredit then services.killCredit = execute(sources.killCredit) end
+			return services.killCredit
+		end
 		error("Unexpected require")
 	end
 	toolSetup = execute(sources.toolSetup)
@@ -298,6 +304,7 @@ return function(sources)
 	attackerHumanoid:SetAttribute("Ragdolled", true)
 	fire()
 	assert(victimHumanoid:GetAttribute("GrappledBy") == attacker.UserId, "ragdolled player could not fire the gun")
+	assert(services.killCredit.IsActive(victimHumanoid, attacker.UserId), "kill credit missed the active grapple")
 	attackerHumanoid:RemoveTag("Ragdoll")
 	attackerHumanoid:SetAttribute("Ragdolled", false)
 	assert(victimHumanoid:GetAttribute("Ragdolled") == true, "victim not ragdolled")
@@ -344,6 +351,22 @@ return function(sources)
 	now = tetherDeadline + 0.01
 	runService.Heartbeat:Emit(0.1)
 	assert(victimHumanoid:GetAttribute("GrappledBy") == nil, "escape failed")
+	assert(not services.killCredit.IsActive(victimHumanoid), "released grapple still counts as held")
+	victimHumanoid:SetAttribute("DeathCause", "Void")
+	assert(services.killCredit.Resolve(victim.UserId, victimHumanoid, now + 5).killerId == attacker.UserId,
+		"void kill inside 5 seconds was not credited")
+	assert(services.killCredit.Resolve(victim.UserId, victimHumanoid, now + 5.01).solo
+		and services.killCredit.Resolve(victim.UserId, victimHumanoid, now + 5.01).count == false,
+		"void window stayed open past 5 seconds")
+	victimHumanoid:SetAttribute("DeathCause", "Lava")
+	assert(services.killCredit.Resolve(victim.UserId, victimHumanoid, now + 20).killerId == attacker.UserId,
+		"lava window closed before 20 seconds")
+	assert(services.killCredit.Resolve(victim.UserId, victimHumanoid, now + 20.01).solo
+		and services.killCredit.Resolve(victim.UserId, victimHumanoid, now + 20.01).count == false,
+		"lava window stayed open past 20 seconds")
+	victimHumanoid:SetAttribute("DeathCause", "Reset")
+	assert(services.killCredit.Resolve(victim.UserId, victimHumanoid, now) == nil, "reset was credited")
+	victimHumanoid:SetAttribute("DeathCause", nil)
 	assert(victimHumanoid:GetAttribute("Ragdolled") == true and victimHumanoid:GetAttribute("GrapplePhysicsLocked"), "escape resumed simulation before ownership returned")
 	assert(rope.destroyed, "escape leaked physical rope")
 	assert(victimRoot.NetworkOwner == attacker, "release changed simulator before settling")
@@ -884,6 +907,10 @@ return function(sources)
 	services.StarterGui = instance("Folder", "StarterGui")
 	services.PhysicsService.RegisterCollisionGroup = function() end
 	services.PhysicsService.CollisionGroupSetCollidable = function() end
+	services.creditedKills = {}
+	services.killCredit.SetListener(function(result)
+		services.creditedKills[#services.creditedKills + 1] = result and result.cause
+	end)
 	execute(sources.lifecycle)
 	-- Use a living character; the earlier victim fixture died in the death test.
 	local equipPlayer = instance("Player", "EquipPlayer", players)
@@ -1224,7 +1251,9 @@ return function(sources)
 	-- Resetting an active ragdoll must still use normal break-apart death.
 	remotes.ResetCharacter.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid.Health == 0, "reset request did not kill a ragdolled player")
+	assert(attackerHumanoid:GetAttribute("DeathCause") == "Reset", "reset was not marked")
 	attackerHumanoid.Died:Emit()
+	assert(attackerHumanoid:GetAttribute("DeathCause") == nil, "reset stayed marked after the kill report")
 	assert(not attackerHumanoid:GetAttribute("Ragdolled") and attacker.Character.BreakJointsCount == 1,
 		"reset retained the ragdoll assembly")
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
@@ -1234,6 +1263,9 @@ return function(sources)
 	attackerRoot.Position = V.new(0, -75, 0)
 	runService.Heartbeat:Emit(0.1)
 	assert(attackerHumanoid.Health == 0, "falling ragdoll was not killed before the void")
+	assert(attackerHumanoid:GetAttribute("DeathCause") == "Void", "void death was not marked")
+	assert(#services.creditedKills == 0, "reset or void suicide was counted as a kill (" .. tostring(services.creditedKills[1]) .. ")")
+	services.killCredit.SetListener(function() end)
 	-- Missing root/Humanoid and silent deaths must recover without a Died event.
 	for _, fn in ipairs(delayed) do fn() end table.clear(delayed)
 	attackerHumanoid.Health = 100

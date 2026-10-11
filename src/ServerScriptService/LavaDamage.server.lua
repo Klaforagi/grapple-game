@@ -45,7 +45,16 @@ local function damageHumanoid(humanoid: Humanoid, lavaBrick: BasePart)
 	if not oneTap and now < (nextDamageAt[humanoid] or 0) then return end
 
 	nextDamageAt[humanoid] = now + DAMAGE_COOLDOWN
-	humanoid:TakeDamage(oneTap and ONE_TAP_DAMAGE or DAMAGE)
+	local amount = oneTap and ONE_TAP_DAMAGE or DAMAGE
+	-- Mark the killing blow before health changes so the death handler sees it.
+	-- A hit that does not actually kill must not stick to a later death.
+	local marked = false
+	if humanoid.Health - amount <= 0 and not humanoid:GetAttribute("DeathCause") then
+		humanoid:SetAttribute("DeathCause", "Lava")
+		marked = true
+	end
+	humanoid:TakeDamage(amount)
+	if marked and humanoid.Health > 0 then humanoid:SetAttribute("DeathCause", nil) end
 
 	local damageSound = lavaBrick:FindFirstChild("DamageSound")
 	if damageSound and damageSound:IsA("Sound") then damageSound:Play() end

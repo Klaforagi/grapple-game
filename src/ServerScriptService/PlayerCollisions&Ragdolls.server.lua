@@ -7,6 +7,7 @@ local storage = game:GetService("ReplicatedStorage")
 local Config = require(storage:WaitForChild("GrappleConfig"))
 local Remotes = require(storage.Modules:WaitForChild("GrappleRemotes"))
 local Ragdoll = require(storage.Modules:WaitForChild("RagdollService"))
+local KillCredit = require(storage.Modules:WaitForChild("KillCredit"))
 -- Disable the old GUI before StarterGui copies it into a player's PlayerGui.
 local function retireGui(gui)
 	if (gui.Name ~= Config.toolName and gui.Name ~= "Grapple Gun") or not gui:IsA("ScreenGui") then return end
@@ -54,6 +55,7 @@ local completedDeaths = setmetatable({}, {__mode = "k"})
 local function finishDeath(player, character, humanoid)
 	if completedDeaths[humanoid] then return end
 	completedDeaths[humanoid] = true
+	KillCredit.Report(player, humanoid, os.clock())
 	ensureRespawn(player, character)
 	-- Physics ragdolls suspend automatic state transitions, including Dead.
 	humanoid.EvaluateStateMachine = true
@@ -164,7 +166,10 @@ Remotes.EquipRagdollTool.OnServerEvent:Connect(function(player, toolName, should
 end)
 Remotes.ResetCharacter.OnServerEvent:Connect(function(player)
 	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if humanoid and humanoid.Health > 0 then humanoid.Health = 0 end
+	if humanoid and humanoid.Health > 0 then
+		humanoid:SetAttribute("DeathCause", "Reset")
+		humanoid.Health = 0
+	end
 	ensureRespawn(player, player.Character)
 end)
 
@@ -405,6 +410,9 @@ RunService.Heartbeat:Connect(function()
 		if humanoid and humanoid.Health > 0 and root and root:IsA("BasePart")
 			and typeof(destroyHeight) == "number" and destroyHeight ~= -math.huge
 			and root.Position.Y <= destroyHeight + VOID_KILL_PADDING then
+			if not humanoid:GetAttribute("DeathCause") then
+				humanoid:SetAttribute("DeathCause", "Void")
+			end
 			humanoid.Health = 0
 		end
 		if humanoid and humanoid.Health <= 0 then finishDeath(player, character, humanoid) end

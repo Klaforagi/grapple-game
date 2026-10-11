@@ -495,6 +495,17 @@ local function freezePose(occupant)
 	occupant.poseFrozen = true
 end
 
+-- The player who closed the capsule owns the freeze, including after the
+-- grapple that carried them in has already been released.
+local function markFreeze(occupant)
+	local humanoid = occupant.humanoid
+	if not humanoid or humanoid:GetAttribute("DeathCause") then return end
+	humanoid:SetAttribute("DeathCause", "Freeze")
+	if type(occupant.captorId) == "number" then
+		humanoid:SetAttribute("DeathFreezer", occupant.captorId)
+	end
+end
+
 -- Health reaching 0 does not emit Died while EvaluateStateMachine is off, so
 -- an NPC rig would stay in the capsule and never respawn.
 local function finishOccupantDeath(state, occupant)
@@ -513,6 +524,7 @@ local function finishOccupantDeath(state, occupant)
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
 	humanoid.EvaluateStateMachine = true
 	if humanoid.Health > 0 then
+		markFreeze(occupant)
 		humanoid.Health = 0
 	elseif humanoid:GetState() ~= Enum.HumanoidStateType.Dead then
 		-- Health is already 0, so writing 0 again does not emit Died. A one-point
@@ -680,6 +692,7 @@ local function capture(state, owner, character, humanoid)
 		connections = {}, detachedTools = {}, accessories = {}, disabledConstraints = {}, handleProps = {},
 		breakJointsOnDeath = humanoid.BreakJointsOnDeath,
 		requiresNeck = humanoid.RequiresNeck, scalingEnabled = humanoid.AutomaticScalingEnabled,
+		captorId = owner.UserId,
 		nextDamageAt = os.clock() + 1,
 	}
 	state.occupant = occupant
@@ -923,6 +936,7 @@ RunService.Heartbeat:Connect(function(dt)
 				occupant.nextDamageAt = os.clock() + 1
 				local before = occupant.humanoid.Health
 				local amount = Config.capsuleDamagePerSecond or 5
+				if before > 0 and before - amount <= 0 then markFreeze(occupant) end
 				occupant.humanoid:TakeDamage(amount)
 				-- TakeDamage is ignored while the state machine is off. NPCs then
 				-- never reach 0, so they never respawn.

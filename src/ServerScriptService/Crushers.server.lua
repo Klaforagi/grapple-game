@@ -19,12 +19,22 @@ local function partNamed(parent, name)
 	return part and part:IsA("BasePart") and part or nil
 end
 
-local function killFromPart(part, groundY)
+local function killFromPart(part, groundY, puller)
 	local parent = part.Parent
 	while parent and parent ~= Workspace do
 		local humanoid = parent:FindFirstChildOfClass("Humanoid")
 		if humanoid then
 			if humanoid.Health > 0 then
+				if not humanoid:GetAttribute("DeathCause") then
+					humanoid:SetAttribute("DeathCause", "Crusher")
+					if puller and type(puller.UserId) == "number" then
+						humanoid:SetAttribute("DeathPuller", puller.UserId)
+					end
+					local grapplerId = humanoid:GetAttribute("GrappledBy")
+					if type(grapplerId) == "number" then
+						humanoid:SetAttribute("DeathGrappler", grapplerId)
+					end
+				end
 				local ok, err = pcall(Flatten.Create, parent, groundY)
 				if not ok then warn("[Crusher] Flatten effect: " .. tostring(err)) end
 				-- Ragdolls disable state evaluation. Restore death processing as well
@@ -96,7 +106,7 @@ local function register(model)
 	prompt.HoldDuration, prompt.MaxActivationDistance = 0, 10
 	prompt.RequiresLineOfSight, prompt.ClickablePrompt = false, true
 	prompt.Parent = trigger
-	local busy, lethal = false, false
+	local busy, lethal, puller = false, false, nil
 	local params = OverlapParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = {model}
@@ -121,11 +131,11 @@ local function register(model)
 		local steps = math.max(1, math.ceil((to.Position - from.Position).Magnitude / 0.5))
 		for step = 0, steps do
 			for _, part in ipairs(Workspace:GetPartBoundsInBox(from:Lerp(to, step / steps), smasher.Size, params)) do
-				killFromPart(part, groundY)
+				killFromPart(part, groundY, puller)
 			end
 		end
 	end
-	local touched = smasher.Touched:Connect(function(part) if lethal then killFromPart(part, groundY) end end)
+	local touched = smasher.Touched:Connect(function(part) if lethal then killFromPart(part, groundY, puller) end end)
 	status(false)
 	prompt.Triggered:Connect(function(player)
 		local character = player.Character
@@ -134,6 +144,7 @@ local function register(model)
 		if busy or not humanoid or humanoid.Health <= 0 or not root
 			or humanoid:GetAttribute("CapsuleLocked")
 			or (root.Position - trigger.Position).Magnitude > prompt.MaxActivationDistance + 2 then return end
+		puller = player
 		busy, lethal, prompt.Enabled = true, false, false
 		status(true)
 		local resetSound
@@ -199,6 +210,7 @@ local function register(model)
 			resetSound:Destroy()
 		end
 		lethal = false
+		puller = nil
 		move(0)
 		leverPose(0)
 		status(false)

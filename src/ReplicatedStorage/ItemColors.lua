@@ -50,10 +50,34 @@ function palettes.GoldAt(phase)
 	local index = math.floor(scaled)
 	return stops[index + 1]:Lerp(stops[(index + 1) % count + 1], scaled - index)
 end
+-- One full rainbow or gold loop. 0.1 is a 10 second cycle.
+palettes.CycleSpeed = 0.1
+-- Red through purple, then the last step blends straight back to red.
+-- Hue stops at violet so pink is not its own stop on the way around.
+local function sampleCycle(phase, stops)
+	local count = #stops
+	local scaled = (phase % 1) * count
+	local index = math.floor(scaled)
+	if index >= count then index = count - 1 end
+	return stops[index + 1]:Lerp(stops[(index + 1) % count + 1], scaled - index)
+end
+palettes.RainbowStops = {
+	Color3.fromHSV(0, 1, 1),
+	Color3.fromHSV(0.08, 1, 1),
+	Color3.fromHSV(0.15, 1, 1),
+	Color3.fromHSV(0.33, 1, 1),
+	Color3.fromHSV(0.50, 1, 1),
+	Color3.fromHSV(0.66, 1, 1),
+	Color3.fromHSV(0.75, 1, 1),
+}
+function palettes.RainbowAt(phase)
+	return sampleCycle(phase, palettes.RainbowStops)
+end
+local bombRainbowStops = {
+	palettes.Bomb.Red, palettes.Bomb.Orange, palettes.Bomb.Yellow,
+	palettes.Bomb.Green, palettes.Bomb.Blue, palettes.Bomb.Purple,
+}
 function palettes.BombRainbow(phase)
-	local names = {"Red", "Orange", "Yellow", "Green", "Blue", "Purple"}
-	local position = (phase % 1) * #names
-	local index = math.floor(position)
-	return palettes.Bomb[names[index + 1]]:Lerp(palettes.Bomb[names[(index + 1) % #names + 1]], position - index)
+	return sampleCycle(phase, bombRainbowStops)
 end
 return palettes

@@ -12,6 +12,7 @@ local Ragdoll = require(ReplicatedStorage.Modules:WaitForChild("RagdollService")
 local ToolSetup = require(ReplicatedStorage.Modules:WaitForChild("GrappleToolSetup"))
 local Sounds = ReplicatedStorage:FindFirstChild("Sounds")
 local PlaySound = require(ReplicatedStorage.Modules:WaitForChild("PlaySound"))
+local KillCredit = require(ReplicatedStorage.Modules:WaitForChild("KillCredit"))
 local function sound(name)
 	return Sounds and Sounds:FindFirstChild(name)
 end
@@ -218,6 +219,9 @@ disconnectRope = function(player: Player, skipCooldown: boolean?, preserveVictim
 	end
 
 	local victimHumanoid: Humanoid? = state.victimHumanoid
+	if victimHumanoid then
+		KillCredit.NoteRelease(victimHumanoid, state.owner.UserId, os.clock())
+	end
 	if victimHumanoid and physicsSessions[state.victimCharacter] == state then
 		local forcedDuration = math.max(0, Config.playerReleaseRagdollDuration or 1)
 		if preserveVictimMomentum then
@@ -452,6 +456,9 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 		disconnectRope(state.owner, true)
 		return
 	end
+	local grapplerName = state.owner.DisplayName
+	if type(grapplerName) ~= "string" or grapplerName == "" then grapplerName = state.owner.Name end
+	KillCredit.NoteAttach(hitHumanoid, state.owner.UserId, grapplerName)
 	state.tetherExpiresAt = os.clock() + (Config.playerTetherDuration or 30)
 	state.tetherDeadline = Workspace:GetServerTimeNow() + (Config.playerTetherDuration or 30)
 	if victimPlayer then
