@@ -4,10 +4,13 @@ local player = Players.LocalPlayer
 local MusicVolume = {}
 local sounds = {}
 local volume = 1
+local muted = false
 local ready = false
 
 local function apply(sound, record)
-	sound.Volume = ready and math.clamp(record.base * volume, 0, 10) or 0
+	-- Mute forces silence without changing the saved slider volume.
+	local gain = (ready and not muted) and volume or 0
+	sound.Volume = math.clamp(record.base * gain, 0, 10)
 	if ready and record.resume then
 		record.resume = false
 		sound:Resume()
@@ -36,14 +39,21 @@ function MusicVolume.SetVolume(value)
 	for sound, record in pairs(sounds) do apply(sound, record) end
 end
 
+function MusicVolume.SetMuted(isMuted)
+	muted = isMuted == true
+	for sound, record in pairs(sounds) do apply(sound, record) end
+end
+
 local function settingsChanged()
 	local saved = player:GetAttribute("MusicVolume")
 	-- Wait for both the completion flag and the replicated volume value.
 	ready = player:GetAttribute("SettingsLoaded") == true and typeof(saved) == "number"
+	muted = player:GetAttribute("MusicMuted") == true
 	MusicVolume.SetVolume(typeof(saved) == "number" and saved or 1)
 end
 player:GetAttributeChangedSignal("SettingsLoaded"):Connect(settingsChanged)
 player:GetAttributeChangedSignal("MusicVolume"):Connect(settingsChanged)
+player:GetAttributeChangedSignal("MusicMuted"):Connect(settingsChanged)
 settingsChanged()
 
 local function folderAdded(folder)

@@ -10,6 +10,7 @@ local settingDefaults = {
 	LocalClockTime = Lighting.ClockTime,
 	ShadowsEnabled = Lighting.GlobalShadows,
 	MusicVolume = 1,
+	MusicMuted = false,
 }
 
 local function validSetting(key, value)
@@ -19,6 +20,8 @@ local function validSetting(key, value)
 		return typeof(value) == "boolean"
 	elseif key == "MusicVolume" then
 		return typeof(value) == "number" and value == value and value >= 0 and value <= 1
+	elseif key == "MusicMuted" then
+		return typeof(value) == "boolean"
 	end
 	return false
 end

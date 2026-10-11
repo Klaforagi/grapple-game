@@ -290,6 +290,8 @@ function M.Init()
 	end)
 	local settingsOpen = false
 	local settingsWindow
+	local codexOpen = false
+	local codexWindow
 	settingsWindow = make("Frame", screen, {
 		Name = "SettingsWindow", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromOffset(330, 250), BackgroundColor3 = Color3.fromRGB(39, 51, 65), Visible = false,
@@ -304,6 +306,10 @@ function M.Init()
 	local function showSettings(visible)
 		settingsOpen = visible
 		settingsWindow.Visible = visible
+		if visible and codexWindow then
+			codexOpen = false
+			codexWindow.Visible = false
+		end
 	end
 	closeSettings.Activated:Connect(function() showSettings(false) end)
 
@@ -314,13 +320,41 @@ function M.Init()
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		ScreenInsets = Enum.ScreenInsets.TopbarSafeInsets,
 	})
-	local menuButton = make("TextButton", menuScreen, {
-		Name = "MenuButton", Text = "Menu", Font = Enum.Font.BuilderSans, TextSize = 16,
-		TextColor3 = Color3.fromRGB(255, 255, 255), TextXAlignment = Enum.TextXAlignment.Left,
-		BackgroundTransparency = 1, AutoButtonColor = false, BorderSizePixel = 0,
-		Position = UDim2.fromOffset(10, 0), Size = UDim2.new(0, 64, 1, 0),
+	local topPills = make("Frame", menuScreen, {
+		Name = "TopPills", BackgroundTransparency = 1, BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
 	})
-	make("UIStroke", menuButton, {Color = Color3.fromRGB(27, 42, 53), Thickness = 1})
+	make("UIPadding", topPills, {PaddingLeft = UDim.new(0, 4)})
+	make("UIListLayout", topPills, {
+		FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center,
+		Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+	})
+	local function pill(parent, name, order)
+		local instance = make("TextButton", parent, {
+			Name = name, Text = "", AutoButtonColor = true, BorderSizePixel = 0,
+			BackgroundColor3 = Color3.fromRGB(0, 0, 0), BackgroundTransparency = 0,
+			Font = Enum.Font.BuilderSans, TextSize = 16, TextColor3 = Color3.fromRGB(255, 255, 255),
+			LayoutOrder = order,
+		})
+		make("UICorner", instance, {CornerRadius = UDim.new(1, 0)})
+		return instance
+	end
+	local menuButton = pill(topPills, "MenuButton", 1)
+	menuButton.Text = "Menu"
+	menuButton.AutomaticSize = Enum.AutomaticSize.X
+	menuButton.Size = UDim2.fromOffset(0, 32)
+	make("UIPadding", menuButton, {PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14)})
+	local muteButton = pill(topPills, "MuteButton", 2)
+	muteButton.Size = UDim2.fromOffset(32, 32)
+	make("ImageLabel", muteButton, {
+		Name = "Icon", BackgroundTransparency = 1, Image = "", ScaleType = Enum.ScaleType.Fit,
+		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(18, 18),
+	})
+	local muteMark = make("UIStroke", muteButton, {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Color = Color3.fromRGB(255, 255, 255),
+		Thickness = 1.5, Transparency = 1,
+	})
+	local musicMuted = false
 	local menuList = make("Frame", screen, {
 		Name = "MenuList", Visible = false, AutomaticSize = Enum.AutomaticSize.Y,
 		Size = UDim2.fromOffset(168, 0), BackgroundColor3 = Color3.fromRGB(39, 51, 65),
@@ -344,6 +378,111 @@ function M.Init()
 	settingsEntryLabel.Font, settingsEntryLabel.TextSize = Enum.Font.BuilderSans, 18
 	settingsEntryLabel.TextYAlignment = Enum.TextYAlignment.Center
 	settingsEntryLabel.ZIndex = 22
+	local codexEntry = make("TextButton", menuList, {
+		Name = "Codex", Text = "", AutoButtonColor = true, LayoutOrder = 2,
+		BackgroundColor3 = Color3.fromRGB(39, 51, 65), BorderSizePixel = 0,
+		Size = UDim2.fromOffset(168, 44), ZIndex = 21,
+	})
+	local codexEntryLabel = label(codexEntry, "Codex", UDim2.fromOffset(40, 0), UDim2.new(1, -48, 1, 0))
+	codexEntryLabel.Font, codexEntryLabel.TextSize = Enum.Font.BuilderSans, 18
+	codexEntryLabel.TextYAlignment = Enum.TextYAlignment.Center
+	codexEntryLabel.ZIndex = 22
+	codexWindow = make("Frame", screen, {
+		Name = "CodexWindow", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(340, 420), BackgroundColor3 = Color3.fromRGB(39, 51, 65), Visible = false,
+	})
+	rounded(codexWindow)
+	make("UIStroke", codexWindow, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.75})
+	local codexScale = make("UIScale", codexWindow, {Scale = 1})
+	local codexTitle = label(codexWindow, "Codex", UDim2.fromOffset(16, 10), UDim2.fromOffset(220, 28))
+	codexTitle.Font, codexTitle.TextSize = Enum.Font.GothamBold, 20
+	local closeCodex = button(codexWindow, "X", UDim2.new(1, -44, 0, 9), UDim2.fromOffset(32, 30))
+	closeCodex.Font = Enum.Font.GothamBold
+	local codexScroll = make("ScrollingFrame", codexWindow, {
+		Name = "Items", Position = UDim2.fromOffset(12, 48), Size = UDim2.new(1, -24, 1, -60),
+		BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 4,
+		CanvasSize = UDim2.fromOffset(0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+	})
+	make("UIPadding", codexScroll, {PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 8)})
+	make("UIListLayout", codexScroll, {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder})
+	-- Everyone owns the full catalog until a per-player unlock list exists.
+	local function ownsCodexItem(kind, name)
+		return type(kind) == "string" and type(name) == "string"
+	end
+	local function codexItems(kind)
+		local items = {}
+		for _, name in ipairs(palette) do
+			local display = name
+			if kind == "Bomb" and name == "Gray" then display = "Banana"
+			elseif kind == "Bomb" and name == "Teal" then display = "Mint" end
+			local color = Palettes.Swatches[kind][display]
+			if Palettes[kind][display] and color then
+				items[#items + 1] = {name = display, color = color, gold = display == "Gold"}
+			end
+		end
+		items[#items + 1] = {name = "Rainbow", rainbow = true}
+		return items
+	end
+	local function paintSwatch(swatch, item)
+		swatch.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		if item.rainbow then
+			local points = {}
+			for index = 0, 8 do
+				points[index + 1] = ColorSequenceKeypoint.new(index / 8, Palettes.RainbowAt(index / 8))
+			end
+			make("UIGradient", swatch, {Color = ColorSequence.new(points)})
+		elseif item.gold then
+			make("UIGradient", swatch, {Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Palettes.GoldStops[1]),
+				ColorSequenceKeypoint.new(0.33, Palettes.GoldStops[2]),
+				ColorSequenceKeypoint.new(0.66, Palettes.GoldStops[3]),
+				ColorSequenceKeypoint.new(1, Palettes.GoldStops[4]),
+			})})
+		else
+			swatch.BackgroundColor3 = item.color
+		end
+	end
+	local rowOrder = 0
+	for _, group in ipairs({{"Gun", "Gun"}, {"Rope", "Rope"}, {"Bomb", "Bomb"}}) do
+		rowOrder += 1
+		local header = label(codexScroll, group[1], UDim2.fromOffset(4, 0), UDim2.new(1, -12, 0, 22))
+		header.Font, header.TextSize = Enum.Font.GothamBold, 14
+		header.LayoutOrder = rowOrder
+		for _, item in ipairs(codexItems(group[2])) do
+			rowOrder += 1
+			local owned = ownsCodexItem(group[2], item.name)
+			local row = make("Frame", codexScroll, {
+				Name = item.name, BackgroundTransparency = 1, BorderSizePixel = 0,
+				Size = UDim2.new(1, -8, 0, 34), LayoutOrder = rowOrder,
+			})
+			local swatch = make("Frame", row, {
+				BorderSizePixel = 0, AnchorPoint = Vector2.new(0, 0.5),
+				Position = UDim2.new(0, 4, 0.5, 0), Size = UDim2.fromOffset(22, 22),
+			})
+			make("UICorner", swatch, {CornerRadius = UDim.new(0, 6)})
+			make("UIStroke", swatch, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
+			paintSwatch(swatch, item)
+			local nameLabel = label(row, item.name, UDim2.fromOffset(34, 0), UDim2.new(1, -112, 1, 0))
+			nameLabel.Font, nameLabel.TextSize = Enum.Font.GothamBold, 15
+			nameLabel.TextYAlignment = Enum.TextYAlignment.Center
+			if not owned then nameLabel.TextTransparency = 0.45 end
+			local status = label(row, owned and "Owned" or "Locked", UDim2.new(1, -78, 0, 0), UDim2.fromOffset(70, 34))
+			status.Font, status.TextSize = Enum.Font.GothamMedium, 14
+			status.TextXAlignment = Enum.TextXAlignment.Right
+			status.TextYAlignment = Enum.TextYAlignment.Center
+			status.TextColor3 = owned and Color3.fromRGB(72, 165, 92) or Color3.fromRGB(150, 160, 170)
+		end
+	end
+	local function showCodex(visible)
+		codexOpen = visible
+		codexWindow.Visible = visible
+		if visible then
+			settingsOpen = false
+			settingsWindow.Visible = false
+		end
+	end
+	closeCodex.Activated:Connect(function() showCodex(false) end)
 	local function placeMenuList()
 		local origin = screen.AbsolutePosition
 		local pos = menuButton.AbsolutePosition
@@ -363,6 +502,10 @@ function M.Init()
 	settingsEntry.Activated:Connect(function()
 		showMenu(false)
 		showSettings(true)
+	end)
+	codexEntry.Activated:Connect(function()
+		showMenu(false)
+		showCodex(true)
 	end)
 	UIS.InputBegan:Connect(function(input)
 		if not menuOpen then return end
@@ -436,6 +579,16 @@ function M.Init()
 	local adjustingMusic = false
 	local musicVolume = 1
 	local MusicVolume = require(script.Parent:WaitForChild("MusicVolume"))
+	local function applyMuted(muted, shouldSave)
+		musicMuted = muted == true
+		muteButton:SetAttribute("Muted", musicMuted)
+		muteMark.Transparency = musicMuted and 0 or 1
+		MusicVolume.SetMuted(musicMuted)
+		if shouldSave then saveSetting("MusicMuted", musicMuted, true) end
+	end
+	muteButton.Activated:Connect(function()
+		applyMuted(not musicMuted, true)
+	end)
 	local function applyMusicVolume(value)
 		musicVolume = math.clamp(value, 0, 1)
 		musicKnob.Position = UDim2.fromScale(musicVolume, 0.5)
@@ -475,8 +628,9 @@ function M.Init()
 		if typeof(savedShadows) ~= "boolean" then savedShadows = Lighting.GlobalShadows end
 		applyShadows(savedShadows)
 		applyMusicVolume(typeof(savedMusic) == "number" and savedMusic or 1)
+		applyMuted(player:GetAttribute("MusicMuted") == true)
 	end
-	for _, key in ipairs({"LocalClockTime", "ShadowsEnabled", "MusicVolume"}) do
+	for _, key in ipairs({"LocalClockTime", "ShadowsEnabled", "MusicVolume", "MusicMuted"}) do
 		player:GetAttributeChangedSignal(key):Connect(applySavedSettings)
 	end
 	applySavedSettings()
@@ -603,6 +757,7 @@ function M.Init()
 			tetherScale.Scale = math.clamp(math.min(viewport.X / 480, viewport.Y / 800), 0.55, 1)
 			local settingsUiScale = math.clamp(math.min(viewport.X / 800, viewport.Y / 600), 0.7, 1)
 			settingsScale.Scale = settingsUiScale
+			codexScale.Scale = settingsUiScale
 		end
 		if menuOpen then placeMenuList() end
 		if currentRope and not currentRope.Parent then grapple() end
