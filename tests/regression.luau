@@ -3,6 +3,7 @@
 return function(sources)
 	assert(loadstring(sources.coinTests))()(sources.coins)
 	assert(loadstring(sources.playedTimeTests))()(sources.playedTime, sources.playedTimeClient)
+	assert(loadstring(sources.killsBoardTests))()(sources.killsServer, sources.killsBoardClient)
 	assert(loadstring(sources.killTests))()(sources.killCredit)
 	local objects, delayed = {}, {}
 	local now = 10
