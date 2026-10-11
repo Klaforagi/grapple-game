@@ -1612,13 +1612,13 @@ manualHumanoid:AddTag("Ragdoll")
 	assert(pushHumanoid:GetAttribute("BombRagdollUntil") == pushDeadline, "Push cooldown failed")
 	runService.PreSimulation:Emit(1 / 60)
 	assert(pushRoot.AssemblyLinearVelocity.X > 0 and pushRoot.AssemblyLinearVelocity.Magnitude < 50, "Push launch was missing or excessive")
-	assert(pushRoot.AssemblyLinearVelocity.Y <= 2 and pushRoot.AssemblyAngularVelocity.Magnitude <= 2.01,
+	assert(pushRoot.AssemblyLinearVelocity.Y <= 2 and pushRoot.AssemblyAngularVelocity.Magnitude <= 4.01,
 		"Push used upward blast motion or excessive tumble")
 	pushRoot.AssemblyLinearVelocity = V.new(2000, 500, 0)
 	pushRoot.AssemblyAngularVelocity = V.new(0, 100, 0)
 	runService.Heartbeat:Emit(1 / 60)
-	assert(pushRoot.AssemblyLinearVelocity.X <= 36 and pushRoot.AssemblyLinearVelocity.Y <= 8
-		and pushRoot.AssemblyAngularVelocity.Magnitude <= 5.01, "Push settling failed to contain a physics spike")
+	assert(pushRoot.AssemblyLinearVelocity.X <= 48 and pushRoot.AssemblyLinearVelocity.Y <= 8
+		and pushRoot.AssemblyAngularVelocity.Magnitude <= 8.01, "Push settling failed to contain a physics spike")
 	pushRoot.AssemblyLinearVelocity = V.new(10, -100, 0)
 	runService.Heartbeat:Emit(1 / 60)
 	assert(pushRoot.AssemblyLinearVelocity.Y == -100, "Push settling prevented natural falling")

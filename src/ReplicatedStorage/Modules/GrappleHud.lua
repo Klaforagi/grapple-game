@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
+local GuiService = game:GetService("GuiService")
 local Lighting = game:GetService("Lighting")
 local storage = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -289,14 +290,6 @@ function M.Init()
 	end)
 	local settingsOpen = false
 	local settingsWindow
-	local settingsButton = make("ImageButton", screen, {
-		Name = "SettingsButton", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -18, 0, 18),
-		Size = UDim2.fromOffset(44, 44), BackgroundColor3 = Color3.fromRGB(39, 51, 65),
-		Image = Assets.Settings, ScaleType = Enum.ScaleType.Fit, AutoButtonColor = true,
-	})
-	rounded(settingsButton)
-	make("UIStroke", settingsButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
-	local settingsButtonScale = make("UIScale", settingsButton, {Scale = 1})
 	settingsWindow = make("Frame", screen, {
 		Name = "SettingsWindow", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromOffset(330, 250), BackgroundColor3 = Color3.fromRGB(39, 51, 65), Visible = false,
@@ -312,8 +305,73 @@ function M.Init()
 		settingsOpen = visible
 		settingsWindow.Visible = visible
 	end
-	settingsButton.Activated:Connect(function() showSettings(not settingsOpen) end)
 	closeSettings.Activated:Connect(function() showSettings(false) end)
+
+	-- Sits in the free part of the top bar, immediately right of Roblox's own menu.
+	local menuOpen = false
+	local menuScreen = make("ScreenGui", playerGui, {
+		Name = "GameMenu", ResetOnSpawn = false, DisplayOrder = 30,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		ScreenInsets = Enum.ScreenInsets.TopbarSafeInsets,
+	})
+	local menuButton = make("TextButton", menuScreen, {
+		Name = "MenuButton", Text = "Menu", Font = Enum.Font.BuilderSans, TextSize = 16,
+		TextColor3 = Color3.fromRGB(255, 255, 255), TextXAlignment = Enum.TextXAlignment.Left,
+		BackgroundTransparency = 1, AutoButtonColor = false, BorderSizePixel = 0,
+		Position = UDim2.fromOffset(10, 0), Size = UDim2.new(0, 64, 1, 0),
+	})
+	make("UIStroke", menuButton, {Color = Color3.fromRGB(27, 42, 53), Thickness = 1})
+	local menuList = make("Frame", screen, {
+		Name = "MenuList", Visible = false, AutomaticSize = Enum.AutomaticSize.Y,
+		Size = UDim2.fromOffset(168, 0), BackgroundColor3 = Color3.fromRGB(39, 51, 65),
+		BorderSizePixel = 0, ZIndex = 20,
+	})
+	rounded(menuList)
+	make("UIStroke", menuList, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.75})
+	make("UIPadding", menuList, {PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4)})
+	make("UIListLayout", menuList, {SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Center})
+	local settingsEntry = make("TextButton", menuList, {
+		Name = "Settings", Text = "", AutoButtonColor = true,
+		BackgroundColor3 = Color3.fromRGB(39, 51, 65), BorderSizePixel = 0,
+		Size = UDim2.fromOffset(168, 44), ZIndex = 21,
+	})
+	make("ImageLabel", settingsEntry, {
+		Name = "Icon", BackgroundTransparency = 1, Image = Assets.Settings, ScaleType = Enum.ScaleType.Fit,
+		AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 10, 0.5, 0),
+		Size = UDim2.fromOffset(22, 22), ZIndex = 22,
+	})
+	local settingsEntryLabel = label(settingsEntry, "Settings", UDim2.fromOffset(40, 0), UDim2.new(1, -48, 1, 0))
+	settingsEntryLabel.Font, settingsEntryLabel.TextSize = Enum.Font.BuilderSans, 18
+	settingsEntryLabel.TextYAlignment = Enum.TextYAlignment.Center
+	settingsEntryLabel.ZIndex = 22
+	local function placeMenuList()
+		local origin = screen.AbsolutePosition
+		local pos = menuButton.AbsolutePosition
+		local size = menuButton.AbsoluteSize
+		menuList.Position = UDim2.fromOffset(pos.X - origin.X, pos.Y + size.Y - origin.Y + 4)
+	end
+	local function showMenu(visible)
+		menuOpen = visible
+		menuList.Visible = visible
+		if visible then placeMenuList() end
+	end
+	local function pointerInside(gui, x, y)
+		local pos, size = gui.AbsolutePosition, gui.AbsoluteSize
+		return x >= pos.X and x <= pos.X + size.X and y >= pos.Y and y <= pos.Y + size.Y
+	end
+	menuButton.Activated:Connect(function() showMenu(not menuOpen) end)
+	settingsEntry.Activated:Connect(function()
+		showMenu(false)
+		showSettings(true)
+	end)
+	UIS.InputBegan:Connect(function(input)
+		if not menuOpen then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if pointerInside(menuButton, input.Position.X, input.Position.Y) then return end
+		if pointerInside(menuList, input.Position.X, input.Position.Y) then return end
+		showMenu(false)
+	end)
+	GuiService.MenuOpened:Connect(function() showMenu(false) end)
 
 	local settingRevision = {}
 	local function saveSetting(key, value, immediate)
@@ -545,8 +603,8 @@ function M.Init()
 			tetherScale.Scale = math.clamp(math.min(viewport.X / 480, viewport.Y / 800), 0.55, 1)
 			local settingsUiScale = math.clamp(math.min(viewport.X / 800, viewport.Y / 600), 0.7, 1)
 			settingsScale.Scale = settingsUiScale
-			settingsButtonScale.Scale = math.clamp(math.min(viewport.X / 800, viewport.Y / 450), 0.75, 1.1)
 		end
+		if menuOpen then placeMenuList() end
 		if currentRope and not currentRope.Parent then grapple() end
 		local equipped = tool()
 		reelControls.Visible = currentRope ~= nil and equipped ~= nil

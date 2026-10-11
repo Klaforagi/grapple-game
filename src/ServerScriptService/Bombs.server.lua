@@ -281,13 +281,14 @@ local function launch(humanoid, state, now)
 		end
 	end
 	if state.pushDirection then
-		-- A shove tips the body in the direction of travel without random blast
-		-- kicks pulling individual limbs in different directions.
+		-- Let the upper body lead the fall instead of translating every limb
+		-- in an identical rigid pose. Variation stays small and deterministic.
 		local direction = state.pushDirection
-		local spin = Vector3.new(direction.Z, 0, -direction.X) * 2
+		local spin = Vector3.new(direction.Z, 0, -direction.X) * 4
 		for _, body in ipairs(bodies) do
-			body.velocity = state.velocity
-			body.angular = spin
+			local height = math.clamp(body.position.Y - rootAssembly.Position.Y, -2, 2)
+			body.velocity = state.velocity + direction * (height * 1.5)
+			body.angular = spin * (body.isRoot and 1 or (1 + height * 0.15))
 		end
 	else
 		BombPhysics.LaunchMotion(bodies, state.velocity, Config.bombTumbleSpeed or 3.5, Config.bombLimbKickSpeed or 3)
@@ -305,7 +306,7 @@ local function launch(humanoid, state, now)
 		body.assembly.AssemblyAngularVelocity = body.angular
 	end
 	if state.pushDirection then
-		settlingPushes[humanoid] = {character = character, untilTime = now + 0.6,
+		settlingPushes[humanoid] = {character = character, untilTime = now + 0.4,
 			revision = humanoid:GetAttribute("BombBlastRevision")}
 	end
 end
@@ -392,7 +393,7 @@ local function scanPush(state, now)
 		local horizontal = Vector3.new(offset.X, 0, offset.Z)
 		local direction = horizontal.Magnitude > 0.01 and horizontal.Unit or forward
 		local vertical = math.clamp(targetRoot.AssemblyLinearVelocity.Y, -40, 2)
-		queueLaunch(model, victim, direction * math.clamp(Config.pushSpeed or 26, 0, 32) + Vector3.new(0, vertical, 0),
+		queueLaunch(model, victim, direction * math.clamp(Config.pushSpeed or 35, 0, 40) + Vector3.new(0, vertical, 0),
 			now, Config.pushRagdollDuration, direction)
 		creditHit(victim, state.player, now, "Push")
 	end
@@ -513,13 +514,13 @@ RunService.Heartbeat:Connect(function()
 				seen[assembly] = true
 				local velocity = assembly.AssemblyLinearVelocity
 				local horizontal = Vector3.new(velocity.X, 0, velocity.Z)
-				if horizontal.Magnitude > 36 then horizontal = horizontal.Unit * 36 end
+				if horizontal.Magnitude > 48 then horizontal = horizontal.Unit * 48 end
 				-- Allow natural downward acceleration when pushed off a ledge.
 				if horizontal.Magnitude < Vector3.new(velocity.X, 0, velocity.Z).Magnitude or velocity.Y > 8 then
 					assembly.AssemblyLinearVelocity = horizontal + Vector3.new(0, math.min(velocity.Y, 8), 0)
 				end
 				local spin = assembly.AssemblyAngularVelocity
-				if spin.Magnitude > 5 then assembly.AssemblyAngularVelocity = spin.Unit * 5 end
+				if spin.Magnitude > 8 then assembly.AssemblyAngularVelocity = spin.Unit * 8 end
 			end
 		end
 	end

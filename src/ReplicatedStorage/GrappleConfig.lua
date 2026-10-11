@@ -83,7 +83,7 @@ return {
 	pushCooldown = 4,
 	pushActiveDuration = 0.35,
 	pushRagdollDuration = 5,
-	pushSpeed = 26, -- Outward knockdown speed, studs/second (capped at 32)
+	pushSpeed = 35, -- Outward knockdown speed, studs/second (capped at 40)
 	flopCooldown = 1.8,
 	flopMaxSpeed = 22, -- Flops are only available while moving slowly
 	flopHorizontalSpeed = 24,
