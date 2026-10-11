@@ -307,3 +307,67 @@ game:BindToClose(function()
 	while remaining > 0 do task.wait() end
 	flushRanks()
 end)
+
+-- A developer-product receipt adds the same amount to held coins and lifetime
+-- earned. The purchase id stays on the record so a retried receipt does not pay
+-- twice. Unsaved minutes stay in state.earned, so the live balance is the stored
+-- total minus that checkpoint, plus the session total.
+local function grantCoins(userId, amount, purchaseId)
+	if type(userId) ~= "number" or type(purchaseId) ~= "string" or purchaseId == "" or #purchaseId > 100 then
+		return false
+	end
+	amount = tonumber(amount)
+	if not amount then return false end
+	amount = math.floor(amount)
+	if amount <= 0 or amount > 100000000 then return false end
+
+	local lookup = Players.GetPlayerByUserId
+	local player = type(lookup) == "function" and lookup(Players, userId) or nil
+	local state = player and sessions[player]
+	if state and not state.loaded then
+		local started = os.clock()
+		while sessions[player] == state and not state.loaded and os.clock() - started < 20 do
+			task.wait(0.1)
+		end
+		if sessions[player] ~= state then state = nil end
+	end
+	local locked = state
+	if locked then
+		while locked.saving do task.wait() end
+		if not player or sessions[player] ~= locked then locked = nil end
+	end
+	if locked then locked.saving = true end
+
+	local ok, data = pcall(function()
+		return store:UpdateAsync("player_" .. userId, function(previous)
+			local record = type(previous) == "table" and previous or {coins = 0, earned = 0}
+			if type(record.purchases) ~= "table" then record.purchases = {} end
+			if record.purchases[purchaseId] then return record end
+			local held, lifetime = heldAndEarned(record)
+			record.coins = held + amount
+			record.earned = lifetime + amount
+			record.purchases[purchaseId] = os.time()
+			return record
+		end)
+	end)
+
+	if locked then
+		if ok and type(data) == "table" and locked.loaded and player and sessions[player] == locked then
+			local earned = locked.earned
+			local coins = math.floor(tonumber(data.coins) or 0)
+			local lifetime = math.floor(tonumber(data.earned) or 0)
+			locked.base = coins - locked.saved
+			locked.lifetime = math.max(locked.lifetime or 0, lifetime + earned - locked.saved)
+			player:SetAttribute("Coins", locked.base + earned)
+			publishEarned(player, locked.lifetime)
+			queueRank(player.UserId, locked.lifetime)
+		end
+		locked.saving = false
+	end
+	return ok and type(data) == "table"
+end
+
+local grant = Instance.new("BindableFunction")
+grant.Name = "GrantCoins"
+grant.OnInvoke = grantCoins
+grant.Parent = ReplicatedStorage

@@ -9,6 +9,7 @@ local RunService = game:GetService("RunService")
 local Config = require(storage:WaitForChild("GrappleConfig"))
 local Assets = require(storage:WaitForChild("Assets"))
 local Palettes = require(storage:WaitForChild("ItemColors"))
+	local ShopUi = require(script.Parent:WaitForChild("ShopUi"))
 local Remotes = require(script.Parent:WaitForChild("GrappleRemotes"))
 local ToolClient = require(script.Parent:WaitForChild("GrappleToolClient"))
 local ToolSetup = require(script.Parent:WaitForChild("GrappleToolSetup"))
@@ -172,6 +173,14 @@ function M.Init()
 	local inventoryButton = button(screen, "INV", UDim2.new(0, 18, 0.5, -22), UDim2.fromOffset(44, 44), function() inventoryOpen = not inventoryOpen end)
 	inventoryButton.Font, inventoryButton.TextSize = Enum.Font.GothamBold, 12
 	make("UIStroke", inventoryButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
+	local shopButton = button(screen, "SHOP", UDim2.new(0, 18, 0.5, -74), UDim2.fromOffset(44, 44))
+	shopButton.Name = "ShopButton"
+	shopButton.Font = Enum.Font.GothamBold
+	shopButton.TextScaled = true
+	shopButton.ZIndex = 40
+	make("UIPadding", shopButton, {PaddingLeft = UDim.new(0, 3), PaddingRight = UDim.new(0, 3)})
+	make("UITextSizeConstraint", shopButton, {MinTextSize = 8, MaxTextSize = 12})
+	make("UIStroke", shopButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
 	local ragdollButton = button(screen, "RAG", UDim2.new(0, 18, 0.5, 30), UDim2.fromOffset(44, 44), ragdoll)
 	ragdollButton.Name = "RagdollButton"
 	local coins = make("Frame", screen, {
@@ -292,6 +301,13 @@ function M.Init()
 	local settingsWindow
 	local codexOpen = false
 	local codexWindow
+	local shopOpen = false
+	local shopWindow
+	local shopScale
+	local function hideShop()
+		shopOpen = false
+		if shopWindow then shopWindow.Visible = false end
+	end
 	settingsWindow = make("Frame", screen, {
 		Name = "SettingsWindow", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromOffset(330, 250), BackgroundColor3 = Color3.fromRGB(39, 51, 65), Visible = false,
@@ -310,6 +326,7 @@ function M.Init()
 			codexOpen = false
 			codexWindow.Visible = false
 		end
+		if visible then hideShop() end
 	end
 	closeSettings.Activated:Connect(function() showSettings(false) end)
 
@@ -480,6 +497,7 @@ function M.Init()
 		if visible then
 			settingsOpen = false
 			settingsWindow.Visible = false
+			hideShop()
 		end
 	end
 	closeCodex.Activated:Connect(function() showCodex(false) end)
@@ -515,6 +533,39 @@ function M.Init()
 		showMenu(false)
 	end)
 	GuiService.MenuOpened:Connect(function() showMenu(false) end)
+
+	local showShop
+	local shopUi = ShopUi.Mount(screen, function()
+		showShop(false)
+	end)
+	shopWindow = shopUi.window
+	shopScale = shopUi.scale
+	local function fitShop()
+		local camera = workspace.CurrentCamera
+		if not camera or not shopScale then return end
+		local viewport = camera.ViewportSize
+		if viewport.X < 1 or viewport.Y < 1 then return end
+		local fitted = math.min((viewport.X - 24) / 680, (viewport.Y - 24) / 520)
+		if UIS.TouchEnabled then fitted *= 0.85 end
+		shopScale.Scale = math.clamp(fitted, 0.4, 1)
+	end
+	showShop = function(visible)
+		shopOpen = visible
+		if visible then fitShop() end
+		if shopWindow then shopWindow.Visible = visible end
+		if not visible then return end
+		inventoryOpen = false
+		inventory.Visible = false
+		settingsOpen = false
+		settingsWindow.Visible = false
+		codexOpen = false
+		if codexWindow then codexWindow.Visible = false end
+		showMenu(false)
+		shopUi.refresh()
+	end
+	shopButton.Activated:Connect(function()
+		showShop(not shopOpen)
+	end)
 
 	local settingRevision = {}
 	local function saveSetting(key, value, immediate)
@@ -758,6 +809,7 @@ function M.Init()
 			local settingsUiScale = math.clamp(math.min(viewport.X / 800, viewport.Y / 600), 0.7, 1)
 			settingsScale.Scale = settingsUiScale
 			codexScale.Scale = settingsUiScale
+			fitShop()
 		end
 		if menuOpen then placeMenuList() end
 		if currentRope and not currentRope.Parent then grapple() end
