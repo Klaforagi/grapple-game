@@ -304,9 +304,22 @@ function M.Init()
 	local shopOpen = false
 	local shopWindow
 	local shopScale
+	-- The native hotbar is core UI, so it draws above this window and still takes taps.
+	-- Hide it for as long as the shop is open, then put it back.
+	local function setHotbar(enabled)
+		local function apply()
+			return pcall(StarterGui.SetCoreGuiEnabled, StarterGui, Enum.CoreGuiType.Backpack, enabled)
+		end
+		if apply() then return end
+		task.defer(function()
+			if shopOpen ~= (not enabled) then return end
+			apply()
+		end)
+	end
 	local function hideShop()
 		shopOpen = false
 		if shopWindow then shopWindow.Visible = false end
+		setHotbar(true)
 	end
 	settingsWindow = make("Frame", screen, {
 		Name = "SettingsWindow", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
@@ -553,6 +566,7 @@ function M.Init()
 		shopOpen = visible
 		if visible then fitShop() end
 		if shopWindow then shopWindow.Visible = visible end
+		setHotbar(not visible)
 		if not visible then return end
 		inventoryOpen = false
 		inventory.Visible = false
