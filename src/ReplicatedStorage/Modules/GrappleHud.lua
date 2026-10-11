@@ -9,7 +9,9 @@ local RunService = game:GetService("RunService")
 local Config = require(storage:WaitForChild("GrappleConfig"))
 local Assets = require(storage:WaitForChild("Assets"))
 local Palettes = require(storage:WaitForChild("ItemColors"))
-	local ShopUi = require(script.Parent:WaitForChild("ShopUi"))
+local ShopUi = require(script.Parent:WaitForChild("ShopUi"))
+local UpgradeUi = require(script.Parent:WaitForChild("UpgradeUi"))
+local Upgrades = require(script.Parent:WaitForChild("UpgradeCatalog"))
 local Remotes = require(script.Parent:WaitForChild("GrappleRemotes"))
 local ToolClient = require(script.Parent:WaitForChild("GrappleToolClient"))
 local ToolSetup = require(script.Parent:WaitForChild("GrappleToolSetup"))
@@ -87,7 +89,8 @@ function M.Init()
 		if not currentRope or not currentRope.Parent then return end
 		if delta > 0 then delta *= 2 end
 		local minimum = currentRope:GetAttribute("PlayerGrapple") and Config.playerMinDragDistance or Config.minRopeLength
-		displayLength = math.clamp(displayLength + delta, minimum, Config.maxRopeLength)
+		local maximum = Upgrades.ShotDistance(player, currentRope:GetAttribute("WallGrapple") == true)
+		displayLength = math.clamp(displayLength + delta, minimum, maximum)
 		Remotes.ChangeLength:FireServer(displayLength)
 	end
 	local function ragdoll()
@@ -135,7 +138,11 @@ function M.Init()
 		make("UIStroke", textLabel, {Color = Color3.fromRGB(255, 255, 255), Thickness = 2})
 	end
 	local function toggleWallMode()
-		if tool() and not beingTethered then Remotes.ToggleWallMode:FireServer() end
+		local equipped = tool()
+		if not equipped or beingTethered then return end
+		-- The choice is locked from the moment a shot leaves until it misses or drops.
+		if equipped:GetAttribute("InUse") == true or equipped:GetAttribute("HasGrappled") == true then return end
+		Remotes.ToggleWallMode:FireServer()
 	end
 	local ropeLength = label(reelControls, "", UDim2.fromOffset(-36, -22), UDim2.fromOffset(150, 18))
 	ropeLength.TextSize, ropeLength.TextXAlignment = 11, Enum.TextXAlignment.Center
@@ -170,7 +177,7 @@ function M.Init()
 	make("UIStroke", wallButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
 	local palette = Palettes.Order
 	local inventoryOpen, inventoryTab = false, "Gun"
-	local inventoryButton = button(screen, "INV", UDim2.new(0, 18, 0.5, -22), UDim2.fromOffset(44, 44), function() inventoryOpen = not inventoryOpen end)
+	local inventoryButton = button(screen, "INV", UDim2.new(0, 18, 0.5, 30), UDim2.fromOffset(44, 44), function() inventoryOpen = not inventoryOpen end)
 	inventoryButton.Font, inventoryButton.TextSize = Enum.Font.GothamBold, 12
 	make("UIStroke", inventoryButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
 	local shopButton = button(screen, "SHOP", UDim2.new(0, 18, 0.5, -74), UDim2.fromOffset(44, 44))
@@ -181,10 +188,18 @@ function M.Init()
 	make("UIPadding", shopButton, {PaddingLeft = UDim.new(0, 3), PaddingRight = UDim.new(0, 3)})
 	make("UITextSizeConstraint", shopButton, {MinTextSize = 8, MaxTextSize = 12})
 	make("UIStroke", shopButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
-	local ragdollButton = button(screen, "RAG", UDim2.new(0, 18, 0.5, 30), UDim2.fromOffset(44, 44), ragdoll)
+	local upgradeButton = button(screen, "UPG", UDim2.new(0, 18, 0.5, -22), UDim2.fromOffset(44, 44))
+	upgradeButton.Name = "UpgradeButton"
+	upgradeButton.Font = Enum.Font.GothamBold
+	upgradeButton.TextScaled = true
+	upgradeButton.ZIndex = 40
+	make("UIPadding", upgradeButton, {PaddingLeft = UDim.new(0, 3), PaddingRight = UDim.new(0, 3)})
+	make("UITextSizeConstraint", upgradeButton, {MinTextSize = 8, MaxTextSize = 12})
+	make("UIStroke", upgradeButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
+	local ragdollButton = button(screen, "RAG", UDim2.new(0, 18, 0.5, 82), UDim2.fromOffset(44, 44), ragdoll)
 	ragdollButton.Name = "RagdollButton"
 	local coins = make("Frame", screen, {
-		Name = "Coins", Position = UDim2.new(0, 18, 0.5, 82),
+		Name = "Coins", Position = UDim2.new(0, 18, 0.5, 134),
 		Size = UDim2.fromOffset(150, 36), BackgroundTransparency = 1,
 	})
 	make("ImageLabel", coins, {
@@ -217,7 +232,7 @@ function M.Init()
 		hint.TextSize, hint.TextXAlignment = 13, Enum.TextXAlignment.Center
 		styleReelLabel(hint)
 	end
-	local inventory = make("Frame", screen, {Name = "GrappleInventory", Position = UDim2.new(0, 72, 0.5, -104), Size = UDim2.fromOffset(184, 208), BackgroundColor3 = Color3.fromRGB(39, 51, 65), Visible = false})
+	local inventory = make("Frame", screen, {Name = "GrappleInventory", Position = UDim2.new(0, 72, 0.5, -52), Size = UDim2.fromOffset(184, 208), BackgroundColor3 = Color3.fromRGB(39, 51, 65), Visible = false})
 	rounded(inventory)
 	make("UIStroke", inventory, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
 	local gunTab = button(inventory, "Gun", UDim2.fromOffset(10, 10), UDim2.fromOffset(52, 28))
@@ -304,22 +319,33 @@ function M.Init()
 	local shopOpen = false
 	local shopWindow
 	local shopScale
-	-- The native hotbar is core UI, so it draws above this window and still takes taps.
-	-- Hide it for as long as the shop is open, then put it back.
-	local function setHotbar(enabled)
+	local upgradesOpen = false
+	local upgradesWindow
+	-- The native hotbar is core UI, so it draws above these windows and still takes taps.
+	-- Hide it while the shop or upgrades are open, then put it back.
+	local function overlayOpen()
+		return shopOpen or upgradesOpen
+	end
+	local function syncHotbar()
+		local enabled = not overlayOpen()
 		local function apply()
 			return pcall(StarterGui.SetCoreGuiEnabled, StarterGui, Enum.CoreGuiType.Backpack, enabled)
 		end
 		if apply() then return end
 		task.defer(function()
-			if shopOpen ~= (not enabled) then return end
+			if (not overlayOpen()) ~= enabled then return end
 			apply()
 		end)
 	end
 	local function hideShop()
 		shopOpen = false
 		if shopWindow then shopWindow.Visible = false end
-		setHotbar(true)
+		syncHotbar()
+	end
+	local function hideUpgrades()
+		upgradesOpen = false
+		if upgradesWindow then upgradesWindow.Visible = false end
+		syncHotbar()
 	end
 	settingsWindow = make("Frame", screen, {
 		Name = "SettingsWindow", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
@@ -339,7 +365,10 @@ function M.Init()
 			codexOpen = false
 			codexWindow.Visible = false
 		end
-		if visible then hideShop() end
+		if visible then
+			hideShop()
+			hideUpgrades()
+		end
 	end
 	closeSettings.Activated:Connect(function() showSettings(false) end)
 
@@ -511,6 +540,7 @@ function M.Init()
 			settingsOpen = false
 			settingsWindow.Visible = false
 			hideShop()
+			hideUpgrades()
 		end
 	end
 	closeCodex.Activated:Connect(function() showCodex(false) end)
@@ -564,9 +594,12 @@ function M.Init()
 	end
 	showShop = function(visible)
 		shopOpen = visible
-		if visible then fitShop() end
+		if visible then
+			fitShop()
+			hideUpgrades()
+		end
 		if shopWindow then shopWindow.Visible = visible end
-		setHotbar(not visible)
+		syncHotbar()
 		if not visible then return end
 		inventoryOpen = false
 		inventory.Visible = false
@@ -579,6 +612,35 @@ function M.Init()
 	end
 	shopButton.Activated:Connect(function()
 		showShop(not shopOpen)
+	end)
+	local showUpgrades
+	local upgradeUi = UpgradeUi.Mount(screen, function()
+		showUpgrades(false)
+	end)
+	upgradesWindow = upgradeUi.window
+	showUpgrades = function(visible)
+		upgradesOpen = visible
+		if visible then
+			upgradeUi.fit()
+			hideShop()
+		end
+		if upgradesWindow then upgradesWindow.Visible = visible end
+		syncHotbar()
+		if not visible then return end
+		inventoryOpen = false
+		inventory.Visible = false
+		settingsOpen = false
+		settingsWindow.Visible = false
+		codexOpen = false
+		if codexWindow then codexWindow.Visible = false end
+		showMenu(false)
+		upgradeUi.refresh()
+	end
+	upgradeButton.Activated:Connect(function()
+		showUpgrades(not upgradesOpen)
+	end)
+	inventoryButton.Activated:Connect(function()
+		if inventoryOpen then hideUpgrades() end
 	end)
 
 	local settingRevision = {}
@@ -827,6 +889,7 @@ function M.Init()
 			settingsScale.Scale = settingsUiScale
 			codexScale.Scale = settingsUiScale
 			fitShop()
+			upgradeUi.fit()
 		end
 		if menuOpen then placeMenuList() end
 		if currentRope and not currentRope.Parent then grapple() end

@@ -7,6 +7,7 @@ local Workspace = game:GetService("Workspace")
 local ServerStorage = game:GetService("ServerStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("GrappleConfig"))
+local Upgrades = require(ReplicatedStorage.Modules:WaitForChild("UpgradeCatalog"))
 local Remotes = require(ReplicatedStorage.Modules:WaitForChild("GrappleRemotes"))
 local Ragdoll = require(ReplicatedStorage.Modules:WaitForChild("RagdollService"))
 local ToolSetup = require(ReplicatedStorage.Modules:WaitForChild("GrappleToolSetup"))
@@ -20,7 +21,6 @@ end
 local FIRE_INTERVAL = 0.05
 local LENGTH_INTERVAL = Config.ropeReelInterval or 1 / 15
 local minRopeLength = Config.minRopeLength or Config.MinRopeLength or 0.1
-local maxRopeLength = Config.maxRopeLength or Config.MaxRopeLength or 500
 local releaseGrapple = ServerStorage:FindFirstChild("ReleaseGrapple")
 if not releaseGrapple then
 	releaseGrapple = Instance.new("BindableEvent")
@@ -369,7 +369,7 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	if Active[state.owner] ~= state then return end
 	local hitModel, hitHumanoid = characterFromPart(hit)
 	if not hitHumanoid then
-		if not WallMode[state.owner] then disconnectRope(state.owner) return end
+		if not state.wallMode then disconnectRope(state.owner) return end
 		local assembly = hit.AssemblyRootPart or hit
 		if not assembly.Anchored then
 			-- A physical assembly can only have one simulator. A new grapple
@@ -391,17 +391,15 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 		-- Wall ropes originate at the gun itself. FirePoint is part of the tool
 		-- rig, so do not register it for session cleanup.
 		local rope = makeRope(state, firePoint, attachment, (firePoint.WorldPosition - position).Magnitude)
+		rope:SetAttribute("WallGrapple", true)
 		state.tool:SetAttribute("HasGrappled", true)
 		Remotes.GrappledWall:FireClient(state.owner, attachment, rope, rope:FindFirstChild("RopeVisual"))
 		return
 	end
 
-	-- A player hit always uses the normal grapple behavior. Leaving wall mode
-	-- here keeps the next shot aimed at players unless the owner enables it again.
-	if WallMode[state.owner] then
-		WallMode[state.owner] = false
-		state.tool:SetAttribute("WallMode", false)
-	end
+	-- Wall mode never calls this branch. A character that slips through still
+	-- must not become a player tether or turn the mode off.
+	if state.wallMode then return end
 	local victimPlayer = Players:GetPlayerFromCharacter(hitModel)
 	if victimPlayer == state.owner or hitHumanoid.Health <= 0 then disconnectRope(state.owner) return end
 	local previousSession = physicsSessions[hitModel]
@@ -459,8 +457,9 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	local grapplerName = state.owner.DisplayName
 	if type(grapplerName) ~= "string" or grapplerName == "" then grapplerName = state.owner.Name end
 	KillCredit.NoteAttach(hitHumanoid, state.owner.UserId, grapplerName)
-	state.tetherExpiresAt = os.clock() + (Config.playerTetherDuration or 30)
-	state.tetherDeadline = Workspace:GetServerTimeNow() + (Config.playerTetherDuration or 30)
+	local tetherSeconds = Upgrades.HeldSeconds(state.owner, victimPlayer)
+	state.tetherExpiresAt = os.clock() + tetherSeconds
+	state.tetherDeadline = Workspace:GetServerTimeNow() + tetherSeconds
 	if victimPlayer then
 		Remotes.HasBeenGrappled:FireClient(victimPlayer, state.owner, state.tetherDeadline)
 	end
@@ -529,7 +528,7 @@ Remotes.ChangeLength.OnServerEvent:Connect(function(player, requestedLength)
 	if previousChange and now - previousChange < LENGTH_INTERVAL then return end
 	state.lastLengthChange = now
 	local minimum = state.victimHumanoid and (Config.playerMinDragDistance or 4) or minRopeLength
-	local length = math.clamp(requestedLength, minimum, maxRopeLength)
+	local length = math.clamp(requestedLength, minimum, Upgrades.ShotDistance(player, state.wallMode))
 	local previousLength = state.rope.Length
 	-- Store the actual constraint length immediately. It cannot unwind when
 	-- input stops and does not depend on winch force or target convergence.
@@ -559,6 +558,8 @@ end)
 
 Remotes.ToggleWallMode.OnServerEvent:Connect(function(player)
 	if not getTool(player) then return end
+	-- Mode is chosen before the shot. Flight and an attached rope both count.
+	if Active[player] then return end
 	local now = os.clock()
 	if now - (lastModeToggle[player] or -math.huge) < 0.15 then return end
 	lastModeToggle[player] = now
@@ -616,6 +617,7 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 		tool = tool,
 		character = character,
 		connections = {},
+		wallMode = WallMode[player] == true,
 	}
 	Active[player] = state
 	tool:SetAttribute("InUse", true)
@@ -656,20 +658,37 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	local rayParams = RaycastParams.new()
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
 	rayParams.FilterDescendantsInstances = {character, tool, hitboxFolder}
+	local reach = Upgrades.ShotDistance(player, state.wallMode)
+	local hookSpeed = Upgrades.HookSpeed(player)
 	local travelled, lastPosition, accumulator = 0, origin, 0
-	while Active[player] == state and travelled < maxRopeLength do
+	while Active[player] == state and travelled < reach do
 		accumulator += RunService.Heartbeat:Wait()
 		if Active[player] ~= state then break end
 		if accumulator < (1 / 30) then continue end
 		local dt = math.min(accumulator, 0.1)
 		accumulator = 0
-		local nextTravelled = math.min(travelled + (Config.HookSpeed or 80) * dt, maxRopeLength)
+		local nextTravelled = math.min(travelled + hookSpeed * dt, reach)
 		local nextPosition = origin + direction * nextTravelled
 		hitbox.CFrame = CFrame.new(nextPosition, nextPosition + direction)
 		local hit, impactPosition = nil, nil
-		if WallMode[player] then
-			local result = Workspace:Raycast(lastPosition, nextPosition - lastPosition, rayParams)
-			if result and result.Instance:IsA("BasePart") then hit, impactPosition = result.Instance, result.Position end
+		if state.wallMode then
+			-- Players and NPCs are not targets. Skip them and keep the ray going
+			-- so a person standing in front of a wall does not eat the shot.
+			local ignored = {character, tool, hitboxFolder}
+			local seen = {}
+			for _ = 1, 8 do
+				rayParams.FilterDescendantsInstances = ignored
+				local result = Workspace:Raycast(lastPosition, nextPosition - lastPosition, rayParams)
+				if not result or not result.Instance:IsA("BasePart") then break end
+				local hitModel = characterFromPart(result.Instance)
+				if not hitModel then
+					hit, impactPosition = result.Instance, result.Position
+					break
+				end
+				if seen[hitModel] then break end
+				seen[hitModel] = true
+				table.insert(ignored, hitModel)
+			end
 		else
 			local segment = nextPosition - lastPosition
 			local size = hitbox.Size

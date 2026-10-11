@@ -78,4 +78,19 @@ return function(source)
 	assert(saved.coins == 104 and saved.earned == 104, "grant paid twice")
 	assert(grant.OnInvoke(77, 0, "receipt-3") == false, "zero grant accepted")
 	assert(saved.coins == 104, "rejected grant changed coins")
+	local spend, refund
+	for index = 1, #made do
+		if made[index].Name == "SpendCoins" then spend = made[index] end
+		if made[index].Name == "RefundHeldCoins" then refund = made[index] end
+	end
+	assert(type(spend) == "table" and type(spend.OnInvoke) == "function", "coin spend was not created")
+	assert(spend.OnInvoke(77, 10) == true, "spend failed")
+	assert(saved.coins == 94 and saved.earned == 104, "spend changed lifetime coins")
+	assert(player.attributes.Coins == 94, "spend did not update the held balance")
+	assert(spend.OnInvoke(77, 1000) == false, "overspend was accepted")
+	assert(saved.coins == 94 and saved.earned == 104, "failed spend changed coins")
+	assert(spend.OnInvoke(77, 0) == false, "zero spend was accepted")
+	assert(refund.OnInvoke(77, 10) == true, "refund failed")
+	assert(saved.coins == 104 and saved.earned == 104, "refund changed lifetime coins")
+	assert(player.attributes.Coins == 104, "refund did not restore the held balance")
 end

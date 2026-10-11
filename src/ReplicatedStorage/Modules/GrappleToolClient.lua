@@ -3,6 +3,7 @@ local Players = game:GetService("Players")
 local storage = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
 local Config = require(storage:WaitForChild("GrappleConfig"))
+local Upgrades = require(storage.Modules:WaitForChild("UpgradeCatalog"))
 local Remotes = require(storage.Modules:WaitForChild("GrappleRemotes"))
 local M = {}
 local initialized = setmetatable({}, {__mode = "k"})
@@ -33,8 +34,9 @@ function M.Fire(tool, aimPosition)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = {character}
-	local result = workspace:Raycast(ray.Origin, ray.Direction * Config.maxRopeLength, params)
-	local target = result and result.Position or ray.Origin + ray.Direction * Config.maxRopeLength
+	local reach = Upgrades.ShotDistance(player, tool:GetAttribute("WallMode") == true)
+	local result = workspace:Raycast(ray.Origin, ray.Direction * reach, params)
+	local target = result and result.Position or ray.Origin + ray.Direction * reach
 	Remotes.FireGrapple:FireServer(target, camera.CFrame.Position)
 end
 function M.Init(tool)

@@ -2,6 +2,7 @@
 -- This validates state/cleanup, not the engine's physics solver or GUI rendering.
 return function(sources)
 	assert(loadstring(sources.coinTests))()(sources.coins)
+	assert(loadstring(sources.upgradeTests))()(sources.upgradeServer, sources.upgrades)
 	assert(loadstring(sources.playedTimeTests))()(sources.playedTime, sources.playedTimeClient)
 	assert(loadstring(sources.killsBoardTests))()(sources.killsServer, sources.killsBoardClient)
 	assert(loadstring(sources.coinsBoardTests))()(sources.coins, sources.coinsBoardClient)
@@ -195,6 +196,7 @@ return function(sources)
 	local soundModule = instance("ModuleScript", "PlaySound", storage.Modules)
 	local toolSetupModule = instance("ModuleScript", "GrappleToolSetup", storage.Modules)
 	instance("ModuleScript", "KillCredit", storage.Modules)
+	instance("ModuleScript", "UpgradeCatalog", storage.Modules)
 	local world = instance("Workspace")
 	function world:GetServerTimeNow() return now end
 	world.Gravity = 196.2
@@ -247,6 +249,10 @@ return function(sources)
 			if not services.killCredit then services.killCredit = execute(sources.killCredit) end
 			return services.killCredit
 		end
+		if module.Name == "UpgradeCatalog" then
+			if not services.upgradeCatalog then services.upgradeCatalog = execute(sources.upgrades) end
+			return services.upgradeCatalog
+		end
 		error("Unexpected require")
 	end
 	toolSetup = execute(sources.toolSetup)
@@ -280,6 +286,7 @@ return function(sources)
 	local handle = instance("Part", "Handle", gun)
 	handle.Anchored, handle.CanCollide = true, true
 	local firePoint = instance("Attachment", "FirePoint", handle)
+	local expectedTether
 	local function fire()
 		now += 1.6
 		remotes.FireGrapple.OnServerEvent:Emit(attacker, V.new(0, 0, 20), V.new(0, 0, 0))
@@ -304,7 +311,10 @@ return function(sources)
 	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", nil)
 	attackerHumanoid:AddTag("Ragdoll")
 	attackerHumanoid:SetAttribute("Ragdolled", true)
+	attacker:SetAttribute("TetherDurationRank", 10)
+	victim:SetAttribute("TetherResistanceRank", 10)
 	fire()
+	expectedTether = now + 30
 	assert(victimHumanoid:GetAttribute("GrappledBy") == attacker.UserId, "ragdolled player could not fire the gun")
 	assert(services.killCredit.IsActive(victimHumanoid, attacker.UserId), "kill credit missed the active grapple")
 	attackerHumanoid:RemoveTag("Ragdoll")
@@ -342,7 +352,8 @@ return function(sources)
 	remotes.ChangeLength.OnServerEvent:Emit(attacker, 25)
 	assert(rope.Length == 25, "reel-out did not permanently increase length")
 	local tetherDeadline = remotes.HasBeenGrappled.messages[#remotes.HasBeenGrappled.messages].args[2]
-	assert(tetherDeadline and config.playerTetherDuration == 30, "tether did not send its expiration deadline")
+	assert(tetherDeadline == expectedTether, "resistance did not shorten the tether")
+	assert(config.playerTetherDuration == 20, "base tether duration was not reduced")
 	victimRoot.CFrame = {LookVector = V.new(1, 0.8, 0)}
 	victimRoot.AssemblyAngularVelocity = V.new(4, 3, 2)
 	victimRoot.AssemblyLinearVelocity = V.new(10, 25, -3)
@@ -650,6 +661,9 @@ return function(sources)
 	local wallRope = assert(wall:FindFirstChildWhichIsA("RopeConstraint"))
 	local firePoint = assert(gun:FindFirstChild("FirePoint", true))
 	assert(wallRope.Attachment0 == firePoint, "wall rope did not originate at the gun")
+	assert(wallRope:GetAttribute("WallGrapple") == true, "wall rope was not marked for the longer reel")
+	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
+	assert(gun:GetAttribute("WallMode") == true, "wall mode changed during a shot")
 	attackerRoot.AssemblyLinearVelocity = V.new(12, 0, 0)
 	remotes.ChangeLength.OnServerEvent:Emit(attacker, -1e6)
 	assert(wallRope.Length == config.minRopeLength and not wallRope.WinchEnabled, "wall reel did not immediately set fixed length")
@@ -661,8 +675,14 @@ return function(sources)
 	now += 20
 	runService.Heartbeat:Emit(0.1)
 	assert(not wallRope.destroyed, "wall grapple expired automatically")
-	remotes.ChangeLength.OnServerEvent:Emit(attacker, 80)
-	assert(wallRope.Length == 80, "wall reel-out did not stick")
+	remotes.ChangeLength.OnServerEvent:Emit(attacker, 40)
+	assert(wallRope.Length == 40, "wall reel-out did not stick")
+	now += 0.1
+	remotes.ChangeLength.OnServerEvent:Emit(attacker, 100)
+	assert(wallRope.Length == 100, "wall reel stayed at the normal hook distance")
+	now += 0.1
+	remotes.ChangeLength.OnServerEvent:Emit(attacker, 100000)
+	assert(wallRope.Length == 180, "wall reel did not cap at triple hook distance")
 	remotes.FireGrapple.OnServerEvent:Emit(attacker, V.new(0, 0, 100), V.new(0, 0, -100))
 	assert(wallRope.destroyed and not wall:FindFirstChildWhichIsA("RopeConstraint"), "wall click should release, not refire")
 	assert(wall:GetNetworkOwnershipAuto(), "wall release did not restore automatic ownership")
@@ -681,9 +701,27 @@ return function(sources)
 	now += 0.2
 	remotes.FireGrapple.OnServerEvent:Emit(attacker, victimRoot.Position, V.new(0, 0, -100))
 	assert(not victimHumanoid:GetAttribute("GrappledBy"), "unequip cooldown allowed an early shot")
+	world.Raycast = function(_, _, _, params)
+		local filtered = params and params.FilterDescendantsInstances or {}
+		for _, item in ipairs(filtered) do
+			if item == victim.Character then return {Instance = wall, Position = V.new(0, 0, 40)} end
+		end
+		return {Instance = victimRoot, Position = victimRoot.Position}
+	end
 	now += 1.11
 	remotes.FireGrapple.OnServerEvent:Emit(attacker, victimRoot.Position, V.new(0, 0, -100))
-	assert(victimHumanoid:GetAttribute("GrappledBy") == attacker.UserId and not gun:GetAttribute("WallMode"), "wall mode player hit did not become a normal grapple and disable wall mode")
+	assert(not victimHumanoid:GetAttribute("GrappledBy") and gun:GetAttribute("WallMode") == true, "wall mode tethered a player")
+	wallRope = assert(wall:FindFirstChildWhichIsA("RopeConstraint"), "wall mode missed the object behind a player")
+	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
+	assert(gun:GetAttribute("WallMode") == true, "wall mode changed while the rope was out")
+	now += 0.2
+	remotes.FireGrapple.OnServerEvent:Emit(attacker, victimRoot.Position, V.new(0, 0, -100))
+	assert(wallRope.destroyed, "wall click should release the rope behind a player")
+	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
+	assert(not gun:GetAttribute("WallMode"), "wall mode did not turn off before the next shot")
+	world.Raycast = function() return {Instance = victimRoot, Position = victimRoot.Position} end
+	fire()
+	assert(victimHumanoid:GetAttribute("GrappledBy") == attacker.UserId, "player grapple failed after leaving wall mode")
 	fire()
 	-- Grapple cleanup must remove the physical rope on death. The lifecycle
 	-- script's normal joint-breaking behavior is exercised below.
@@ -862,7 +900,8 @@ return function(sources)
 		end,
 	}
 	local clickedPoint = V.new(7, 3, 100)
-	world.Raycast = function(_, _, _, params)
+	world.Raycast = function(_, _, direction, params)
+		services.aimSpan = direction.Magnitude
 		assert(params.FilterDescendantsInstances[1] == attacker.Character, "aim ray must exclude own character")
 		return {Position = clickedPoint}
 	end
@@ -876,6 +915,7 @@ return function(sources)
 	assert(#remotes.FireGrapple.sent == 1, "mouse fallback duplicated or missed shot")
 	assert(aimPixels[1] == 100 and aimPixels[2] == 100, "mouse pixel changed during ray conversion")
 	assert(remotes.FireGrapple.sent[1][1] == clickedPoint, "shot target differs from exact aim ray hit")
+	assert(math.abs(services.aimSpan - 60) < 0.001, "aim ray did not use hook distance")
 	input.InputBegan:Emit({UserInputType = "Keyboard", KeyCode = "W"}, false)
 	assert(#remotes.FireGrapple.sent == 1, "movement fired the gun")
 	now += 0.2
@@ -897,6 +937,12 @@ return function(sources)
 	assert(#remotes.FireGrapple.sent == 4, "grapple-locked player fired the grapple gun")
 	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", nil)
 	attackerHumanoid:SetAttribute("Ragdolled", false)
+	gun:SetAttribute("WallMode", true)
+	now += 0.2
+	toolClient.Fire(gun)
+	assert(#remotes.FireGrapple.sent == 5, "wall mode shot did not fire")
+	assert(math.abs(services.aimSpan - 180) < 0.001, "wall mode aim was not triple hook distance")
+	gun:SetAttribute("WallMode", false)
 	local unequipsBefore = attackerHumanoid.UnequippedCount or 0
 	input.InputBegan:Emit({UserInputType = "Keyboard", KeyCode = "One"}, true)
 	assert(gun.Parent == attacker.Character and (attackerHumanoid.UnequippedCount or 0) == unequipsBefore, "grapple code hijacked the normal hotbar key")

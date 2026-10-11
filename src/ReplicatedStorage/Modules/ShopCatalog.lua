@@ -28,6 +28,25 @@ return {
 			color = Color3.fromRGB(164, 112, 232),
 			image = "",
 		},
+		-- key is the future ownership check. These passes do not gate the tools yet.
+		{
+			id = 0,
+			key = "Push",
+			name = "Push",
+			description = "Shove players in front of you.",
+			price = 179,
+			color = Color3.fromRGB(255, 112, 84),
+			image = "",
+		},
+		{
+			id = 0,
+			key = "WallMode",
+			name = "Wall Mode",
+			description = "Tether onto walls and objects.",
+			price = 349,
+			color = Color3.fromRGB(88, 168, 232),
+			image = "",
+		},
 	},
 	Coins = {
 		{id = 0, amount = 100, price = 49, image = ""},

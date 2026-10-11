@@ -371,3 +371,81 @@ local grant = Instance.new("BindableFunction")
 grant.Name = "GrantCoins"
 grant.OnInvoke = grantCoins
 grant.Parent = ReplicatedStorage
+
+-- Spending and refunds change the held balance only. Lifetime earned, and the
+-- ordered leaderboard, stay where they are. Unsaved minutes are written first
+-- so a player can spend coins they can already see.
+local function changeHeld(userId, delta)
+	if type(userId) ~= "number" then return false end
+	delta = tonumber(delta)
+	if not delta then return false end
+	delta = math.floor(delta)
+	if delta == 0 or math.abs(delta) > 100000000 then return false end
+
+	local lookup = Players.GetPlayerByUserId
+	local player = type(lookup) == "function" and lookup(Players, userId) or nil
+	local state = player and sessions[player]
+	if state and not state.loaded then
+		local started = os.clock()
+		while sessions[player] == state and not state.loaded and os.clock() - started < 20 do
+			task.wait(0.1)
+		end
+		if sessions[player] ~= state then state = nil end
+	end
+	if not state or not state.loaded or not player or sessions[player] ~= state then return false end
+	while state.saving do task.wait() end
+	if sessions[player] ~= state then return false end
+	if state.earned ~= state.saved then
+		save(player, state)
+		if state.earned ~= state.saved or sessions[player] ~= state then return false end
+	end
+	while state.saving do task.wait() end
+	if sessions[player] ~= state then return false end
+	state.saving = true
+
+	local applied = false
+	local ok, data = pcall(function()
+		return store:UpdateAsync("player_" .. userId, function(previous)
+			local record = type(previous) == "table" and previous or {coins = 0, earned = 0}
+			local held, lifetime = heldAndEarned(record)
+			if held + delta < 0 then
+				applied = false
+				return previous
+			end
+			record.coins = held + delta
+			record.earned = lifetime
+			applied = true
+			return record
+		end)
+	end)
+	if ok and applied and type(data) == "table" and sessions[player] == state then
+		state.base = math.floor(tonumber(data.coins) or 0) - state.saved
+		player:SetAttribute("Coins", state.base + state.earned)
+	else
+		applied = false
+	end
+	state.saving = false
+	return ok and applied
+end
+
+local function spendCoins(userId, amount)
+	amount = math.floor(tonumber(amount) or 0)
+	if amount <= 0 or amount > 100000000 then return false end
+	return changeHeld(userId, -amount)
+end
+
+local function refundHeld(userId, amount)
+	amount = math.floor(tonumber(amount) or 0)
+	if amount <= 0 or amount > 100000000 then return false end
+	return changeHeld(userId, amount)
+end
+
+local spend = Instance.new("BindableFunction")
+spend.Name = "SpendCoins"
+spend.OnInvoke = spendCoins
+spend.Parent = ReplicatedStorage
+
+local refund = Instance.new("BindableFunction")
+refund.Name = "RefundHeldCoins"
+refund.OnInvoke = refundHeld
+refund.Parent = ReplicatedStorage

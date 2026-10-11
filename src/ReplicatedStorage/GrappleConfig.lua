@@ -26,11 +26,12 @@ return {
 
 	-- Min Hook distance
 	minRopeLength = 1,
-	-- Max Hook distance
-	maxRopeLength = 500,
+	-- Unupgraded hook distance. UpgradeCatalog raises this. Rank 10 is 300.
+	-- Wall mode uses three times the player's current hook distance.
+	maxRopeLength = 60,
 	-- Player grapples persist until released, escaped, or a character leaves/dies.
-	-- How fast the hook travels
-	HookSpeed = 80, -- Studs per second
+	-- Unupgraded hook speed. UpgradeCatalog raises this. Rank 10 is 150.
+	HookSpeed = 40, -- Studs per second
 	-- The cooldown after it unhooks
 	GrappleCooldown = 0.1,
 	playerReleaseCooldown = 0.75, -- Ignore another click or tap briefly after catching a player
@@ -47,7 +48,7 @@ return {
 	+------------------------------------------------+
 	]]
 	
-	playerTetherDuration = 30,
+	playerTetherDuration = 20, -- Unupgraded seconds. UpgradeCatalog rank 10 is 60.
 
 	--[[
 	+------------------------------------------------+
