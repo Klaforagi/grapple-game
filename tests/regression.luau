@@ -1,6 +1,7 @@
 -- Runs the real game modules against a small Roblox API mock.
 -- This validates state/cleanup, not the engine's physics solver or GUI rendering.
 return function(sources)
+	assert(loadstring(sources.mobileFlopTests))()(sources.mobileFlopButton)
 	assert(loadstring(sources.coinTests))()(sources.coins)
 	assert(loadstring(sources.upgradeTests))()(sources.upgradeServer, sources.upgrades)
 	assert(loadstring(sources.playedTimeTests))()(sources.playedTime, sources.playedTimeClient)

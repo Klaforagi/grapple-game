@@ -116,7 +116,7 @@ function M.Init()
 	UIS.JumpRequest:Connect(function()
 		if UIS.TouchEnabled then flop() end
 	end)
-	local jumpFlop = {button = nil, connection = nil, forced = false}
+	local jumpFlop = require(script.Parent:WaitForChild("MobileFlopButton")).new(flop)
 	CAS:BindActionAtPriority("GrappleHUD_Flop", function(_, state)
 		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 		if UIS:GetFocusedTextBox() or not humanoid or not humanoid:GetAttribute("Ragdolled") then
@@ -957,27 +957,11 @@ function M.Init()
 		if UIS.TouchEnabled then
 			local touchGui = playerGui:FindFirstChild("TouchGui")
 			local jump = touchGui and touchGui:FindFirstChild("JumpButton", true)
-			if jump ~= jumpFlop.button then
-				if jumpFlop.connection then jumpFlop.connection:Disconnect() end
-				if jumpFlop.forced and jumpFlop.button and jumpFlop.button.Parent then jumpFlop.button.Visible = jumpFlop.visible end
-				jumpFlop.button, jumpFlop.connection, jumpFlop.forced = jump, nil, false
-				if jump and jump:IsA("GuiObject") then
-					-- Direct input still works while grapple controls disable normal jumping.
-					jumpFlop.connection = jump.InputBegan:Connect(function(input)
-						if input.UserInputType == Enum.UserInputType.Touch then flop() end
-					end)
-				end
-			end
 			local ragdolled = humanoid and humanoid.Health > 0 and humanoid:GetAttribute("Ragdolled")
 				and not humanoid:GetAttribute("CapsuleLocked")
-			if jump and jump:IsA("GuiObject") then
-				if ragdolled then
-					if not jumpFlop.forced then jumpFlop.visible = jump.Visible end
-					jumpFlop.forced, jump.Visible = true, true
-				elseif jumpFlop.forced then
-					jump.Visible, jumpFlop.forced = jumpFlop.visible, false
-				end
-			end
+			jumpFlop:Update(jump, ragdolled)
+		else
+			jumpFlop:Destroy()
 		end
 		ragdollBorder.Enabled = humanoid ~= nil and humanoid.Health > 0
 			and humanoid:GetAttribute("Ragdolled") == true
