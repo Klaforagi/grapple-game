@@ -53,6 +53,15 @@ local function actionButton(parent, name, text, order, color)
 	return button
 end
 
+local function headshot(userId)
+	if type(userId) ~= "number" or userId <= 0 or userId % 1 ~= 0 then return "" end
+	return "rbxthumb://type=AvatarHeadShot&id=" .. tostring(userId) .. "&w=150&h=150"
+end
+
+local function playerLabel(entry)
+	return tostring(entry.displayName or entry.username or "Player") .. "  @" .. tostring(entry.username or "Unknown")
+end
+
 local function formatTime(seconds)
 	seconds = math.max(0, math.floor(tonumber(seconds) or 0))
 	local hours = math.floor(seconds / 3600)
@@ -166,16 +175,51 @@ function M.Mount(screen, onOpen)
 		ScrollingDirection = Enum.ScrollingDirection.Y, Active = true,
 	})
 	corner(resultScroll, 8)
+	make("UIPadding", resultScroll, {
+		PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
+		PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
+	})
+	make("UIListLayout", resultScroll, {Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder})
+	local resultHead = make("Frame", resultScroll, {
+		Name = "Head", BackgroundTransparency = 1, Visible = false,
+		Size = UDim2.new(1, 0, 0, 36), LayoutOrder = 1,
+	})
+	local resultAvatar = make("ImageLabel", resultHead, {
+		Name = "Avatar", BackgroundColor3 = Color3.fromRGB(40, 52, 66), BorderSizePixel = 0,
+		Size = UDim2.fromOffset(36, 36), ScaleType = Enum.ScaleType.Crop, Image = "",
+		ClipsDescendants = true,
+	})
+	make("UICorner", resultAvatar, {CornerRadius = UDim.new(1, 0)})
+	local resultName = make("TextLabel", resultHead, {
+		BackgroundTransparency = 1, BorderSizePixel = 0, Text = "",
+		Position = UDim2.fromOffset(46, 0), Size = UDim2.new(1, -46, 1, 0),
+		Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = INK,
+		TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+	})
 	-- A text box so the profile can be highlighted and copied. Typing is ignored.
 	local resultText = make("TextBox", resultScroll, {
 		Name = "Text", BackgroundTransparency = 1, Text = "Search by user id or username.",
 		ClearTextOnFocus = false, TextEditable = true, TextWrapped = true,
 		Font = Enum.Font.Gotham, TextSize = 15, TextColor3 = INK,
 		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
-		Size = UDim2.new(1, -16, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
-		Position = UDim2.fromOffset(8, 8),
+		Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 2,
 	})
 	local resultLocked = resultText.Text
+	local function hideLookupFace()
+		resultHead.Visible = false
+		resultAvatar.Image = ""
+		resultName.Text = ""
+	end
+	local function showLookupFace(profile)
+		local image = headshot(profile.userId)
+		if image == "" then
+			hideLookupFace()
+			return
+		end
+		resultAvatar.Image = image
+		resultName.Text = playerLabel(profile)
+		resultHead.Visible = true
+	end
 	local function setResult(text)
 		resultLocked = text
 		resultText.Text = text
@@ -394,16 +438,25 @@ function M.Mount(screen, onOpen)
 		for index, entry in ipairs(rows) do
 			if entry.userId == selectedUserId then found = true end
 			local row = make("TextButton", serverList, {
-				Name = "PlayerRow",
-				Text = tostring(entry.displayName or entry.username) .. "  @" .. tostring(entry.username),
+				Name = "PlayerRow", Text = "",
 				AutoButtonColor = true, BorderSizePixel = 0,
 				BackgroundColor3 = entry.userId == selectedUserId and TAB_ON or Color3.fromRGB(24, 32, 42),
-				TextColor3 = INK, Font = Enum.Font.Gotham, TextSize = 14,
-				TextXAlignment = Enum.TextXAlignment.Left,
-				Size = UDim2.new(1, -8, 0, 28), LayoutOrder = index,
+				Size = UDim2.new(1, -8, 0, 36), LayoutOrder = index,
 			})
-			corner(row, 6)
-			pad(row, 8)
+			corner(row, 8)
+			local face = make("ImageLabel", row, {
+				Name = "Avatar", BackgroundColor3 = Color3.fromRGB(40, 52, 66), BorderSizePixel = 0,
+				Image = headshot(entry.userId), ScaleType = Enum.ScaleType.Crop,
+				Position = UDim2.fromOffset(5, 4), Size = UDim2.fromOffset(28, 28),
+				ClipsDescendants = true,
+			})
+			make("UICorner", face, {CornerRadius = UDim.new(1, 0)})
+			make("TextLabel", row, {
+				BackgroundTransparency = 1, BorderSizePixel = 0,
+				Text = playerLabel(entry), TextColor3 = INK, Font = Enum.Font.Gotham, TextSize = 14,
+				TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+				Position = UDim2.fromOffset(40, 0), Size = UDim2.new(1, -48, 1, 0),
+			})
 			row.Activated:Connect(function()
 				selectedUserId = entry.userId
 				setServerUserId(tostring(entry.userId))
@@ -443,6 +496,7 @@ function M.Mount(screen, onOpen)
 		send("grant", {user = coinUser.Text, amount = coinAmount.Text})
 	end)
 	loadPlayer.Activated:Connect(function()
+		hideLookupFace()
 		setResult("Loading...")
 		send("lookup", {user = lookupUser.Text})
 	end)
@@ -515,12 +569,14 @@ function M.Mount(screen, onOpen)
 			setStatus(payload.message, payload.ok == true)
 			if payload.action == "lookup" then
 				if type(payload.profile) == "table" then
+					showLookupFace(payload.profile)
 					setResult(profileText(payload.profile))
 					if serverPage.Visible and payload.profile.userId == selectedUserId then
 						setServerUserId(tostring(payload.profile.userId))
 						setServerStats(serverStatsText(payload.profile))
 					end
 				elseif payload.ok ~= true then
+					hideLookupFace()
 					setResult(payload.message or "Could not load that player.")
 					if serverPage.Visible then
 						setServerStats(payload.message or "Could not load that player.")

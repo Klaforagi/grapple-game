@@ -43,6 +43,7 @@ end
 
 local requestRemote = ensureRemote("AdminRequest")
 local resultRemote = ensureRemote("AdminResult")
+local noclipRemote = ensureRemote("AdminNoclip")
 
 local function reply(player, ok, action, message, profile, extra)
 	if player.Parent ~= Players then return end
@@ -428,6 +429,11 @@ local function handle(player, payload)
 		reply(player, false, action, "Unknown action.")
 	end
 end
+
+noclipRemote.OnServerEvent:Connect(function(player)
+	if not AdminList.IsAdmin(player.UserId) then return end
+	player:SetAttribute("Noclip", player:GetAttribute("Noclip") ~= true)
+end)
 
 requestRemote.OnServerEvent:Connect(function(player, payload)
 	local ok, err = pcall(handle, player, payload)

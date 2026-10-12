@@ -58,6 +58,7 @@ try {
 $adminSources = @{
     adminList = 'src/ServerScriptService/AdminList.lua'
     admin = 'src/ServerScriptService/Admin.server.lua'
+    noclip = 'src/ReplicatedStorage/Modules/AdminNoclipMotion.lua'
 }
 $adminBundle = 'local sources = {}' + [Environment]::NewLine
 foreach ($key in $adminSources.Keys) {

@@ -20,6 +20,11 @@ end
 
 local FIRE_INTERVAL = 0.05
 local LENGTH_INTERVAL = Config.ropeReelInterval or 1 / 15
+-- Noclip flight is moved by script, so a normal body loses a tug-of-war with a
+-- ragdoll on the rope. A heavier grappler and a lighter victim let the rope
+-- lift the other person. Density 0.7 is a normal character part.
+local NOCLIP_BODY_DENSITY = 10
+local NOCLIP_VICTIM_DENSITY = 0.1
 local minRopeLength = Config.minRopeLength or Config.MinRopeLength or 0.1
 local releaseGrapple = ServerStorage:FindFirstChild("ReleaseGrapple")
 if not releaseGrapple then
@@ -166,6 +171,76 @@ local function restoreAutomaticNetworkOwnership(character: Model)
 	end
 end
 
+local function setDensity(part, density)
+	local props = part.CurrentPhysicalProperties
+	if props == nil or type(density) ~= "number" then return end
+	local friction = props.Friction
+	if type(friction) ~= "number" then friction = 0.3 end
+	local elasticity = props.Elasticity
+	local frictionWeight = props.FrictionWeight
+	local elasticityWeight = props.ElasticityWeight
+	if type(elasticity) ~= "number" then elasticity = 0.5 end
+	if type(frictionWeight) ~= "number" then frictionWeight = 1 end
+	if type(elasticityWeight) ~= "number" then elasticityWeight = 1 end
+	part.CustomPhysicalProperties = PhysicalProperties.new(density, friction, elasticity, frictionWeight, elasticityWeight)
+end
+
+local function bodyParts(character)
+	local parts = {}
+	if not character then return parts end
+	for _, part in ipairs(character:GetChildren()) do
+		if part:IsA("BasePart") then parts[#parts + 1] = part end
+	end
+	return parts
+end
+
+-- [player] = {[part] = original density}. Present only while noclip mass is applied.
+local heavyMass = {}
+
+local function applyHeavy(player)
+	local saved = heavyMass[player]
+	if not saved then
+		saved = {}
+		heavyMass[player] = saved
+	end
+	for _, part in ipairs(bodyParts(player.Character)) do
+		local props = part.CurrentPhysicalProperties
+		if saved[part] == nil and props then saved[part] = props.Density end
+		setDensity(part, NOCLIP_BODY_DENSITY)
+	end
+end
+
+local function restoreHeavy(player)
+	local saved = heavyMass[player]
+	heavyMass[player] = nil
+	if not saved then return end
+	for part, density in pairs(saved) do
+		if part.Parent and type(density) == "number" then setDensity(part, density) end
+	end
+end
+
+local function lightenVictim(state)
+	local saved = state.victimMass
+	if not saved then
+		saved = {}
+		state.victimMass = saved
+	end
+	for _, part in ipairs(bodyParts(state.victimCharacter)) do
+		local props = part.CurrentPhysicalProperties
+		if saved[part] == nil and props then saved[part] = props.Density end
+		setDensity(part, NOCLIP_VICTIM_DENSITY)
+	end
+end
+
+local function restoreVictimMass(state)
+	local saved = state.victimMass
+	state.victimMass = nil
+	if not saved then return end
+	for part, density in pairs(saved) do
+		if part.Parent and type(density) == "number" then setDensity(part, density) end
+	end
+end
+
 local disconnectRope: (Player, boolean?, boolean?) -> ()
 
 local function finishVictimHandoff(state, departingPlayer)
@@ -209,6 +284,7 @@ disconnectRope = function(player: Player, skipCooldown: boolean?, preserveVictim
 	if not state then return end
 	-- Clear first so destruction and death callbacks can safely re-enter.
 	Active[player] = nil
+	restoreVictimMass(state)
 
 	for _, connection in pairs(state.connections) do connection:Disconnect() end
 	if state.rope then state.rope:Destroy() end
@@ -784,6 +860,20 @@ RunService.Heartbeat:Connect(function(dt)
 				continue
 			end
 			if state.tetherExpiresAt and now >= state.tetherExpiresAt then disconnectRope(owner) end
+		end
+		if Active[owner] == state and state.victimCharacter then
+			if owner:GetAttribute("Noclip") == true then
+				lightenVictim(state)
+			elseif state.victimMass then
+				restoreVictimMass(state)
+			end
+		end
+	end
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player:GetAttribute("Noclip") == true and player.Character then
+			applyHeavy(player)
+		elseif heavyMass[player] then
+			restoreHeavy(player)
 		end
 	end
 end)
