@@ -447,7 +447,10 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	ownerAttachment.Parent = ownerRoot
 	state.ownerAttachment = ownerAttachment
 	local attachment = createImpactAttachment(state.owner, attachmentPart, attachmentPart.Position)
-	local rope = makeRope(state, ownerAttachment, attachment, (ownerRoot.Position - attachmentPart.Position).Magnitude)
+	-- A catch inside the reel minimum used to store that shorter distance and
+	-- replace the 4-stud floor. Slack the rope out to the floor instead.
+	local separation = (ownerRoot.Position - attachmentPart.Position).Magnitude
+	local rope = makeRope(state, ownerAttachment, attachment, math.max(separation, Config.playerMinDragDistance or 4))
 	-- Both modes use a fixed maximum separation with no winch motor.
 	rope:SetAttribute("PlayerGrapple", true)
 	state.releaseAllowedAt = os.clock() + (Config.playerReleaseCooldown or 0.75)
