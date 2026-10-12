@@ -158,26 +158,48 @@ local function requestRefresh()
 end
 
 -- One ordered write per player each minute. A newer total replaces a queued one.
+-- rankEpoch lets an admin reset drop the board. A flush that already copied the
+-- old total sees the new epoch and does not write that total back.
 local pendingRanks = {}
+local rankEpoch = {}
 local function queueRank(userId, kills)
 	if type(userId) ~= "number" then return end
 	kills = math.floor(tonumber(kills) or 0)
 	if kills <= 0 then return end
+	local epoch = rankEpoch[userId] or 0
 	local queued = pendingRanks[userId]
-	if not queued or kills > queued then pendingRanks[userId] = kills end
+	if not queued or queued.epoch ~= epoch or kills > queued.total then
+		pendingRanks[userId] = {total = kills, epoch = epoch}
+	end
 end
 
 local function flushRanks()
 	local batch = pendingRanks
 	pendingRanks = {}
 	if not ordered then return end
-	for userId, kills in pairs(batch) do
-		pcall(function()
-			ordered:UpdateAsync(tostring(userId), function(previous)
-				if kills > (tonumber(previous) or 0) then return kills end
+	for userId, queued in pairs(batch) do
+		local kills, epoch = queued.total, queued.epoch
+		if (rankEpoch[userId] or 0) == epoch then
+			pcall(function()
+				ordered:UpdateAsync(tostring(userId), function(previous)
+					if kills > (tonumber(previous) or 0) then return kills end
+				end)
 			end)
-		end)
+		end
 	end
+end
+
+local function forceRank(userId, kills)
+	rankEpoch[userId] = (rankEpoch[userId] or 0) + 1
+	pendingRanks[userId] = nil
+	if not ordered then return end
+	pcall(function()
+		if kills <= 0 then
+			ordered:RemoveAsync(tostring(userId))
+		else
+			ordered:SetAsync(tostring(userId), kills)
+		end
+	end)
 end
 
 local function findEntry(userId)
@@ -390,3 +412,51 @@ game:BindToClose(function()
 	while inflight > 0 and os.clock() < deadline do task.wait() end
 	flushRanks()
 end)
+
+-- Admin reset writes the live total too. Leave does not save kills from memory,
+-- but a queued kill or the ordered board would otherwise put the old number back.
+local function adminReadKills(userId)
+	local player, entry = findEntry(userId)
+	if not player or not entry or not entry.loaded then return nil end
+	return {kills = entry.total}
+end
+
+local function adminResetKills(userId)
+	if type(userId) ~= "number" then return false end
+	local player, entry = findEntry(userId)
+	if entry and not entry.loaded then
+		local started = os.clock()
+		while entries[player] == entry and not entry.loaded and os.clock() - started < 20 do
+			task.wait(0.1)
+		end
+		if entries[player] ~= entry then entry = nil end
+	end
+	if player and entries[player] and not entries[player].loaded then return false end
+	entry = player and entries[player]
+	local ok = true
+	if store then
+		ok = pcall(function()
+			store:UpdateAsync("player_" .. userId, function(previous)
+				local record = type(previous) == "table" and previous or {kills = 0, applied = {}}
+				record.kills = 0
+				return record
+			end)
+		end)
+	end
+	if ok and entry and entries[player] == entry then
+		entry.total = 0
+		entry.queued = {}
+		player:SetAttribute("Kills", nil)
+	end
+	if ok then forceRank(userId, 0) requestRefresh() end
+	return ok
+end
+
+local adminKills = Instance.new("BindableFunction")
+adminKills.Name = "AdminKills"
+adminKills.OnInvoke = function(action, userId)
+	if action == "read" then return adminReadKills(userId) end
+	if action == "reset" then return adminResetKills(userId) end
+	return false
+end
+adminKills.Parent = ReplicatedStorage

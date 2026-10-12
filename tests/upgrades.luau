@@ -13,6 +13,7 @@ return function(serverSource, catalogSource)
 	end
 	local fresh = fake({})
 	assert(Catalog.HookSpeed(fresh) == 40, "base hook speed")
+	assert(Catalog.Value(Catalog.ById.speed, 1) == 46, "rank 1 hook speed")
 	assert(Catalog.HookDistance(fresh) == 60, "base hook distance")
 	assert(Catalog.TetherDuration(fresh) == 20, "base tether duration")
 	assert(Catalog.Resistance(fresh) == 0, "base resistance")
@@ -20,7 +21,7 @@ return function(serverSource, catalogSource)
 		HookSpeedRank = 10, HookDistanceRank = 10,
 		TetherDurationRank = 10, TetherResistanceRank = 10,
 	})
-	assert(Catalog.HookSpeed(maxed) == 150, "max hook speed")
+	assert(Catalog.HookSpeed(maxed) == 100, "max hook speed")
 	assert(Catalog.HookDistance(maxed) == 300, "max hook distance")
 	assert(Catalog.WallLengthScale == 3, "wall mode length scale drifted")
 	assert(Catalog.ShotDistance(fresh, false) == 60 and Catalog.ShotDistance(fresh, true) == 180, "wall mode base length")

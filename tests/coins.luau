@@ -93,4 +93,19 @@ return function(source)
 	assert(refund.OnInvoke(77, 10) == true, "refund failed")
 	assert(saved.coins == 104 and saved.earned == 104, "refund changed lifetime coins")
 	assert(player.attributes.Coins == 104, "refund did not restore the held balance")
+	local admin
+	for index = 1, #made do
+		if made[index].Name == "AdminCoins" then admin = made[index] end
+	end
+	assert(type(admin) == "table" and type(admin.OnInvoke) == "function", "admin coin reset was not created")
+	local earnedBefore = player.attributes.CoinsEarned
+	assert(admin.OnInvoke("grant", 77, 50) == true, "admin coin grant failed")
+	assert(saved.coins == 154 and saved.earned == 104, "admin grant changed lifetime coins")
+	assert(player.attributes.Coins == 154 and player.attributes.CoinsEarned == earnedBefore, "admin grant changed the live lifetime")
+	assert(admin.OnInvoke("reset", 77) == true, "admin coin reset failed")
+	assert(saved.coins == 0 and saved.earned == 0, "admin reset left coins behind")
+	assert(player.attributes.Coins == 0 and player.attributes.CoinsEarned == nil, "admin reset left the live balance")
+	now = 300
+	heartbeat()
+	assert(player.attributes.Coins == 1 and saved.coins == 1 and saved.earned == 1, "minute after a reset restored the old total")
 end

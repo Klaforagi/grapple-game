@@ -216,3 +216,60 @@ game:BindToClose(function()
 		if state.loaded then saveRanks(player, state, state.ranks) end
 	end
 end)
+
+-- Leave saves whatever ranks are in the session. A reset has to change that
+-- table, or the old ranks are written again when the player leaves.
+local function adminReadRanks(userId)
+	local player, state = sessionFor(userId)
+	if not player or not state or not state.loaded then return nil end
+	local ranks = {}
+	for _, stat in ipairs(Catalog.Stats) do
+		ranks[stat.id] = state.ranks[stat.id] or 0
+	end
+	return ranks
+end
+
+local function adminResetRanks(userId)
+	if type(userId) ~= "number" then return false end
+	local player, state = sessionFor(userId)
+	if state and not state.loaded then
+		local started = os.clock()
+		while sessions[player] == state and not state.loaded and os.clock() - started < 20 do
+			task.wait(0.1)
+		end
+		if sessions[player] ~= state then state = nil end
+	end
+	if player and sessions[player] and not sessions[player].loaded then return false end
+	state = player and sessions[player]
+	if state then
+		while state.saving do task.wait() end
+		if sessions[player] ~= state then state = nil end
+	end
+	if state then state.saving = true end
+	local ok = pcall(function()
+		store:UpdateAsync("player_" .. userId, function(previous)
+			local record = type(previous) == "table" and previous or {}
+			for _, stat in ipairs(Catalog.Stats) do
+				record[stat.id] = 0
+			end
+			return record
+		end)
+	end)
+	if state then
+		if ok and player and sessions[player] == state then
+			state.ranks = emptyRanks()
+			publish(player, state.ranks)
+		end
+		state.saving = false
+	end
+	return ok
+end
+
+local adminUpgrades = Instance.new("BindableFunction")
+adminUpgrades.Name = "AdminUpgrades"
+adminUpgrades.OnInvoke = function(action, userId)
+	if action == "read" then return adminReadRanks(userId) end
+	if action == "reset" then return adminResetRanks(userId) end
+	return false
+end
+adminUpgrades.Parent = ReplicatedStorage

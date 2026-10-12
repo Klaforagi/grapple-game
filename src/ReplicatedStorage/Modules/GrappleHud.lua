@@ -12,6 +12,7 @@ local Assets = require(storage:WaitForChild("Assets"))
 local Palettes = require(storage:WaitForChild("ItemColors"))
 local ShopUi = require(script.Parent:WaitForChild("ShopUi"))
 local UpgradeUi = require(script.Parent:WaitForChild("UpgradeUi"))
+local AdminUi = require(script.Parent:WaitForChild("AdminUi"))
 local Upgrades = require(script.Parent:WaitForChild("UpgradeCatalog"))
 local Remotes = require(script.Parent:WaitForChild("GrappleRemotes"))
 local ToolClient = require(script.Parent:WaitForChild("GrappleToolClient"))
@@ -386,6 +387,10 @@ function M.Init()
 	local shopScale
 	local upgradesOpen = false
 	local upgradesWindow
+	local adminUi
+	local function hideAdmin()
+		if adminUi then adminUi.hide() end
+	end
 	-- The native hotbar is core UI, so it draws above these windows and still takes taps.
 	-- Hide it while the shop or upgrades are open, then put it back.
 	local function overlayOpen()
@@ -433,6 +438,7 @@ function M.Init()
 		if visible then
 			hideShop()
 			hideUpgrades()
+			hideAdmin()
 		end
 	end
 	closeSettings.Activated:Connect(function() showSettings(false) end)
@@ -503,8 +509,30 @@ function M.Init()
 			if not menuList.Visible then hovered = false; selected = false; updateHighlight() end
 		end)
 	end
+	local adminEntry = make("TextButton", menuList, {
+		Name = "Admin", Text = "", AutoButtonColor = false, LayoutOrder = 0, Visible = false,
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255), BackgroundTransparency = 1, BorderSizePixel = 0,
+		Size = UDim2.fromOffset(160, 44), ZIndex = 21,
+	})
+	styleMenuEntry(adminEntry)
+	local adminMark = label(adminEntry, "A", UDim2.fromOffset(10, 11), UDim2.fromOffset(22, 22))
+	adminMark.Font, adminMark.TextSize = Enum.Font.GothamBold, 16
+	adminMark.TextXAlignment = Enum.TextXAlignment.Center
+	adminMark.ZIndex = 22
+	local adminEntryLabel = label(adminEntry, "Admin", UDim2.fromOffset(40, 0), UDim2.new(1, -48, 1, 0))
+	adminEntryLabel.Font, adminEntryLabel.TextSize = Enum.Font.BuilderSans, 18
+	adminEntryLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	adminEntryLabel.TextYAlignment = Enum.TextYAlignment.Center
+	adminEntryLabel.ZIndex = 22
+	local function syncAdminEntry()
+		local allowed = player:GetAttribute("Admin") == true
+		adminEntry.Visible = allowed
+		if not allowed then hideAdmin() end
+	end
+	player:GetAttributeChangedSignal("Admin"):Connect(syncAdminEntry)
+	syncAdminEntry()
 	local settingsEntry = make("TextButton", menuList, {
-		Name = "Settings", Text = "", AutoButtonColor = false,
+		Name = "Settings", Text = "", AutoButtonColor = false, LayoutOrder = 1,
 		BackgroundColor3 = Color3.fromRGB(255, 255, 255), BackgroundTransparency = 1, BorderSizePixel = 0,
 		Size = UDim2.fromOffset(160, 44), ZIndex = 21,
 	})
@@ -630,6 +658,7 @@ function M.Init()
 			settingsWindow.Visible = false
 			hideShop()
 			hideUpgrades()
+			hideAdmin()
 		end
 	end
 	closeCodex.Activated:Connect(function() showCodex(false) end)
@@ -656,6 +685,20 @@ function M.Init()
 	codexEntry.Activated:Connect(function()
 		showMenu(false)
 		showCodex(true)
+	end)
+	adminUi = AdminUi.Mount(screen, function()
+		settingsOpen = false
+		settingsWindow.Visible = false
+		codexOpen = false
+		if codexWindow then codexWindow.Visible = false end
+		hideShop()
+		hideUpgrades()
+		showMenu(false)
+	end)
+	adminEntry.Activated:Connect(function()
+		if player:GetAttribute("Admin") ~= true then return end
+		showMenu(false)
+		adminUi.show(not adminUi.window.Visible)
 	end)
 	UIS.InputBegan:Connect(function(input)
 		if not menuOpen then return end
@@ -702,6 +745,7 @@ function M.Init()
 		if visible then
 			fitShop()
 			hideUpgrades()
+			hideAdmin()
 		end
 		if shopWindow then shopWindow.Visible = visible end
 		syncHotbar()
@@ -728,6 +772,7 @@ function M.Init()
 		if visible then
 			upgradeUi.fit()
 			hideShop()
+			hideAdmin()
 		end
 		if upgradesWindow then upgradesWindow.Visible = visible end
 		syncHotbar()
@@ -991,6 +1036,7 @@ function M.Init()
 			fitShop()
 			fitLeftStack()
 			upgradeUi.fit()
+			if adminUi then adminUi.fit() end
 		end
 		if menuOpen then placeMenuList() end
 		if currentRope and not currentRope.Parent then grapple() end

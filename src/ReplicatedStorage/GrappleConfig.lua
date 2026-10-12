@@ -35,7 +35,7 @@ return {
 	-- the air, and the gun below the camera then fires upward.
 	aimRayLength = 100000,
 	-- Player grapples persist until released, escaped, or a character leaves/dies.
-	-- Unupgraded hook speed. UpgradeCatalog raises this. Rank 10 is 150.
+	-- Unupgraded hook speed. UpgradeCatalog raises this. Rank 10 is 100.
 	HookSpeed = 40, -- Studs per second
 	-- The cooldown after it unhooks
 	GrappleCooldown = 0.1,

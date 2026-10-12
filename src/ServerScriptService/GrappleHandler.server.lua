@@ -593,26 +593,45 @@ Remotes.ToggleWallMode.OnServerEvent:Connect(function(player)
 	publishWallMode(player)
 end)
 
-Remotes.SetGrappleColor.OnServerEvent:Connect(function(player, target, colorName)
-	if (target ~= "Gun" and target ~= "Rope" and target ~= "Bomb") or typeof(colorName) ~= "string"
-		or (not Palettes[target][colorName] and colorName ~= "Rainbow") then return end
+local function setGrappleColor(player, target, colorName)
+	if (target ~= "Gun" and target ~= "Rope" and target ~= "Bomb") or typeof(colorName) ~= "string" then
+		return false
+	end
+	if target == "Bomb" and colorName == "Teal" then colorName = "Mint" end
+	if target == "Bomb" and colorName == "Lime" then colorName = "Green" end
+	if not Palettes[target][colorName] and colorName ~= "Rainbow" then return false end
 	if target == "Bomb" then
 		player:SetAttribute("BombColor", colorName)
 		local bomb = findInventoryTool(player, Config.bombToolName)
 		local handle = bomb and bomb:FindFirstChild("Handle")
 		if handle and handle:IsA("BasePart") then
 			handle:SetAttribute("RainbowPalette", "Bomb")
-handle:SetAttribute("RainbowPart", colorName == "Rainbow")
+			handle:SetAttribute("RainbowPart", colorName == "Rainbow")
 			if Palettes.Bomb[colorName] then
 				handle.Color = Palettes.Bomb[colorName]
 				handle:SetAttribute("SolidPartColor", Palettes.Bomb[colorName])
 			end
 		end
-		return
+		return true
 	end
 	player:SetAttribute(target == "Gun" and "GrappleGunColor" or "GrappleRopeColor", colorName)
 	applyCosmetics(player, findInventoryTool(player, Config.toolName))
+	return true
+end
+
+Remotes.SetGrappleColor.OnServerEvent:Connect(function(player, target, colorName)
+	setGrappleColor(player, target, colorName)
 end)
+
+local adminColor = Instance.new("BindableFunction")
+adminColor.Name = "AdminSetGrappleColor"
+adminColor.OnInvoke = function(userId, target, colorName)
+	local lookup = Players.GetPlayerByUserId
+	local player = type(lookup) == "function" and lookup(Players, userId) or nil
+	if not player then return false end
+	return setGrappleColor(player, target, colorName)
+end
+adminColor.Parent = ReplicatedStorage
 
 local function fireGrapple(player, hitPosition, cameraPosition)
 	local now = os.clock()

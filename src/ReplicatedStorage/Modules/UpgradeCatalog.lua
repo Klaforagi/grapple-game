@@ -1,7 +1,7 @@
 -- Grapple gun ranks. Rank 0 is the live gun. Each stat has 10 purchased ranks.
 -- Coin costs are the same for every stat. Change the table here to retune them.
 -- RobuxPrice is one developer product per rank. RobuxProductId stays 0 until that product exists.
--- Speed: 40 + 11 per rank, so rank 10 is 150 studs/s.
+-- Speed: 40 + 6 per rank, so rank 10 is 100 studs/s.
 -- Distance starts at 60 and ends at 300. Each purchase adds 4 more studs than the one before it.
 -- Duration: 20 + 4 per rank, so rank 10 is 60 seconds.
 -- Resistance: 5% per rank, so rank 10 cuts incoming tethers in half.
@@ -25,7 +25,7 @@ Catalog.Stats = {
 		description = "Increase grapple projectile speed",
 		attribute = "HookSpeedRank",
 		base = 40,
-		perRank = 11,
+		perRank = 6,
 		accent = "speed",
 	},
 	{

@@ -54,3 +54,23 @@ try {
 } finally {
     Remove-Item -LiteralPath $tempFile -ErrorAction SilentlyContinue
 }
+
+$adminSources = @{
+    adminList = 'src/ServerScriptService/AdminList.lua'
+    admin = 'src/ServerScriptService/Admin.server.lua'
+}
+$adminBundle = 'local sources = {}' + [Environment]::NewLine
+foreach ($key in $adminSources.Keys) {
+    $source = [IO.File]::ReadAllText((Join-Path $projectRoot $adminSources[$key]))
+    $adminBundle += 'sources.' + $key + ' = [====[' + $source + ']====]' + [Environment]::NewLine
+}
+$adminHarness = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'admin.luau'))
+$adminBundle += 'local test = (function()' + [Environment]::NewLine + $adminHarness + [Environment]::NewLine + 'end)()' + [Environment]::NewLine + 'test(sources)'
+$adminFile = Join-Path ([IO.Path]::GetTempPath()) ('grapple-admin-' + [guid]::NewGuid().ToString('N') + '.luau')
+try {
+    [IO.File]::WriteAllText($adminFile, $adminBundle, [Text.UTF8Encoding]::new($false))
+    & $LuauPath $adminFile
+    if ($LASTEXITCODE -ne 0) { throw 'Grapple admin tests failed.' }
+} finally {
+    Remove-Item -LiteralPath $adminFile -ErrorAction SilentlyContinue
+}

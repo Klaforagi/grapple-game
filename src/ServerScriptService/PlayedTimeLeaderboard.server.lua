@@ -145,26 +145,48 @@ local function requestRefresh()
 end
 
 -- One ordered write per player each minute. A newer total replaces a queued one.
+-- rankEpoch lets an admin reset drop the board. A flush that already copied the
+-- old total sees the new epoch and does not write that total back.
 local pendingRanks = {}
+local rankEpoch = {}
 local function queueRank(userId, total)
 	if type(userId) ~= "number" then return end
 	total = math.floor(tonumber(total) or 0)
 	if total <= 0 then return end
+	local epoch = rankEpoch[userId] or 0
 	local queued = pendingRanks[userId]
-	if not queued or total > queued then pendingRanks[userId] = total end
+	if not queued or queued.epoch ~= epoch or total > queued.total then
+		pendingRanks[userId] = {total = total, epoch = epoch}
+	end
 end
 
 local function flushRanks()
 	local batch = pendingRanks
 	pendingRanks = {}
 	if not ordered then return end
-	for userId, total in pairs(batch) do
-		pcall(function()
-			ordered:UpdateAsync(tostring(userId), function(previous)
-				if total > (tonumber(previous) or 0) then return total end
+	for userId, queued in pairs(batch) do
+		local total, epoch = queued.total, queued.epoch
+		if (rankEpoch[userId] or 0) == epoch then
+			pcall(function()
+				ordered:UpdateAsync(tostring(userId), function(previous)
+					if total > (tonumber(previous) or 0) then return total end
+				end)
 			end)
-		end)
+		end
 	end
+end
+
+local function forceRank(userId, total)
+	rankEpoch[userId] = (rankEpoch[userId] or 0) + 1
+	pendingRanks[userId] = nil
+	if not ordered then return end
+	pcall(function()
+		if total <= 0 then
+			ordered:RemoveAsync(tostring(userId))
+		else
+			ordered:SetAsync(tostring(userId), total)
+		end
+	end)
 end
 
 local function save(player, state)
@@ -277,3 +299,71 @@ game:BindToClose(function()
 	while remaining > 0 do task.wait() end
 	flushRanks()
 end)
+
+-- The next save adds (session - checkpoint) onto the stored seconds. A reset
+-- has to zero the checkpoint and the live session together, or leaving puts
+-- the time before the reset back on the record.
+local function sessionFor(userId)
+	for player, state in pairs(sessions) do
+		if player.UserId == userId then return player, state end
+	end
+end
+
+local function adminReadPlayed(userId)
+	local player, state = sessionFor(userId)
+	if not player or not state or not state.loaded then return nil end
+	return {seconds = (state.base or 0) + currentSession(state)}
+end
+
+local function adminResetPlayed(userId)
+	if type(userId) ~= "number" then return false end
+	local player, state = sessionFor(userId)
+	if state and not state.loaded then
+		local started = os.clock()
+		while sessions[player] == state and not state.loaded and os.clock() - started < 20 do
+			task.wait(0.1)
+		end
+		if sessions[player] ~= state then state = nil end
+	end
+	if player and sessions[player] and not sessions[player].loaded then return false end
+	state = player and sessions[player]
+	if state then
+		while state.saving do task.wait() end
+		if sessions[player] ~= state then state = nil end
+	end
+	if state then state.saving = true end
+	local ok = true
+	if store then
+		local savedOk, data = pcall(function()
+			return store:UpdateAsync("player_" .. userId, function(previous)
+				local record = type(previous) == "table" and previous or {seconds = 0, sessions = {}}
+				record.sessions = record.sessions or {}
+				record.seconds = 0
+				if state then record.sessions[state.id] = {seconds = 0, at = os.time()} end
+				return record
+			end)
+		end)
+		ok = savedOk and type(data) == "table"
+	end
+	if state then
+		if ok and player and sessions[player] == state then
+			state.started = os.clock()
+			state.base = 0
+			state.session = 0
+			state.savedSession = 0
+			player:SetAttribute("PlayedSeconds", 0)
+		end
+		state.saving = false
+	end
+	if ok then forceRank(userId, 0) requestRefresh() end
+	return ok
+end
+
+local adminPlayed = Instance.new("BindableFunction")
+adminPlayed.Name = "AdminPlayedTime"
+adminPlayed.OnInvoke = function(action, userId)
+	if action == "read" then return adminReadPlayed(userId) end
+	if action == "reset" then return adminResetPlayed(userId) end
+	return false
+end
+adminPlayed.Parent = ReplicatedStorage

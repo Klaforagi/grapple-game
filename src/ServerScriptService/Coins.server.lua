@@ -150,26 +150,48 @@ local function requestRefresh()
 end
 
 -- One ordered write per player each minute. A newer total replaces a queued one.
+-- rankEpoch lets an admin reset drop the board. A flush that already copied the
+-- old total sees the new epoch and does not write that total back.
 local pendingRanks = {}
+local rankEpoch = {}
 local function queueRank(userId, total)
 	if type(userId) ~= "number" then return end
 	total = math.floor(tonumber(total) or 0)
 	if total <= 0 then return end
+	local epoch = rankEpoch[userId] or 0
 	local queued = pendingRanks[userId]
-	if not queued or total > queued then pendingRanks[userId] = total end
+	if not queued or queued.epoch ~= epoch or total > queued.total then
+		pendingRanks[userId] = {total = total, epoch = epoch}
+	end
 end
 
 local function flushRanks()
 	local batch = pendingRanks
 	pendingRanks = {}
 	if not ordered then return end
-	for userId, total in pairs(batch) do
-		pcall(function()
-			ordered:UpdateAsync(tostring(userId), function(previous)
-				if total > (tonumber(previous) or 0) then return total end
+	for userId, queued in pairs(batch) do
+		local total, epoch = queued.total, queued.epoch
+		if (rankEpoch[userId] or 0) == epoch then
+			pcall(function()
+				ordered:UpdateAsync(tostring(userId), function(previous)
+					if total > (tonumber(previous) or 0) then return total end
+				end)
 			end)
-		end)
+		end
 	end
+end
+
+local function forceRank(userId, total)
+	rankEpoch[userId] = (rankEpoch[userId] or 0) + 1
+	pendingRanks[userId] = nil
+	if not ordered then return end
+	pcall(function()
+		if total <= 0 then
+			ordered:RemoveAsync(tostring(userId))
+		else
+			ordered:SetAsync(tostring(userId), total)
+		end
+	end)
 end
 
 -- Older rows stored only the held total. Coins could not be spent then, so that
@@ -449,3 +471,92 @@ local refund = Instance.new("BindableFunction")
 refund.Name = "RefundHeldCoins"
 refund.OnInvoke = refundHeld
 refund.Parent = ReplicatedStorage
+
+-- Spending never lowers lifetime coins. An admin reset is a separate write:
+-- it may zero both balances, and it updates the live session so leaving
+-- cannot save the old totals back.
+-- Admin gifts add held coins only. Lifetime earned and the ordered board stay put,
+-- including when the player is offline and there is no live session to update.
+local function adminGrantHeld(userId, amount)
+	if type(userId) ~= "number" then return false end
+	amount = math.floor(tonumber(amount) or 0)
+	if amount <= 0 or amount > 100000000 then return false end
+	local lookup = Players.GetPlayerByUserId
+	local player = type(lookup) == "function" and lookup(Players, userId) or nil
+	if player then return changeHeld(userId, amount) end
+	local ok, data = pcall(function()
+		return store:UpdateAsync("player_" .. userId, function(previous)
+			local record = type(previous) == "table" and previous or {coins = 0, earned = 0}
+			local held, lifetime = heldAndEarned(record)
+			record.coins = held + amount
+			record.earned = lifetime
+			return record
+		end)
+	end)
+	return ok and type(data) == "table"
+end
+
+local function adminReadCoins(userId)
+	local lookup = Players.GetPlayerByUserId
+	local player = type(lookup) == "function" and lookup(Players, userId) or nil
+	local state = player and sessions[player]
+	if not state or not state.loaded or sessions[player] ~= state then return nil end
+	return {coins = state.base + state.earned, earned = state.lifetime or 0}
+end
+
+local function adminResetCoins(userId)
+	if type(userId) ~= "number" then return false end
+	local lookup = Players.GetPlayerByUserId
+	local player = type(lookup) == "function" and lookup(Players, userId) or nil
+	local state = player and sessions[player]
+	if state and not state.loaded then
+		local started = os.clock()
+		while sessions[player] == state and not state.loaded and os.clock() - started < 20 do
+			task.wait(0.1)
+		end
+		if sessions[player] ~= state then state = nil end
+	end
+	if player and sessions[player] and not sessions[player].loaded then return false end
+	state = player and sessions[player]
+	if state then
+		while state.saving do task.wait() end
+		if sessions[player] ~= state then state = nil end
+	end
+	if state then state.saving = true end
+	local ok, data = pcall(function()
+		return store:UpdateAsync("player_" .. userId, function(previous)
+			local record = type(previous) == "table" and previous or {coins = 0, earned = 0}
+			record.coins = 0
+			record.earned = 0
+			if state then
+				record.sessions = record.sessions or {}
+				record.sessions[state.id] = {earned = 0, at = os.time()}
+			end
+			return record
+		end)
+	end)
+	if state then
+		if ok and type(data) == "table" and state.loaded and player and sessions[player] == state then
+			state.started = os.clock()
+			state.earned = 0
+			state.saved = 0
+			state.base = 0
+			state.lifetime = 0
+			player:SetAttribute("Coins", 0)
+			player:SetAttribute("CoinsEarned", nil)
+		end
+		state.saving = false
+	end
+	if ok then forceRank(userId, 0) requestRefresh() end
+	return ok and type(data) == "table"
+end
+
+local adminCoins = Instance.new("BindableFunction")
+adminCoins.Name = "AdminCoins"
+adminCoins.OnInvoke = function(action, userId, amount)
+	if action == "read" then return adminReadCoins(userId) end
+	if action == "reset" then return adminResetCoins(userId) end
+	if action == "grant" then return adminGrantHeld(userId, amount) end
+	return false
+end
+adminCoins.Parent = ReplicatedStorage
