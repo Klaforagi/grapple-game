@@ -4,6 +4,7 @@ local TweenService = game:GetService("TweenService")
 local Storage = game:GetService("ReplicatedStorage")
 local PlaySound = require(Storage:WaitForChild("Modules"):WaitForChild("PlaySound"))
 local Flatten = require(Storage.Modules:WaitForChild("CrusherFlatten"))
+local Ragdoll = require(Storage.Modules:WaitForChild("RagdollService"))
 
 local DROP_DISTANCE = 14.4
 local DROP_TIME = 1
@@ -35,6 +36,9 @@ local function killFromPart(part, groundY, puller)
 						humanoid:SetAttribute("DeathGrappler", grapplerId)
 					end
 				end
+				-- The flattened copy is only visual; keep the real camera/chat
+				-- anchors stationary before any death callback can break the rig.
+				Ragdoll.FreezeCrusherCorpse(humanoid)
 				local ok, err = pcall(Flatten.Create, parent, groundY)
 				if not ok then warn("[Crusher] Flatten effect: " .. tostring(err)) end
 				-- Ragdolls disable state evaluation. Restore death processing as well

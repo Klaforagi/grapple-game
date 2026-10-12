@@ -1,6 +1,19 @@
 return function(t)
 	-- Run the actual capsule server and client scripts with isolated scheduling.
 	local instance, methods = t.instance, t.methods
+	local combatHeartbeat = t.runService.Heartbeat
+	local originalDelay, scheduled = t.env.task.delay, {}
+	t.env.task.delay = function(seconds, callback)
+		table.insert(scheduled, {at = t.world:GetServerTimeNow() + seconds, callback = callback, seconds = seconds})
+	end
+	local function flushScheduled()
+		local current = table.clone(scheduled)
+		table.clear(scheduled)
+		for _, pending in ipairs(current) do
+			if pending.at <= t.world:GetServerTimeNow() then pending.callback()
+			else table.insert(scheduled, pending) end
+		end
+	end
 	t.runService.Heartbeat = t.signal()
 	t.runService.PreAnimation = t.signal()
 	t.world.DescendantAdded = t.signal()
@@ -97,6 +110,8 @@ return function(t)
 		and humanoid.PlatformStand and not humanoid:GetStateEnabled("GettingUp"),
 		"capsule played a get-up instead of holding still")
 	assert(humanoid:GetAttribute("CapsuleLocked") and humanoid.WalkSpeed == 0 and tool.Parent == nil, "capture did not lock mob")
+	t.ragdoll.Set(humanoid, true)
+	assert(not humanoid:GetAttribute("Ragdolled"), "Late ragdoll entered the capsule and saved frozen recovery state")
 	assert(animate.Disabled and stopped > 0, "capture retained idle animation")
 	local stoppedBeforeClient = stopped
 	animate.Disabled = false
@@ -119,7 +134,16 @@ return function(t)
 	prompt.Triggered:Emit(owner)
 	assert(model:GetAttribute("CapsuleOccupied"), "grappled rescuer bypassed capsule lock")
 	owner.Character:FindFirstChildOfClass("Humanoid"):SetAttribute("GrappledBy", nil)
+	local unlockChecked = false
+	humanoid:GetAttributeChangedSignal("CapsuleLocked"):Connect(function()
+		if not humanoid:GetAttribute("CapsuleLocked") and humanoid.Health > 0 then
+			assert(not root.Anchored and humanoid.EvaluateStateMachine and not humanoid.PlatformStand
+				and mob:FindFirstChild("CapsuleRescueShield"), "Capsule unlocked before recovery and protection were ready")
+			unlockChecked = true
+		end
+	end)
 	prompt.Triggered:Emit(owner)
+	assert(unlockChecked, "Rescue did not complete its protected unlock")
 	assert(not model:GetAttribute("CapsuleOccupied") and not root.Anchored, "rescue left capsule occupied")
 	assert(not mob:FindFirstChild("CapsuleHealth"), "rescue leaked health display")
 	assert(not humanoid:GetAttribute("CapsuleLocked") and humanoid.WalkSpeed == 16 and tool.Parent == mob, "rescue failed to restore mob")
@@ -130,6 +154,21 @@ return function(t)
 	assert(not animate.Disabled, "rescue did not restore animation controller")
 	assert(humanoid.AutoRotate, "rescue left rotation locked by the capture ragdoll")
 	assert(humanoid.BreakJointsOnDeath, "rescue did not restore normal death behavior")
+	assert(mob:FindFirstChild("CapsuleRescueShield"), "Rescue did not grant a shield")
+	prompt.Triggered:Emit(owner)
+	assert(not model:GetAttribute("CapsuleOccupied"), "Rescue shield allowed immediate recapture")
+	t.advance(0.9)
+	flushScheduled()
+	assert(mob:FindFirstChild("CapsuleRescueShield"), "Rescue shield expired before one second")
+	t.advance(0.11)
+	flushScheduled()
+	assert(not mob:FindFirstChild("CapsuleRescueShield"), "Rescue shield failed to expire")
+	assert(not root.Anchored and humanoid.EvaluateStateMachine and not humanoid.PlatformStand,
+		"Delayed capsule settle refroze a rescued character")
+	t.ragdoll.Set(humanoid, true)
+	t.ragdoll.Set(humanoid, false, true)
+	assert(humanoid.EvaluateStateMachine and not humanoid.PlatformStand,
+		"A later ragdoll restored frozen capsule settings")
 	t.advance(1)
 	t.runService.Heartbeat:Emit(1)
 	assert(humanoid.Health == 95, "freezing continued after rescue")
@@ -185,4 +224,79 @@ return function(t)
 	assert(pitchedHumanoid.State == "Dead" and pitchedHumanoid.EvaluateStateMachine
 		and not pitchedHumanoid.BreakJointsOnDeath,
 		"silent NPC death never entered Dead, so the rig does not respawn")
+	-- Exercise real push/bomb queues across capture and same-frame rescue.
+	;(function()
+		local actorRoot = owner.Character:FindFirstChild("HumanoidRootPart")
+		actorRoot.Position = Vector3.new(-4, 0, 0)
+		actorRoot.CFrame = {LookVector = Vector3.new(1, 0, 0)}
+		local push = instance("Tool", t.config.pushToolName, owner.Character)
+		push:SetAttribute("PushTool", true)
+		local target, targetHumanoid, targetRoot = t.character("CapsuleCombatTarget", Vector3.zero, false)
+		targetHumanoid.MaxHealth = 100
+		targetHumanoid.WalkSpeed, targetHumanoid.JumpPower, targetHumanoid.JumpHeight = 16, 50, 7
+		targetHumanoid:SetAttribute("GrappledBy", owner.UserId)
+		t.remotes.UsePush.OnServerEvent:Emit(owner)
+		assert(targetHumanoid:GetAttribute("Ragdolled"), "Combat race test did not queue a real push")
+		prompt.Triggered:Emit(owner)
+		assert(targetRoot.Anchored and targetHumanoid:GetAttribute("CapsuleLocked"), "Push/capture overlap failed to capture")
+		t.runService.PreSimulation:Emit(1 / 60)
+		assert(targetRoot.AssemblyLinearVelocity.Magnitude == 0 and not targetHumanoid:GetAttribute("Ragdolled"),
+			"Queued push modified a captive")
+		t.advance(t.config.pushCooldown + 0.01)
+		t.remotes.UsePush.OnServerEvent:Emit(owner)
+		assert(not targetHumanoid:GetAttribute("BombRagdollUntil"), "New push stunned a capsule occupant")
+		prompt.Triggered:Emit(owner)
+		assert(targetHumanoid.EvaluateStateMachine and not targetHumanoid.PlatformStand, "Overlapping push left rescue immobilized")
+		-- Start another knockdown, capture, and rescue before launch executes.
+		t.advance(t.config.pushCooldown + 0.01)
+		flushScheduled()
+		t.remotes.UsePush.OnServerEvent:Emit(owner)
+		assert(targetHumanoid:GetAttribute("Ragdolled"), "Second race did not queue a push")
+		prompt.Triggered:Emit(owner)
+		prompt.Triggered:Emit(owner)
+		t.advance(1.01)
+		flushScheduled()
+		t.runService.PreSimulation:Emit(1 / 60)
+		combatHeartbeat:Emit(1 / 60)
+		assert(targetRoot.AssemblyLinearVelocity.Magnitude == 0 and not targetHumanoid:GetAttribute("BombRagdollUntil")
+			and targetHumanoid.EvaluateStateMachine and not targetHumanoid.PlatformStand,
+			"Pre-capture combat work ran after rescue and shield expiration")
+		-- Shields must block actual bomb/push effects, not just display a bubble.
+		targetHumanoid:SetAttribute("GrappledBy", nil)
+		for _, name in ipairs({"SpawnShield", "EscapeShield", "CapsuleRescueShield"}) do
+			local shield = instance("ForceField", name, target)
+			t.advance(t.config.pushCooldown + 0.01)
+			t.remotes.UsePush.OnServerEvent:Emit(owner)
+			assert(not targetHumanoid:GetAttribute("BombRagdollUntil"), name .. " did not block push")
+			local bomb = instance("Tool", t.config.bombToolName, owner.Character)
+			bomb:SetAttribute("BombTool", true)
+			t.remotes.ThrowBomb.OnServerEvent:Emit(owner, Vector3.new(20, 0, 0))
+			t.advance(t.config.bombFuse + 0.01)
+			combatHeartbeat:Emit(1 / 60)
+			assert(not targetHumanoid:GetAttribute("BombRagdollUntil"), name .. " did not block bomb")
+			bomb:Destroy()
+			shield:Destroy()
+		end
+		local unshieldedBomb = instance("Tool", t.config.bombToolName, owner.Character)
+		unshieldedBomb:SetAttribute("BombTool", true)
+		t.advance(t.config.bombCooldown + 0.01)
+		t.remotes.ThrowBomb.OnServerEvent:Emit(owner, Vector3.new(20, 0, 0))
+		t.advance(t.config.bombFuse + 0.01)
+		combatHeartbeat:Emit(1 / 60)
+		assert(targetHumanoid:GetAttribute("BombRagdollUntil"), "Bomb protection test never hit an unshielded target")
+		-- Capture after the blast queues its impulse, then rescue before the next
+		-- Heartbeat. The old impulse must still be rejected after shield expiry.
+		targetHumanoid:SetAttribute("GrappledBy", owner.UserId)
+		prompt.Triggered:Emit(owner)
+		prompt.Triggered:Emit(owner)
+		t.advance(1.01)
+		flushScheduled()
+		combatHeartbeat:Emit(1 / 60)
+		assert(targetRoot.AssemblyLinearVelocity.Magnitude == 0 and targetHumanoid.EvaluateStateMachine
+			and not targetHumanoid:GetAttribute("Ragdolled"), "Queued bomb broke recovery after capsule rescue")
+		unshieldedBomb:Destroy()
+		assert(t.config.spawnShieldSeconds == 6 and t.config.escapeShieldSeconds == 6, "Requested shields are not six seconds")
+		print("PASS: capsule combat overlap, protected rescue, stale launch cancellation, and shield durations")
+	end)()
+	t.env.task.delay = originalDelay
 end

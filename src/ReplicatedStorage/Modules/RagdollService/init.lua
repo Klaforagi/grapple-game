@@ -501,7 +501,37 @@ function Service.Prepare(humanoid)
 	return rig
 end
 
+function Service.FreezeCrusherCorpse(humanoid)
+	local character = humanoid.Parent
+	if not character then return end
+	local alreadyFrozen = humanoid:GetAttribute("CrusherCorpse") == true
+	-- DeathCause is cleared by kill reporting. Keep a separate lifetime marker
+	-- so late grapple/ragdoll callbacks cannot move the hidden original body.
+	humanoid:SetAttribute("CrusherCorpse", true)
+	humanoid.BreakJointsOnDeath = false
+	humanoid.AutoRotate = false
+	humanoid:SetAttribute("ManualRagdoll", nil)
+	local rig = rigs[humanoid]
+	if rig then rig.active = false end
+	local function freeze(part)
+		if not part:IsA("BasePart") then return end
+		-- Anchor every limb: an existing ragdoll has multiple assemblies, and
+		-- the head carries bubble chat while the root/head drive the camera.
+		part.Anchored = true
+		part.CanCollide, part.CanTouch, part.CanQuery = false, false, false
+		part.AssemblyLinearVelocity, part.AssemblyAngularVelocity = Vector3.zero, Vector3.zero
+	end
+	for _, part in ipairs(character:GetDescendants()) do freeze(part) end
+	if not alreadyFrozen then character.DescendantAdded:Connect(freeze) end
+	humanoid:RemoveTag("Ragdoll")
+	humanoid:SetAttribute("Ragdolled", false)
+end
+
 function Service.BreakApart(humanoid)
+	if humanoid:GetAttribute("CrusherCorpse") then
+		Service.FreezeCrusherCorpse(humanoid)
+		return
+	end
 	humanoid:SetAttribute("ManualRagdoll", nil)
 	local character = humanoid.Parent
 	if not character then return end
@@ -541,6 +571,10 @@ function Service.BreakApart(humanoid)
 end
 
 function Service.Set(humanoid, enabled, preserveMotion)
+	if humanoid:GetAttribute("CrusherCorpse") then return end
+	-- Captivity owns the rig. A late knockdown must not snapshot its frozen
+	-- state as the normal state to restore after the next ragdoll.
+	if enabled and humanoid:GetAttribute("CapsuleLocked") then return end
 	-- All recovery paths (including grapple escape/tag removal) honor blast stun.
 	if not enabled and (humanoid:GetAttribute("ManualRagdoll")
 		or humanoid:GetAttribute("GrapplePhysicsLocked")
@@ -785,14 +819,13 @@ function Service.InitClient()
 			end
 			if wasCapsule then
 				wasCapsule = false
+				previousStateMachine, previousGettingUp = true, true
 				if ragdolled or locked then
 					-- Run the normal transition below instead of treating it as unchanged.
 					wasRagdolled, wasLocked = not ragdolled, not locked
 				else
 					wasRagdolled, wasLocked = ragdolled, locked
-					local restoreStateMachine = humanoid:GetAttribute("RagdollRestoreStateMachine")
-					if restoreStateMachine == nil then restoreStateMachine = previousStateMachine end
-					humanoid.EvaluateStateMachine = restoreStateMachine
+					humanoid.EvaluateStateMachine = true
 					humanoid.PlatformStand = false
 					humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, previousGettingUp ~= false)
 					activeRigs[humanoid] = nil

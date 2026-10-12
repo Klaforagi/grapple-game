@@ -235,11 +235,18 @@ local function newCastBehavior(state)
 	return behavior
 end
 
+local function protectedFromKnockback(character, humanoid)
+	return humanoid:GetAttribute("CapsuleLocked") == true or character:FindFirstChildOfClass("ForceField") ~= nil
+end
+
 local function queueLaunch(character, humanoid, velocity, now, duration, pushDirection)
+	if protectedFromKnockback(character, humanoid) then return false end
+	local capsuleRevision = humanoid:GetAttribute("CapsulePhysicsRevision") or 0
 	settlingPushes[humanoid] = nil
 	local previous = stunned[humanoid]
 	stunned[humanoid] = {
 		character = character,
+		capsuleRevision = capsuleRevision,
 		recover = (previous and previous.recover) or not humanoid:HasTag("Ragdoll")
 			or humanoid:GetAttribute("GrappleAppliedRagdoll") == true,
 	}
@@ -255,13 +262,18 @@ local function queueLaunch(character, humanoid, velocity, now, duration, pushDir
 	Ragdoll.Set(humanoid, true)
 	Ragdoll.RefreshOwnership(humanoid)
 	pendingLaunches[humanoid] = {character = character, player = Players:GetPlayerFromCharacter(character),
-		velocity = velocity, pushDirection = pushDirection}
+		velocity = velocity, pushDirection = pushDirection, capsuleRevision = capsuleRevision}
+	return true
 end
 
 local function launch(humanoid, state, now)
 	local character = state.character
 	if not character.Parent or humanoid.Parent ~= character or humanoid.Health <= 0 then return end
 	if state.player and state.player.Character ~= character then return end
+	-- Capture invalidates work already queued by a push/blast, even if rescue
+	-- happens before the next simulation step and its shield has since expired.
+	if state.capsuleRevision ~= (humanoid:GetAttribute("CapsulePhysicsRevision") or 0)
+		or protectedFromKnockback(character, humanoid) then return end
 	-- Bombs launch on Heartbeat; pushes launch just before physics simulation.
 	humanoid:SetAttribute("PhysicsServerUntil", now + (state.pushDirection and 0.65 or SERVER_HOLD))
 	Ragdoll.RefreshOwnership(humanoid)
@@ -318,7 +330,7 @@ local function launch(humanoid, state, now)
 	end
 	if state.pushDirection then
 		settlingPushes[humanoid] = {character = character, untilTime = now + 0.4,
-			revision = humanoid:GetAttribute("BombBlastRevision")}
+			revision = humanoid:GetAttribute("BombBlastRevision"), capsuleRevision = state.capsuleRevision}
 	end
 end
 
@@ -366,8 +378,9 @@ local function explode(bomb, position, attacker, when)
 				local velocity = BombPhysics.Knockback(root.Position - position, radius, workspace.Gravity,
 					Config.bombLaunchHeight, Config.bombLaunchDistance)
 				if velocity.Magnitude > 0 then
-					queueLaunch(character, humanoid, velocity, when)
-					creditHit(humanoid, attacker, when, "Bomb")
+					if queueLaunch(character, humanoid, velocity, when) then
+						creditHit(humanoid, attacker, when, "Bomb")
+					end
 				end
 			end
 		end
@@ -396,6 +409,7 @@ local function scanPush(state, now)
 	for _, victim in ipairs(state.candidates) do
 		if not victim.Parent or state.hit[victim] then continue end
 		local model = victim.Parent
+		if protectedFromKnockback(model, victim) then continue end
 		local targetRoot = model and model:FindFirstChild("HumanoidRootPart")
 		if model == character or victim.Health <= 0 or not targetRoot or targetRoot.Anchored then continue end
 		local offset = targetRoot.Position - root.Position
@@ -524,6 +538,8 @@ RunService.Heartbeat:Connect(function()
 	for humanoid, state in pairs(settlingPushes) do
 		if now >= state.untilTime or not state.character.Parent or humanoid.Health <= 0
 			or humanoid:GetAttribute("GrapplePhysicsLocked") or humanoid:GetAttribute("CapsuleLocked")
+			or state.capsuleRevision ~= (humanoid:GetAttribute("CapsulePhysicsRevision") or 0)
+			or state.character:FindFirstChildOfClass("ForceField")
 			or humanoid:GetAttribute("BombBlastRevision") ~= state.revision then
 			settlingPushes[humanoid] = nil
 		else
@@ -552,6 +568,9 @@ RunService.Heartbeat:Connect(function()
 	end
 	for humanoid, state in pairs(stunned) do
 		if not state.character.Parent or humanoid.Parent ~= state.character or humanoid.Health <= 0 then
+			stunned[humanoid] = nil
+		elseif state.capsuleRevision ~= (humanoid:GetAttribute("CapsulePhysicsRevision") or 0)
+			or humanoid:GetAttribute("CapsuleLocked") then
 			stunned[humanoid] = nil
 		elseif now >= (humanoid:GetAttribute("BombRagdollUntil") or 0) and not humanoid:GetAttribute("GrapplePhysicsLocked") then
 			stunned[humanoid] = nil

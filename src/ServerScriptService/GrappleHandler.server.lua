@@ -421,7 +421,10 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	local victimPlayer = Players:GetPlayerFromCharacter(hitModel)
 	if victimPlayer == state.owner or hitHumanoid.Health <= 0 then disconnectRope(state.owner) return end
 	-- Spawn shield and the paid escape shield are both ForceFields.
-	if hitModel:FindFirstChildOfClass("ForceField") then disconnectRope(state.owner) return end
+	if hitHumanoid:GetAttribute("CapsuleLocked") or hitModel:FindFirstChildOfClass("ForceField") then
+		disconnectRope(state.owner)
+		return
+	end
 	local previousSession = physicsSessions[hitModel]
 	if previousSession and Active[previousSession.owner] == previousSession then
 		disconnectRope(previousSession.owner, true)
@@ -823,7 +826,7 @@ local function grantSpawnShield(player: Player, hinted)
 	if not (target:FindFirstChild("UpperTorso", true) or target:FindFirstChild("Torso", true)) then return end
 	local other = target:FindFirstChildOfClass("ForceField")
 	if other then other:Destroy() end
-	addShield(target, Config.spawnShieldSeconds or 5, "SpawnShield")
+	addShield(target, Config.spawnShieldSeconds or 6, "SpawnShield")
 end
 
 local shieldedLife = setmetatable({}, {__mode = "k"})
@@ -852,7 +855,7 @@ local function releaseAndShield(player: Player)
 	local owner = tetherOwner(player)
 	if owner then disconnectRope(owner) end
 	local character = player.Character
-	if character then addShield(character, Config.escapeShieldSeconds or 3, "EscapeShield") end
+	if character then addShield(character, Config.escapeShieldSeconds or 6, "EscapeShield") end
 end
 
 local function grantEscape(userId, purchaseId)
@@ -1001,7 +1004,7 @@ local function claimSpawnShield(inst)
 		return
 	end
 	if not inst:IsA("ForceField") then return end
-	if inst.Name ~= "SpawnShield" and inst.Name ~= "EscapeShield" then
+	if inst.Name ~= "SpawnShield" and inst.Name ~= "EscapeShield" and inst.Name ~= "CapsuleRescueShield" then
 		inst:Destroy()
 		return
 	end

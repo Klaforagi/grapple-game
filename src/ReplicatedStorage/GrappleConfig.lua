@@ -56,10 +56,10 @@ return {
 	playerTetherDuration = 20, -- Unupgraded seconds. UpgradeCatalog rank 10 is 60.
 	-- Blue spawn bubble on the living character. SpawnLocation.Duration stays 0
 	-- so the engine bubble cannot attach to the ragdoll corpse.
-	spawnShieldSeconds = 5,
+	spawnShieldSeconds = 6,
 	-- Paid escape from a tether. The Robux button shows the price and does not
 	-- prompt until escapeRobuxProductId is a real 9-Robux developer product.
-	escapeShieldSeconds = 3,
+	escapeShieldSeconds = 6,
 	escapeCoinCost = 30,
 	escapeRobuxPrice = 9,
 	escapeRobuxProductId = 0,
@@ -89,6 +89,7 @@ return {
 	capsuleCaptureDistance = 12, -- Victim must be this close to the Trigger Part
 	capsulePromptDistance = 10,
 	capsuleDamagePerSecond = 5,
+	capsuleRescueShieldSeconds = 1,
 
 	bombToolName = "Bomb",
 	bombToolIcon = "rbxassetid://17724514739", -- Roblox Backpack/hotbar icon

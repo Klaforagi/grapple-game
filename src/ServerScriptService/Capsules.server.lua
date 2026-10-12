@@ -580,16 +580,24 @@ local function restoreCharacter(state, rescued)
 
 	local humanoid, root = occupant.humanoid, occupant.root
 	if humanoid.Parent == occupant.character then
-		humanoid:SetAttribute("CapsuleLocked", nil)
+		-- Finish recovery while the capsule still excludes new combat effects.
+		-- None of the pre-capture stuns or voluntary ragdoll requests survive it.
+		for _, key in ipairs({"ManualRagdoll", "RagdollRecoveryRequested", "BombRagdollUntil",
+			"ForcedRagdollUntil", "FallRagdollUntil", "GrapplePhysicsLocked"}) do
+			humanoid:SetAttribute(key, nil)
+		end
+		if humanoid.Health > 0 then
+			Ragdoll.Set(humanoid, false, true)
+			humanoid:RemoveTag("Ragdoll")
+		end
 		humanoid.BreakJointsOnDeath = occupant.breakJointsOnDeath
 		humanoid.WalkSpeed = occupant.walkSpeed
 		-- Capture starts during grapple ragdoll, where AutoRotate is temporarily false.
 		humanoid.AutoRotate = true
-		humanoid.EvaluateStateMachine = occupant.evaluateStateMachine
-		humanoid.PlatformStand = occupant.platformStand == true
-		if occupant.gettingUp ~= nil then
-			humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, occupant.gettingUp)
-		end
+		humanoid.EvaluateStateMachine = true
+		humanoid.PlatformStand = false
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true)
+		humanoid:SetAttribute("RagdollRestoreStateMachine", true)
 		humanoid.UseJumpPower = occupant.useJumpPower
 		humanoid.JumpPower = occupant.jumpPower
 		humanoid.JumpHeight = occupant.jumpHeight
@@ -598,9 +606,6 @@ local function restoreCharacter(state, rescued)
 			humanoid.AutomaticScalingEnabled = occupant.scalingEnabled
 		end
 		humanoid:SetAttribute("PhysicsServerUntil", nil)
-		if rescued and humanoid.Health > 0 then
-			humanoid:ChangeState(Enum.HumanoidStateType.Running)
-		end
 	end
 	-- Freezing permanently recolors this character. Only a fresh respawn
 	-- restores its normal appearance, including for rescued NPCs.
@@ -621,9 +626,34 @@ local function restoreCharacter(state, rescued)
 		if rescued and humanoid.Health > 0 then
 			local exit = markerCFrame(state.model, {"ExitPoint", "Exit Point"})
 				or state.trigger.CFrame * CFrame.new(0, humanoid.HipHeight + root.Size.Y / 2, -(state.trigger.Size.Z / 2 + 3))
-			root.CFrame = exit
-			pcall(function() root:SetNetworkOwnershipAuto() end)
+			root.CFrame = upright(exit)
+			pcall(function()
+				if occupant.player and occupant.player.Character == occupant.character then
+					root:SetNetworkOwner(occupant.player)
+				else
+					root:SetNetworkOwnershipAuto()
+				end
+			end)
 		end
+	end
+	if humanoid.Parent == occupant.character then
+		if rescued and humanoid.Health > 0 then
+			for _, part in ipairs(occupant.character:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.AssemblyLinearVelocity, part.AssemblyAngularVelocity = Vector3.zero, Vector3.zero
+				end
+			end
+			local shield = Instance.new("ForceField")
+			shield.Name = "CapsuleRescueShield"
+			shield.Parent = occupant.character
+			task.delay(Config.capsuleRescueShieldSeconds or 1, function()
+				if shield.Parent then shield:Destroy() end
+			end)
+			humanoid.Sit = false
+			humanoid:ChangeState(Enum.HumanoidStateType.Running)
+		end
+		-- Unlock last: the pose, controls, ownership and shield are now ready.
+		humanoid:SetAttribute("CapsuleLocked", nil)
 	end
 	updatePrompt(state)
 end
@@ -682,7 +712,7 @@ end
 local function capture(state, owner, character, humanoid)
 	if state.occupant or occupiedCharacters[character] then return end
 	local root = character:FindFirstChild("HumanoidRootPart")
-	if not root or not root:IsA("BasePart") or root.Anchored then return end
+	if not root or not root:IsA("BasePart") or root.Anchored or character:FindFirstChildOfClass("ForceField") then return end
 
 	local occupant = {
 		player = Players:GetPlayerFromCharacter(character), character = character, humanoid = humanoid, root = root,
@@ -698,6 +728,7 @@ local function capture(state, owner, character, humanoid)
 	state.occupant = occupant
 	occupiedCharacters[character] = state
 	humanoid:SetAttribute("CapsuleLocked", true)
+	humanoid:SetAttribute("CapsulePhysicsRevision", (humanoid:GetAttribute("CapsulePhysicsRevision") or 0) + 1)
 	-- Captivity replaces the old ragdoll session. Rescue must restore a
 	-- standing rig, not resume a manual toggle or pending recovery request.
 	humanoid:SetAttribute("ManualRagdoll", nil)
@@ -817,13 +848,8 @@ local function capture(state, owner, character, humanoid)
 		for _, part in ipairs(character:GetDescendants()) do claimServer(part) end
 		humanoid:RemoveTag("Ragdoll")
 		-- Preserve motion so recovery does not play a get-up or move them.
-		-- Remember the standing state it restores, then lock that state off.
+		-- Captivity always ends standing; never snapshot temporary combat locks.
 		Ragdoll.Set(humanoid, false, true)
-		if occupant.evaluateStateMachine == nil then
-			occupant.evaluateStateMachine = humanoid.EvaluateStateMachine
-			occupant.platformStand = humanoid.PlatformStand
-			occupant.gettingUp = humanoid:GetStateEnabled(Enum.HumanoidStateType.GettingUp)
-		end
 		holdStill()
 		placeUpright()
 		freezePose(occupant)

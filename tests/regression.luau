@@ -857,6 +857,20 @@ return function(sources)
 	world.DescendantAdded:Emit(streamedHumanoid)
 	streamedHumanoid:SetAttribute("Ragdolled", false)
 	assert(streamedHumanoid.EvaluateStateMachine, "late observer captured disabled evaluation as recovery default")
+	;(function()
+		local _, captive = character("StreamedCapsule", V.zero, false)
+		captive.EvaluateStateMachine, captive.PlatformStand = false, true
+		captive:SetStateEnabled("GettingUp", false)
+		captive:SetAttribute("CapsuleLocked", true)
+		world.DescendantAdded:Emit(captive)
+		captive:SetAttribute("CapsuleLocked", nil)
+		assert(captive.EvaluateStateMachine and not captive.PlatformStand and captive:GetStateEnabled("GettingUp"),
+			"Client joining during captivity restored frozen movement settings")
+		captive:SetAttribute("Ragdolled", true)
+		captive:SetAttribute("Ragdolled", false)
+		assert(captive.EvaluateStateMachine and captive:GetStateEnabled("GettingUp"),
+			"Later client ragdoll reused the frozen capsule snapshot")
+	end)()
 	ragdoll.Set(upgradedHumanoid, true)
 	animatedJoint.Enabled = true
 	runService.PreSimulation:Emit()
@@ -1317,6 +1331,55 @@ return function(sources)
 	assert(equipCharacter:FindFirstChild("Torso").CanCollide,
 		"broken-apart body parts can fall through the floor")
 	assert(nativeBackpackEnabled and next(equipActions) == nil, "death retained the ragdoll hotbar")
+	;(function()
+		for _, r15 in ipairs({false, true}) do
+			for _, alreadyRagdolled in ipairs({false, true}) do
+				local crusherPlayer = instance("Player", "CrusherVictim", players)
+				crusherPlayer.UserId = 900
+				local body, humanoid, root, motor = character("CrusherVictim", V.new(2, 4, 6), r15)
+				local head = instance("Part", "Head", body)
+				crusherPlayer.Character = body
+				players.PlayerAdded:Emit(crusherPlayer)
+				if alreadyRagdolled then ragdoll.Set(humanoid, true) end
+				local poses = {}
+				for _, part in ipairs(body:GetDescendants()) do
+					if part:IsA("BasePart") then
+						poses[part] = part.CFrame
+						part.AssemblyLinearVelocity, part.AssemblyAngularVelocity = V.new(30, -10, 0), V.new(0, 9, 0)
+					end
+				end
+				humanoid:SetAttribute("DeathCause", "Crusher")
+				ragdoll.FreezeCrusherCorpse(humanoid)
+				assert(not humanoid.BreakJointsOnDeath, "Crusher allowed automatic joint destruction")
+				humanoid.Health = 0
+				humanoid:GetPropertyChangedSignal("Health"):Emit()
+				humanoid.Died:Emit()
+				assert(humanoid:GetAttribute("DeathCause") == nil and humanoid:GetAttribute("CrusherCorpse"),
+					"Kill reporting lost the persistent crusher marker")
+				assert(humanoid.State == "Dead" and humanoid.EvaluateStateMachine
+					and not body.BreakJointsCount and motor.Parent, "Crusher bypassed death or broke apart its camera/chat rig")
+				ragdoll.Set(humanoid, true)
+				ragdoll.Set(humanoid, false)
+				for part, pose in pairs(poses) do
+					assert(part.Anchored and not part.CanCollide and not part.CanTouch and not part.CanQuery
+						and part.AssemblyLinearVelocity.Magnitude == 0 and part.AssemblyAngularVelocity.Magnitude == 0
+						and part.CFrame == pose, "Crusher death or late recovery moved an original body part")
+				end
+				assert(root.Anchored and head.Anchored, "Crusher left the camera/chat anchors mobile")
+				local lateHandle = instance("Part", "LateAccessoryHandle", body)
+				body.DescendantAdded:Emit(lateHandle)
+				assert(lateHandle.Anchored and not lateHandle.CanCollide, "Late corpse part remained physical")
+				local fresh, freshHumanoid, freshRoot = character("CrusherRespawn", V.zero, r15)
+				crusherPlayer.Character = fresh
+				crusherPlayer.CharacterAdded:Emit(fresh)
+				assert(not freshRoot.Anchored and not freshHumanoid:GetAttribute("CrusherCorpse"), "Respawn inherited a frozen corpse")
+				body:Destroy()
+				fresh:Destroy()
+				crusherPlayer:Destroy()
+			end
+		end
+		print("PASS: stationary crusher corpses, camera/chat anchors, late callbacks, R6/R15, and respawn")
+	end)()
 	equipPlayer.CharacterRemoving:Emit(equipCharacter)
 	equipPlayer.Character = nil
 	equipClient.Select(config.toolName)
@@ -1777,6 +1840,7 @@ manualHumanoid:AddTag("Ragdoll")
 	end)()
 	execute(sources.capsuleTests)({execute = execute, sources = sources, instance = instance,
 		methods = methods, signal = signal, env = env, services = services, world = world,
+		remotes = remotes, ragdoll = ragdoll, config = config,
 		players = players, runService = runService, character = character,
 		advance = function(seconds) now += seconds end})
 	execute(sources.rigRespawnTests)(sources.rigRespawn)
