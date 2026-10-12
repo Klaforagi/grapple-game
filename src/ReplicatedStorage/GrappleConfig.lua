@@ -8,6 +8,7 @@ return {
 
 
 	toolName = "Grapple Gun", -- Make sure this is the exact same name as the tool
+	toolIcon = "rbxassetid://91010954183348", -- Roblox Backpack/hotbar icon
 	
 	debugMode = false, -- Visible hitbox, and print statements for debugging
 	--[[
@@ -29,6 +30,10 @@ return {
 	-- Unupgraded hook distance. UpgradeCatalog raises this. Rank 10 is 300.
 	-- Wall mode uses three times the player's current hook distance.
 	maxRopeLength = 60,
+	-- Click aim looks this far for a surface. It is not the hook's travel distance.
+	-- Stopping the ray at the hook range turns a far ground click into a point in
+	-- the air, and the gun below the camera then fires upward.
+	aimRayLength = 100000,
 	-- Player grapples persist until released, escaped, or a character leaves/dies.
 	-- Unupgraded hook speed. UpgradeCatalog raises this. Rank 10 is 150.
 	HookSpeed = 40, -- Studs per second
@@ -49,6 +54,15 @@ return {
 	]]
 	
 	playerTetherDuration = 20, -- Unupgraded seconds. UpgradeCatalog rank 10 is 60.
+	-- Blue spawn bubble on the living character. SpawnLocation.Duration stays 0
+	-- so the engine bubble cannot attach to the ragdoll corpse.
+	spawnShieldSeconds = 5,
+	-- Paid escape from a tether. The Robux button shows the price and does not
+	-- prompt until escapeRobuxProductId is a real 9-Robux developer product.
+	escapeShieldSeconds = 3,
+	escapeCoinCost = 30,
+	escapeRobuxPrice = 9,
+	escapeRobuxProductId = 0,
 
 	--[[
 	+------------------------------------------------+
@@ -77,12 +91,15 @@ return {
 	capsuleDamagePerSecond = 5,
 
 	bombToolName = "Bomb",
+	bombToolIcon = "rbxassetid://17724514739", -- Roblox Backpack/hotbar icon
 	pushToolName = "Push",
+	pushToolIcon = "rbxassetid://7925887190", -- Roblox Backpack/hotbar icon
 	pushRange = 6.5, -- Studs forward; walls block the push
 	pushWidth = 8,
 	pushHeight = 6,
 	pushCooldown = 4,
 	pushActiveDuration = 0.35,
+	pushMaxMovementLead = 2, -- Maximum extra forward reach for movement replication delay
 	pushRagdollDuration = 5,
 	pushSpeed = 35, -- Outward knockdown speed, studs/second (capped at 40)
 	flopCooldown = 1.8,

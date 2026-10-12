@@ -8,6 +8,8 @@ local prepared = setmetatable({}, {__mode = "k"})
 function M.Prepare(tool, server)
 	if not tool:IsA("Tool") or tool.Name ~= Config.toolName or prepared[tool] then return end
 	prepared[tool] = true
+	tool.TextureId = Config.toolIcon
+	tool.ToolTip = Config.toolName
 	local function prepare(instance)
 		if instance:IsA("Script") or instance:IsA("LocalScript") then
 			-- Leave ModuleScripts, the model, and existing joints intact.

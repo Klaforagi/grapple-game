@@ -1,3 +1,4 @@
+local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local GuiService = game:GetService("GuiService")
@@ -177,10 +178,16 @@ function M.Init()
 	make("UIStroke", wallButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
 	local palette = Palettes.Order
 	local inventoryOpen, inventoryTab = false, "Gun"
-	local inventoryButton = button(screen, "INV", UDim2.new(0, 18, 0.5, 30), UDim2.fromOffset(44, 44), function() inventoryOpen = not inventoryOpen end)
+	-- SHOP through the coin total. On a phone this stack is scaled to stay above the hotbar.
+	local leftStack = make("Frame", screen, {
+		Name = "LeftStack", AnchorPoint = Vector2.new(0, 0), Position = UDim2.new(0, 18, 0.5, -74),
+		Size = UDim2.fromOffset(168, 244), BackgroundTransparency = 1,
+	})
+	local leftStackScale = make("UIScale", leftStack, {Scale = 1})
+	local inventoryButton = button(leftStack, "INV", UDim2.fromOffset(0, 104), UDim2.fromOffset(44, 44), function() inventoryOpen = not inventoryOpen end)
 	inventoryButton.Font, inventoryButton.TextSize = Enum.Font.GothamBold, 12
 	make("UIStroke", inventoryButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
-	local shopButton = button(screen, "SHOP", UDim2.new(0, 18, 0.5, -74), UDim2.fromOffset(44, 44))
+	local shopButton = button(leftStack, "SHOP", UDim2.fromOffset(0, 0), UDim2.fromOffset(44, 44))
 	shopButton.Name = "ShopButton"
 	shopButton.Font = Enum.Font.GothamBold
 	shopButton.TextScaled = true
@@ -188,7 +195,7 @@ function M.Init()
 	make("UIPadding", shopButton, {PaddingLeft = UDim.new(0, 3), PaddingRight = UDim.new(0, 3)})
 	make("UITextSizeConstraint", shopButton, {MinTextSize = 8, MaxTextSize = 12})
 	make("UIStroke", shopButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
-	local upgradeButton = button(screen, "UPG", UDim2.new(0, 18, 0.5, -22), UDim2.fromOffset(44, 44))
+	local upgradeButton = button(leftStack, "UPG", UDim2.fromOffset(0, 52), UDim2.fromOffset(44, 44))
 	upgradeButton.Name = "UpgradeButton"
 	upgradeButton.Font = Enum.Font.GothamBold
 	upgradeButton.TextScaled = true
@@ -196,10 +203,10 @@ function M.Init()
 	make("UIPadding", upgradeButton, {PaddingLeft = UDim.new(0, 3), PaddingRight = UDim.new(0, 3)})
 	make("UITextSizeConstraint", upgradeButton, {MinTextSize = 8, MaxTextSize = 12})
 	make("UIStroke", upgradeButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
-	local ragdollButton = button(screen, "RAG", UDim2.new(0, 18, 0.5, 82), UDim2.fromOffset(44, 44), ragdoll)
+	local ragdollButton = button(leftStack, "RAG", UDim2.fromOffset(0, 156), UDim2.fromOffset(44, 44), ragdoll)
 	ragdollButton.Name = "RagdollButton"
-	local coins = make("Frame", screen, {
-		Name = "Coins", Position = UDim2.new(0, 18, 0.5, 134),
+	local coins = make("Frame", leftStack, {
+		Name = "Coins", Position = UDim2.fromOffset(0, 208),
 		Size = UDim2.fromOffset(150, 36), BackgroundTransparency = 1,
 	})
 	make("ImageLabel", coins, {
@@ -232,7 +239,7 @@ function M.Init()
 		hint.TextSize, hint.TextXAlignment = 13, Enum.TextXAlignment.Center
 		styleReelLabel(hint)
 	end
-	local inventory = make("Frame", screen, {Name = "GrappleInventory", Position = UDim2.new(0, 72, 0.5, -52), Size = UDim2.fromOffset(184, 208), BackgroundColor3 = Color3.fromRGB(39, 51, 65), Visible = false})
+	local inventory = make("Frame", leftStack, {Name = "GrappleInventory", Position = UDim2.fromOffset(54, 22), Size = UDim2.fromOffset(184, 208), BackgroundColor3 = Color3.fromRGB(39, 51, 65), Visible = false})
 	rounded(inventory)
 	make("UIStroke", inventory, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
 	local gunTab = button(inventory, "Gun", UDim2.fromOffset(10, 10), UDim2.fromOffset(52, 28))
@@ -290,27 +297,85 @@ function M.Init()
 	hold(shortButton, -1)
 	hold(longButton, 1)
 	local tetherInfo = {incoming = nil, outgoing = nil}
+	local escapeNote = ""
+	local escapePending = false
+	local escapeGreen = Color3.fromRGB(0, 170, 85)
+	-- Bottom-anchored at the old text's bottom edge, so escape buttons grow upward.
 	local tetherPanel = make("Frame", screen, {
-		Name = "TetherCountdown", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.75),
+		Name = "TetherCountdown", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 0.75, 28),
 		Size = UDim2.fromOffset(380, 56), BackgroundColor3 = Color3.fromRGB(27, 42, 53),
 		BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
 	})
 	rounded(tetherPanel)
 	local tetherScale = make("UIScale", tetherPanel, {Scale = 1})
-	local tetherText = label(tetherPanel, "", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 1, -16), Color3.new(1, 1, 1))
+	local tetherText = label(tetherPanel, "", UDim2.fromOffset(12, 4), UDim2.new(1, -24, 1, -16), Color3.new(1, 1, 1))
 	styleReelLabel(tetherText)
 	tetherText.TextXAlignment, tetherText.TextYAlignment = Enum.TextXAlignment.Center, Enum.TextYAlignment.Center
 	tetherText.Font, tetherText.TextScaled = Enum.Font.GothamBold, true
 	make("UITextSizeConstraint", tetherText, {MinTextSize = 10, MaxTextSize = 18})
+	local escapeRow = make("Frame", tetherPanel, {
+		Name = "Escape", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -8),
+		Size = UDim2.new(1, -24, 0, 36), BackgroundTransparency = 1, Visible = false,
+	})
+	local function requestEscape(method)
+		if not beingTethered or escapePending then return end
+		if method == "robux" then
+			local productId = Config.escapeRobuxProductId
+			if type(productId) ~= "number" or productId <= 0 then return end
+		end
+		escapePending = true
+		escapeNote = ""
+		Remotes.EscapeTether:FireServer(method)
+	end
+	local coinEscape = button(escapeRow, "", UDim2.fromOffset(0, 0), UDim2.new(0.5, -4, 1, 0), function()
+		requestEscape("coins")
+	end)
+	coinEscape.BackgroundColor3 = escapeGreen
+	make("UIListLayout", coinEscape, {
+		FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 6),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	})
+	make("ImageLabel", coinEscape, {
+		BackgroundTransparency = 1, Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
+		Size = UDim2.fromOffset(16, 16), LayoutOrder = 1,
+	})
+	local coinEscapeText = make("TextLabel", coinEscape, {
+		BackgroundTransparency = 1, BorderSizePixel = 0, Text = tostring(Config.escapeCoinCost or 30),
+		Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Color3.new(1, 1, 1),
+		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 36), LayoutOrder = 2,
+	})
+	local robuxEscape = button(escapeRow, utf8.char(0xE002) .. "  " .. tostring(Config.escapeRobuxPrice or 9), UDim2.new(0.5, 4, 0, 0), UDim2.new(0.5, -4, 1, 0), function()
+		requestEscape("robux")
+	end)
+	robuxEscape.BackgroundColor3 = escapeGreen
+	robuxEscape.Font = Enum.Font.GothamBold
+	robuxEscape.TextSize = 15
+	robuxEscape.TextColor3 = Color3.new(1, 1, 1)
 	local function clearIncoming()
 		beingTethered = false
 		tetherInfo.incoming = nil
+		escapePending = false
+		escapeNote = ""
 	end
 	Remotes.HasBeenGrappled.OnClientEvent:Connect(function(attacker, deadline)
 		clearIncoming()
 		if not attacker or typeof(deadline) ~= "number" then return end
 		beingTethered = true
 		tetherInfo.incoming = {name = attacker.Name, deadline = deadline}
+	end)
+	Remotes.EscapeTether.OnClientEvent:Connect(function(ok, reason)
+		escapePending = false
+		if reason == "prompt" then
+			local productId = Config.escapeRobuxProductId
+			if type(productId) == "number" and productId > 0 then
+				pcall(function() MarketplaceService:PromptProductPurchase(player, productId) end)
+			end
+		elseif reason == "coins" then
+			escapeNote = "Need " .. tostring(Config.escapeCoinCost or 30)
+		elseif ok then
+			escapeNote = ""
+		end
 	end)
 	local settingsOpen = false
 	local settingsWindow
@@ -406,28 +471,44 @@ function M.Init()
 	local muteButton = pill(topPills, "MuteButton", 2)
 	muteButton.Size = UDim2.fromOffset(32, 32)
 	make("ImageLabel", muteButton, {
-		Name = "Icon", BackgroundTransparency = 1, Image = "", ScaleType = Enum.ScaleType.Fit,
+		Name = "Icon", BackgroundTransparency = 1, Image = "rbxassetid://253828517", ScaleType = Enum.ScaleType.Fit,
 		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(18, 18),
 	})
-	local muteMark = make("UIStroke", muteButton, {
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Color = Color3.fromRGB(255, 255, 255),
-		Thickness = 1.5, Transparency = 1,
+	local muteMark = make("Frame", muteButton, {
+		Name = "MuteSlash", BackgroundColor3 = Color3.fromRGB(255, 65, 65), BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(24, 3), Rotation = -45, ZIndex = 2, Visible = false,
 	})
 	local musicMuted = false
 	local menuList = make("Frame", screen, {
 		Name = "MenuList", Visible = false, AutomaticSize = Enum.AutomaticSize.Y,
-		Size = UDim2.fromOffset(168, 0), BackgroundColor3 = Color3.fromRGB(39, 51, 65),
+		Size = UDim2.fromOffset(168, 0), BackgroundColor3 = Color3.fromRGB(0, 0, 0), BackgroundTransparency = 0.25,
 		BorderSizePixel = 0, ZIndex = 20,
 	})
 	rounded(menuList)
-	make("UIStroke", menuList, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.75})
+	make("UIStroke", menuList, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.75, Transparency = 0.85})
 	make("UIPadding", menuList, {PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4)})
 	make("UIListLayout", menuList, {SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Center})
+	local function styleMenuEntry(entry)
+		local hovered, selected = false, false
+		make("UICorner", entry, {CornerRadius = UDim.new(0, 8)})
+		local function updateHighlight()
+			entry.BackgroundTransparency = (hovered or selected) and 0.9 or 1
+		end
+		entry.MouseEnter:Connect(function() hovered = true; updateHighlight() end)
+		entry.MouseLeave:Connect(function() hovered = false; updateHighlight() end)
+		entry.SelectionGained:Connect(function() selected = true; updateHighlight() end)
+		entry.SelectionLost:Connect(function() selected = false; updateHighlight() end)
+		menuList:GetPropertyChangedSignal("Visible"):Connect(function()
+			if not menuList.Visible then hovered = false; selected = false; updateHighlight() end
+		end)
+	end
 	local settingsEntry = make("TextButton", menuList, {
-		Name = "Settings", Text = "", AutoButtonColor = true,
-		BackgroundColor3 = Color3.fromRGB(39, 51, 65), BorderSizePixel = 0,
-		Size = UDim2.fromOffset(168, 44), ZIndex = 21,
+		Name = "Settings", Text = "", AutoButtonColor = false,
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255), BackgroundTransparency = 1, BorderSizePixel = 0,
+		Size = UDim2.fromOffset(160, 44), ZIndex = 21,
 	})
+	styleMenuEntry(settingsEntry)
 	make("ImageLabel", settingsEntry, {
 		Name = "Icon", BackgroundTransparency = 1, Image = Assets.Settings, ScaleType = Enum.ScaleType.Fit,
 		AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 10, 0.5, 0),
@@ -435,15 +516,23 @@ function M.Init()
 	})
 	local settingsEntryLabel = label(settingsEntry, "Settings", UDim2.fromOffset(40, 0), UDim2.new(1, -48, 1, 0))
 	settingsEntryLabel.Font, settingsEntryLabel.TextSize = Enum.Font.BuilderSans, 18
+	settingsEntryLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	settingsEntryLabel.TextYAlignment = Enum.TextYAlignment.Center
 	settingsEntryLabel.ZIndex = 22
 	local codexEntry = make("TextButton", menuList, {
-		Name = "Codex", Text = "", AutoButtonColor = true, LayoutOrder = 2,
-		BackgroundColor3 = Color3.fromRGB(39, 51, 65), BorderSizePixel = 0,
-		Size = UDim2.fromOffset(168, 44), ZIndex = 21,
+		Name = "Codex", Text = "", AutoButtonColor = false, LayoutOrder = 2,
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255), BackgroundTransparency = 1, BorderSizePixel = 0,
+		Size = UDim2.fromOffset(160, 44), ZIndex = 21,
+	})
+	styleMenuEntry(codexEntry)
+	make("ImageLabel", codexEntry, {
+		Name = "Icon", BackgroundTransparency = 1, Image = Assets.Codex, ScaleType = Enum.ScaleType.Fit,
+		AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 10, 0.5, 0),
+		Size = UDim2.fromOffset(22, 22), ZIndex = 22,
 	})
 	local codexEntryLabel = label(codexEntry, "Codex", UDim2.fromOffset(40, 0), UDim2.new(1, -48, 1, 0))
 	codexEntryLabel.Font, codexEntryLabel.TextSize = Enum.Font.BuilderSans, 18
+	codexEntryLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	codexEntryLabel.TextYAlignment = Enum.TextYAlignment.Center
 	codexEntryLabel.ZIndex = 22
 	codexWindow = make("Frame", screen, {
@@ -592,6 +681,22 @@ function M.Init()
 		if UIS.TouchEnabled then fitted *= 0.85 end
 		shopScale.Scale = math.clamp(fitted, 0.4, 1)
 	end
+	local function fitLeftStack()
+		local camera = workspace.CurrentCamera
+		if not camera then return end
+		if not UIS.TouchEnabled then
+			leftStackScale.Scale = 1
+			leftStack.Position = UDim2.new(0, 18, 0.5, -74)
+			return
+		end
+		local viewport = camera.ViewportSize
+		local topMargin, bottomMargin, height = 8, 88, 244
+		local available = math.max(140, viewport.Y - topMargin - bottomMargin)
+		local scale = math.clamp(available / height, 0.55, 0.9)
+		leftStackScale.Scale = scale
+		local top = topMargin + math.max(0, (available - height * scale) / 2)
+		leftStack.Position = UDim2.fromOffset(10, top)
+	end
 	showShop = function(visible)
 		shopOpen = visible
 		if visible then
@@ -709,7 +814,7 @@ function M.Init()
 	local function applyMuted(muted, shouldSave)
 		musicMuted = muted == true
 		muteButton:SetAttribute("Muted", musicMuted)
-		muteMark.Transparency = musicMuted and 0 or 1
+		muteMark.Visible = musicMuted
 		MusicVolume.SetMuted(musicMuted)
 		if shouldSave then saveSetting("MusicMuted", musicMuted, true) end
 	end
@@ -834,9 +939,20 @@ function M.Init()
 				table.insert(lines, line)
 			end
 		end
+		local showEscape = tetherInfo.incoming ~= nil
+		local baseHeight = #lines > 1 and 80 or 56
+		local escapeExtra = showEscape and 44 or 0
 		tetherPanel.Visible = #lines > 0
-		tetherPanel.Size = UDim2.fromOffset(380, #lines > 1 and 80 or 56)
+		tetherPanel.Size = UDim2.fromOffset(380, baseHeight + escapeExtra)
+		-- On a phone the text already sits clear of the hotbar, so lift by the
+		-- button row instead of drawing the buttons down into it.
+		local lift = (showEscape and UIS.TouchEnabled) and escapeExtra or 0
+		tetherPanel.Position = UDim2.new(0.5, 0, 0.75, 28 - lift)
+		tetherText.Position = UDim2.fromOffset(12, 4)
+		tetherText.Size = UDim2.new(1, -24, 0, baseHeight - 8)
 		tetherText.Text = table.concat(lines, "\n")
+		escapeRow.Visible = showEscape
+		coinEscapeText.Text = escapeNote ~= "" and escapeNote or tostring(Config.escapeCoinCost or 30)
 		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 		if UIS.TouchEnabled then
 			local touchGui = playerGui:FindFirstChild("TouchGui")
@@ -889,6 +1005,7 @@ function M.Init()
 			settingsScale.Scale = settingsUiScale
 			codexScale.Scale = settingsUiScale
 			fitShop()
+			fitLeftStack()
 			upgradeUi.fit()
 		end
 		if menuOpen then placeMenuList() end

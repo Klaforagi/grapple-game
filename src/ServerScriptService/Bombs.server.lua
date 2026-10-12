@@ -78,15 +78,17 @@ local function giveBomb(player, character)
 	if not backpack:FindFirstChild(Config.pushToolName) and not character:FindFirstChild(Config.pushToolName) then
 		local push = Instance.new("Tool")
 		push.Name = Config.pushToolName
+		push.TextureId = Config.pushToolIcon
 		push.RequiresHandle, push.CanBeDropped = false, false
-		push.ToolTip = "Push nearby players down"
+		push.ToolTip = Config.pushToolName
 		push:SetAttribute("PushTool", true)
 		push.Parent = backpack
 	end
 	if backpack:FindFirstChild(Config.bombToolName) or character:FindFirstChild(Config.bombToolName) then return end
 	local tool = Instance.new("Tool")
 	tool.Name = Config.bombToolName
-	tool.ToolTip = "Throw a bomb / " .. Config.bombFuse .. " second fuse"
+	tool.TextureId = Config.bombToolIcon
+	tool.ToolTip = Config.bombToolName
 	tool.CanBeDropped = false
 	tool:SetAttribute("BombTool", true)
 	local colorName = player:GetAttribute("BombColor")
@@ -383,6 +385,11 @@ local function scanPush(state, now)
 	local forward = Vector3.new(look.X, 0, look.Z)
 	forward = forward.Magnitude > 0.01 and forward.Unit or Vector3.new(0, 0, -1)
 	local right = Vector3.new(-forward.Z, 0, forward.X)
+	-- The owner's position reaches the server after their local movement. Allow
+	-- only bounded forward travel over that delay; retain the rear/side limits
+	-- and raycast from the real root so this cannot reach through walls.
+	local forwardSpeed = math.max(0, root.AssemblyLinearVelocity:Dot(forward))
+	local lead = math.min(forwardSpeed * state.movementDelay, Config.pushMaxMovementLead or 2)
 	local center = root.Position + forward * (Config.pushRange / 2)
 	state.hitbox.CFrame = CFrame.lookAt(center, center + forward)
 	state.params.FilterDescendantsInstances = {character}
@@ -393,7 +400,7 @@ local function scanPush(state, now)
 		if model == character or victim.Health <= 0 or not targetRoot or targetRoot.Anchored then continue end
 		local offset = targetRoot.Position - root.Position
 		local depth = offset:Dot(forward)
-		if depth < 0 or depth > Config.pushRange
+		if depth < 0 or depth > Config.pushRange + lead
 			or math.abs(offset:Dot(right)) > Config.pushWidth / 2
 			or math.abs(offset.Y) > Config.pushHeight / 2 then continue end
 		local obstruction = workspace:Raycast(root.Position, offset, state.params)
@@ -429,6 +436,9 @@ Remotes.UsePush.OnServerEvent:Connect(function(player)
 	hitbox.Color = Color3.fromRGB(100, 230, 255)
 	hitbox.Anchored, hitbox.CanCollide, hitbox.CanTouch, hitbox.CanQuery = true, false, false, false
 	hitbox.CastShadow, hitbox.Transparency = false, 0.8
+	local followRoot = Instance.new("ObjectValue")
+	followRoot.Name, followRoot.Value = "PushRoot", root
+	followRoot.Parent = hitbox
 	hitbox.Parent = workspace
 	local duration = Config.pushActiveDuration or 0.35
 	TweenService:Create(hitbox, TweenInfo.new(duration), {Transparency = 1}):Play()
@@ -442,7 +452,8 @@ Remotes.UsePush.OnServerEvent:Connect(function(player)
 		if instance:IsA("Humanoid") then table.insert(candidates, instance) end
 	end
 	local state = {player = player, character = character, root = root, hitbox = hitbox,
-		params = params, hit = {}, candidates = candidates, expiresAt = now + duration}
+		params = params, hit = {}, candidates = candidates, expiresAt = now + duration,
+		movementDelay = math.clamp(player:GetNetworkPing() * 0.5 + 1 / 30, 0, 0.15)}
 	activePushes[player] = state
 	scanPush(state, now)
 end)

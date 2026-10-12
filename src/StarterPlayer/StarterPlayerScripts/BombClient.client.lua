@@ -1,12 +1,44 @@
 local Players = game:GetService("Players")
 local Storage = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local Config = require(Storage:WaitForChild("GrappleConfig"))
 local Remotes = require(Storage.Modules:WaitForChild("GrappleRemotes"))
 local player = Players.LocalPlayer
 local initialized = setmetatable({}, {__mode = "k"})
 local lastRequest = -math.huge
 local lastPushRequest = -math.huge
+-- Render accepted pushes against each client's current character pose rather
+-- than the delayed world-space CFrame replicated for the server's visual.
+local pushVisuals = {}
+local function trackPushVisual(instance)
+	if instance:IsA("BasePart") and instance.Name == "PushHitbox" then
+		pushVisuals[instance] = true
+	end
+end
+workspace.ChildAdded:Connect(trackPushVisual)
+for _, child in ipairs(workspace:GetChildren()) do trackPushVisual(child) end
+RunService.RenderStepped:Connect(function()
+	for hitbox in pairs(pushVisuals) do
+		if not hitbox.Parent then
+			pushVisuals[hitbox] = nil
+			continue
+		end
+		local reference = hitbox:FindFirstChild("PushRoot")
+		local root = reference and reference.Value
+		if not root or not root.Parent then
+			hitbox.LocalTransparencyModifier = 1
+			continue
+		end
+		hitbox.LocalTransparencyModifier = 0
+		local look = root.CFrame.LookVector
+		local forward = Vector3.new(look.X, 0, look.Z)
+		forward = forward.Magnitude > 0.01 and forward.Unit or Vector3.new(0, 0, -1)
+		local center = root.Position + forward * (Config.pushRange / 2)
+		hitbox.CFrame = CFrame.lookAt(center, center + forward)
+	end
+end)
+
 local function push(tool)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")

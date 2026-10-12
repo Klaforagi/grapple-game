@@ -122,6 +122,7 @@ return function(sources)
 		self.OwnershipWrites = (self.OwnershipWrites or 0) + 1
 	end
 	function methods:GetNetworkOwner() return self.NetworkOwner end
+	function methods:GetNetworkPing() return self.NetworkPing or 0 end
 	function methods:GetNetworkOwnershipAuto() return self.OwnershipAuto ~= false end
 	function methods:ApplyImpulse(impulse)
 		self.ImpulseCount = (self.ImpulseCount or 0) + 1
@@ -182,7 +183,7 @@ return function(sources)
 	function players:GetPlayerFromCharacter(character)
 		for _, player in ipairs(playerList) do if player.Character == character then return player end end
 	end
-	local runService = {Heartbeat = signal(), PreSimulation = signal(), IsServer = function() return true end}
+	local runService = {Heartbeat = signal(), PreSimulation = signal(), RenderStepped = signal(), IsServer = function() return true end}
 	function runService:BindToRenderStep(name, _, callback)
 		self.renderBindings = self.renderBindings or {}
 		self.renderBindings[name] = callback
@@ -211,7 +212,7 @@ return function(sources)
 		game = {GetService = function(_, name) return assert(services[name], name) end},
 		workspace = world, Vector3 = V, Instance = {new = instance},
 		CFrame = {new = function() return identity end, lookAt = function(origin, target)
-			return setmetatable({LookVector = (target - origin).Unit}, {__mul = function(a) return a end})
+			return setmetatable({Position = origin, LookVector = (target - origin).Unit}, {__mul = function(a) return a end})
 		end}, BrickColor = {new = function() return {} end},
 		Color3 = {fromRGB = function() return {} end, fromHSV = function() return {} end}, ColorSequence = {new = function() return {} end},
 		PhysicalProperties = {new = function(d, f) return {Density = d, Friction = f} end},
@@ -232,7 +233,7 @@ return function(sources)
 	end
 	local config = execute(sources.config)
 	local remotes = {}
-	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "EquipRagdollTool", "SetGrappleColor", "SetPlayerSetting", "ServerRestartNotice", "FallLanded"}) do
+	for _, name in ipairs({"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "EquipRagdollTool", "SetGrappleColor", "SetPlayerSetting", "ServerRestartNotice", "FallLanded", "EscapeTether"}) do
 		remotes[name] = instance("RemoteEvent", name)
 	end
 	local ragdoll = execute(sources.ragdoll)
@@ -720,6 +721,10 @@ return function(sources)
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
 	assert(not gun:GetAttribute("WallMode"), "wall mode did not turn off before the next shot")
 	world.Raycast = function() return {Instance = victimRoot, Position = victimRoot.Position} end
+	instance("ForceField", "SpawnShield", victim.Character)
+	fire()
+	assert(not victimHumanoid:GetAttribute("GrappledBy"), "shielded player was grappled")
+	victim.Character:FindFirstChildOfClass("ForceField"):Destroy()
 	fire()
 	assert(victimHumanoid:GetAttribute("GrappledBy") == attacker.UserId, "player grapple failed after leaving wall mode")
 	fire()
@@ -732,6 +737,30 @@ return function(sources)
 	victimHumanoid.Health = 0
 	victimHumanoid.Died:Emit()
 	assert(deathRope.destroyed, "death cleanup retained the rope")
+	now += 0.2
+	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
+	assert(gun:GetAttribute("WallMode") == true, "wall mode did not turn on before respawn")
+	attacker.CharacterAdded:Emit(attacker.Character)
+	assert(gun:GetAttribute("WallMode") ~= true, "respawn left wall mode active")
+	assert(attacker.Character:FindFirstChildOfClass("ForceField"), "respawn did not grant a spawn shield")
+	attackerHumanoid.Health = 0
+	attackerHumanoid.Died:Emit()
+	assert(not attacker.Character:FindFirstChildOfClass("ForceField"), "spawn shield stayed on the dead body")
+	services.live = instance("Model", "Player1Live", world)
+	instance("Humanoid", "Humanoid", services.live)
+	instance("Part", "Torso", services.live)
+	services.corpse = attacker.Character
+	attacker.Character = services.live
+	attacker.CharacterAdded:Emit(services.live)
+	assert(services.live:FindFirstChild("SpawnShield"), "new body did not get the spawn shield")
+	assert(not services.corpse:FindFirstChildOfClass("ForceField"), "spawn shield stayed on the dead body")
+	services.stray = instance("ForceField", "ForceField")
+	services.stray.Parent = services.corpse
+	world.DescendantAdded:Emit(services.stray)
+	assert(services.stray.destroyed, "engine shield was left on the corpse")
+	attacker.Character = services.corpse
+	services.live:Destroy()
+	attackerHumanoid.Health = 100
 	-- The attacker's client must also suppress the remote victim's state machine.
 	runService.IsServer = function() return false end
 	players.LocalPlayer = attacker
@@ -915,7 +944,7 @@ return function(sources)
 	assert(#remotes.FireGrapple.sent == 1, "mouse fallback duplicated or missed shot")
 	assert(aimPixels[1] == 100 and aimPixels[2] == 100, "mouse pixel changed during ray conversion")
 	assert(remotes.FireGrapple.sent[1][1] == clickedPoint, "shot target differs from exact aim ray hit")
-	assert(math.abs(services.aimSpan - 60) < 0.001, "aim ray did not use hook distance")
+	assert(math.abs(services.aimSpan - config.aimRayLength) < 0.001, "aim ray was shortened to the hook range")
 	input.InputBegan:Emit({UserInputType = "Keyboard", KeyCode = "W"}, false)
 	assert(#remotes.FireGrapple.sent == 1, "movement fired the gun")
 	now += 0.2
@@ -941,8 +970,15 @@ return function(sources)
 	now += 0.2
 	toolClient.Fire(gun)
 	assert(#remotes.FireGrapple.sent == 5, "wall mode shot did not fire")
-	assert(math.abs(services.aimSpan - 180) < 0.001, "wall mode aim was not triple hook distance")
+	assert(math.abs(services.aimSpan - config.aimRayLength) < 0.001, "wall mode shortened the aim ray")
 	gun:SetAttribute("WallMode", false)
+	world.Raycast = function(_, _, direction)
+		services.aimSpan = direction.Magnitude
+		return nil
+	end
+	now += 0.2
+	toolClient.Fire(gun)
+	assert(math.abs(remotes.FireGrapple.sent[6][1].Z - config.aimRayLength) < 0.001, "a click with nothing in range aimed at the short hook reach")
 	local unequipsBefore = attackerHumanoid.UnequippedCount or 0
 	input.InputBegan:Emit({UserInputType = "Keyboard", KeyCode = "One"}, true)
 	assert(gun.Parent == attacker.Character and (attackerHumanoid.UnequippedCount or 0) == unequipsBefore, "grapple code hijacked the normal hotbar key")
@@ -1683,6 +1719,61 @@ manualHumanoid:AddTag("Ragdoll")
 	now += 0.2
 	runService.PreSimulation:Emit(0.2)
 	assert(pushHumanoid:GetAttribute("Ragdolled"), "Push did not acquire a target during its active window")
+	-- Moving pushes compensate for delayed forward movement, with strict bounds.
+	;(function()
+	local function movingPush(speed, ping, offset, blocked)
+		now += config.pushCooldown + 0.01
+		attackerRoot.Position += V.new(100, 0, 0)
+		attackerRoot.CFrame = {LookVector = V.new(1, 0, 0)}
+		attackerRoot.AssemblyLinearVelocity = V.new(speed, 0, 0)
+		attacker.NetworkPing = ping
+		local model, humanoid = character("MovingPushTarget", attackerRoot.Position + offset, false)
+		world.Raycast = function() return blocked and {Instance = wall} or nil end
+		remotes.UsePush.OnServerEvent:Emit(attacker)
+		return model, humanoid
+	end
+	local _, movingTarget = movingPush(16, 0.2, V.new(config.pushRange + 1, 0, 0))
+	assert(movingTarget:GetAttribute("Ragdolled"), "Moving push missed a target within latency allowance")
+	local _, stationaryTarget = movingPush(0, 0.2, V.new(config.pushRange + 1, 0, 0))
+	assert(not stationaryTarget:GetAttribute("Ragdolled"), "Stationary push gained extra reach")
+	local _, retreatTarget = movingPush(-16, 0.2, V.new(config.pushRange + 1, 0, 0))
+	assert(not retreatTarget:GetAttribute("Ragdolled"), "Backward movement gained forward reach")
+	local _, distantTarget = movingPush(2000, 10, V.new(config.pushRange + config.pushMaxMovementLead + 0.1, 0, 0))
+	assert(not distantTarget:GetAttribute("Ragdolled"), "Movement compensation exceeded its distance cap")
+	local _, blockedTarget = movingPush(16, 0.2, V.new(config.pushRange + 1, 0, 0), true)
+	assert(not blockedTarget:GetAttribute("Ragdolled"), "Moving push hit through a wall")
+	local _, rearTarget = movingPush(16, 0.2, V.new(-1, 0, 0))
+	assert(not rearTarget:GetAttribute("Ragdolled"), "Moving push reached behind the player")
+	local _, sideTarget = movingPush(16, 0.2, V.new(3, 0, config.pushWidth / 2 + 1))
+	assert(not sideTarget:GetAttribute("Ragdolled"), "Movement compensation widened the push")
+	local _, lateTarget = movingPush(16, 0.2, V.new(20, 0, 0))
+	now += config.pushActiveDuration + 0.01
+	lateTarget.Parent:FindFirstChild("HumanoidRootPart").Position = attackerRoot.Position + V.new(3, 0, 0)
+	runService.PreSimulation:Emit(1 / 60)
+	assert(not lateTarget:GetAttribute("Ragdolled"), "Push hit after its active window expired")
+	-- Replication is deliberately held still while the rendered character moves/turns.
+	local visual
+	for _, child in ipairs(world:GetChildren()) do
+		if child.Name == "PushHitbox" then visual = child end
+	end
+	world.ChildAdded:Emit(visual)
+	attackerRoot.Position += V.new(4, 0, 0)
+	runService.RenderStepped:Emit(1 / 60)
+	assert((visual.CFrame.Position - attackerRoot.Position - V.new(config.pushRange / 2, 0, 0)).Magnitude < 0.001,
+		"Push visual lagged behind local movement without a server update")
+	attackerRoot.CFrame = {LookVector = V.new(0, 0, -1)}
+	runService.RenderStepped:Emit(1 / 60)
+	assert((visual.CFrame.Position - attackerRoot.Position - V.new(0, 0, -config.pushRange / 2)).Magnitude < 0.001,
+		"Push visual did not follow a local turn")
+	visual:Destroy()
+	local destroyedPose = visual.CFrame
+	attackerRoot.Position += V.new(4, 0, 0)
+	runService.RenderStepped:Emit(1 / 60)
+	assert(visual.CFrame == destroyedPose, "Destroyed push visual kept updating")
+	attacker.NetworkPing = 0
+	attackerRoot.AssemblyLinearVelocity = V.zero
+	print("PASS: moving push reach, latency cap, walls, expiry, and local visual following")
+	end)()
 	execute(sources.capsuleTests)({execute = execute, sources = sources, instance = instance,
 		methods = methods, signal = signal, env = env, services = services, world = world,
 		players = players, runService = runService, character = character,

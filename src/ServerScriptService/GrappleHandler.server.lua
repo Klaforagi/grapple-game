@@ -39,6 +39,9 @@ end
 local Active: {[Player]: {[string]: any}} = {}
 local GrappleOwners: {[number]: Player} = {}
 local WallMode: {[Player]: boolean} = {}
+local escaping: {[Player]: boolean} = {}
+local pendingEscape: {[Player]: boolean} = {}
+local seenEscape: {[string]: boolean} = {}
 local wallOwnership = {}
 local lastFire: {[Player]: number} = {}
 local cooldownUntil: {[Player]: number} = {}
@@ -110,6 +113,21 @@ local function findInventoryTool(player: Player, name: string): Tool?
 	local backpack = player:FindFirstChildOfClass("Backpack")
 	local tool = (character and character:FindFirstChild(name)) or (backpack and backpack:FindFirstChild(name))
 	return tool and tool:IsA("Tool") and tool or nil
+end
+
+local function publishWallMode(player: Player)
+	local enabled = WallMode[player] == true
+	for _, container in ipairs({player.Character, player:FindFirstChildOfClass("Backpack")}) do
+		if container then
+			local tool = container:FindFirstChild(Config.toolName)
+			if tool and tool:IsA("Tool") then tool:SetAttribute("WallMode", enabled) end
+		end
+	end
+end
+
+local function clearWallMode(player: Player)
+	WallMode[player] = false
+	publishWallMode(player)
 end
 
 local function getTool(player: Player): Tool?
@@ -402,6 +420,8 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 	if state.wallMode then return end
 	local victimPlayer = Players:GetPlayerFromCharacter(hitModel)
 	if victimPlayer == state.owner or hitHumanoid.Health <= 0 then disconnectRope(state.owner) return end
+	-- Spawn shield and the paid escape shield are both ForceFields.
+	if hitModel:FindFirstChildOfClass("ForceField") then disconnectRope(state.owner) return end
 	local previousSession = physicsSessions[hitModel]
 	if previousSession and Active[previousSession.owner] == previousSession then
 		disconnectRope(previousSession.owner, true)
@@ -564,8 +584,7 @@ Remotes.ToggleWallMode.OnServerEvent:Connect(function(player)
 	if now - (lastModeToggle[player] or -math.huge) < 0.15 then return end
 	lastModeToggle[player] = now
 	WallMode[player] = not (WallMode[player] == true)
-	local tool = getTool(player)
-	if tool then tool:SetAttribute("WallMode", WallMode[player]) end
+	publishWallMode(player)
 end)
 
 Remotes.SetGrappleColor.OnServerEvent:Connect(function(player, target, colorName)
@@ -754,8 +773,144 @@ Players.PlayerRemoving:Connect(function(player)
 		end
 	end
 	WallMode[player], lastFire[player], cooldownUntil[player] = nil, nil, nil
-	lastModeToggle[player] = nil
+	lastModeToggle[player], escaping[player], pendingEscape[player] = nil, nil, nil
 end)
+
+local function tetherOwner(player: Player): Player?
+	local owner = GrappleOwners[player.UserId]
+	local state = owner and Active[owner]
+	if state and state.victimPlayer == player then return owner end
+	return nil
+end
+
+local function addShield(character: Model, seconds: number, name: string)
+	local shield = Instance.new("ForceField")
+	shield.Name = name
+	shield.Parent = character
+	task.delay(seconds, function()
+		if shield.Parent then shield:Destroy() end
+	end)
+end
+
+local function stripShields(model)
+	if not model then return end
+	for _, child in ipairs(model:GetChildren()) do
+		if child:IsA("ForceField") then child:Destroy() end
+	end
+end
+
+local function isLiving(model): boolean
+	if not model or not model.Parent then return false end
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	return humanoid ~= nil and humanoid.Health > 0
+end
+
+-- The bubble is drawn from the model's Torso or UpperTorso. It has to be
+-- parented to the living character after that part exists. The ragdoll corpse
+-- stays in the world and must not keep or receive one.
+local function grantSpawnShield(player: Player, hinted)
+	local hintedAlive = isLiving(hinted)
+	local currentAlive = isLiving(player.Character)
+	local target = nil
+	if hintedAlive and (player.Character == hinted or not currentAlive) then
+		target = hinted
+	elseif currentAlive then
+		target = player.Character
+	end
+	if hinted and hinted ~= target then stripShields(hinted) end
+	if player.Character and player.Character ~= target then stripShields(player.Character) end
+	if not target or target:FindFirstChild("SpawnShield") then return end
+	if not (target:FindFirstChild("UpperTorso", true) or target:FindFirstChild("Torso", true)) then return end
+	local other = target:FindFirstChildOfClass("ForceField")
+	if other then other:Destroy() end
+	addShield(target, Config.spawnShieldSeconds or 5, "SpawnShield")
+end
+
+local shieldedLife = setmetatable({}, {__mode = "k"})
+local function watchShield(player: Player, character: Model)
+	if shieldedLife[character] then return end
+	shieldedLife[character] = true
+	local function bindHumanoid(humanoid)
+		if not humanoid or not humanoid:IsA("Humanoid") or shieldedLife[humanoid] then return end
+		shieldedLife[humanoid] = true
+		local function onDeath()
+			if humanoid.Health <= 0 then stripShields(character) end
+		end
+		humanoid.Died:Connect(onDeath)
+		humanoid:GetPropertyChangedSignal("Health"):Connect(onDeath)
+	end
+	bindHumanoid(character:FindFirstChildOfClass("Humanoid"))
+	character.ChildAdded:Connect(function(child)
+		if child:IsA("Humanoid") then bindHumanoid(child) end
+		if child.Name == "Torso" or child.Name == "UpperTorso" then
+			task.defer(function() grantSpawnShield(player, character) end)
+		end
+	end)
+end
+
+local function releaseAndShield(player: Player)
+	local owner = tetherOwner(player)
+	if owner then disconnectRope(owner) end
+	local character = player.Character
+	if character then addShield(character, Config.escapeShieldSeconds or 3, "EscapeShield") end
+end
+
+local function grantEscape(userId, purchaseId)
+	if type(userId) ~= "number" or type(purchaseId) ~= "string" or purchaseId == "" then return false end
+	if seenEscape[purchaseId] then return true end
+	local player = Players:GetPlayerByUserId(userId)
+	if not player then return false end
+	seenEscape[purchaseId] = true
+	pendingEscape[player] = nil
+	releaseAndShield(player)
+	return true
+end
+
+local grantEscapeRemote = Instance.new("BindableFunction")
+grantEscapeRemote.Name = "GrantEscapeRobux"
+grantEscapeRemote.OnInvoke = grantEscape
+grantEscapeRemote.Parent = ReplicatedStorage
+
+local function escapeTether(player: Player, method)
+	if not tetherOwner(player) then
+		Remotes.EscapeTether:FireClient(player, false, "gone")
+		return
+	end
+	if method == "robux" then
+		local productId = Config.escapeRobuxProductId
+		if type(productId) ~= "number" or productId <= 0 then
+			Remotes.EscapeTether:FireClient(player, false, "unavailable")
+			return
+		end
+		pendingEscape[player] = true
+		Remotes.EscapeTether:FireClient(player, true, "prompt")
+		return
+	end
+	if escaping[player] then return end
+	escaping[player] = true
+	local cost = math.floor(tonumber(Config.escapeCoinCost) or 30)
+	local spend = ReplicatedStorage:WaitForChild("SpendCoins")
+	local ok, spent = pcall(function()
+		return spend:Invoke(player.UserId, cost)
+	end)
+	if not ok or spent ~= true then
+		escaping[player] = nil
+		Remotes.EscapeTether:FireClient(player, false, "coins")
+		return
+	end
+	if not tetherOwner(player) then
+		local refund = ReplicatedStorage:FindFirstChild("RefundHeldCoins")
+		if refund then pcall(function() refund:Invoke(player.UserId, cost) end) end
+		escaping[player] = nil
+		Remotes.EscapeTether:FireClient(player, false, "gone")
+		return
+	end
+	releaseAndShield(player)
+	escaping[player] = nil
+	Remotes.EscapeTether:FireClient(player, true, "ok")
+end
+
+Remotes.EscapeTether.OnServerEvent:Connect(escapeTether)
 
 local function watchPlayer(player: Player)
 	local watched = setmetatable({}, {__mode = "k"})
@@ -764,6 +919,7 @@ local function watchPlayer(player: Player)
 		ToolSetup.Prepare(tool, true)
 		if not tool:IsA("Tool") or tool.Name ~= Config.toolName or watchedTools[tool] then return end
 		watchedTools[tool] = true
+		tool:SetAttribute("WallMode", WallMode[player] == true)
 		tool.Unequipped:Connect(function()
 			if Active[player] and Active[player].tool == tool then disconnectRope(player) end
 			startCooldown(player, tool, 1.5)
@@ -795,9 +951,22 @@ handle:SetAttribute("RainbowPart", player:GetAttribute("BombColor") == "Rainbow"
 	end)
 	local backpack = player:FindFirstChildOfClass("Backpack")
 	if backpack then watchInventory(backpack) end
-	player.CharacterAdded:Connect(watchInventory)
-	if player.Character then watchInventory(player.Character) end
+	player.CharacterAdded:Connect(function(character)
+		-- A new life starts with wall mode off. The backpack gun can survive death
+		-- with the old attribute, so write it before the player equips again.
+		clearWallMode(player)
+		watchShield(player, character)
+		task.defer(function()
+			grantSpawnShield(player, character)
+		end)
+		watchInventory(character)
+	end)
+	if player.Character then
+		watchShield(player, player.Character)
+		watchInventory(player.Character)
+	end
 	player.CharacterRemoving:Connect(function(character)
+		stripShields(character)
 		disconnectRope(player, true)
 		local owner = GrappleOwners[player.UserId]
 		if owner then disconnectRope(owner, true) end
@@ -815,3 +984,28 @@ starterPack.ChildAdded:Connect(function(tool) ToolSetup.Prepare(tool, true) end)
 for _, tool in ipairs(starterPack:GetChildren()) do ToolSetup.Prepare(tool, true) end
 Players.PlayerAdded:Connect(watchPlayer)
 for _, player in ipairs(Players:GetPlayers()) do watchPlayer(player) end
+
+local function shieldBelongsOn(inst): boolean
+	local model = inst.Parent
+	if not model or not model:IsA("Model") then return false end
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	return humanoid ~= nil and humanoid.Health > 0
+end
+
+-- The engine parents a SpawnLocation ForceField while the dead body can still
+-- be the character. Keep Duration at 0 and drop any bubble that is not our
+-- living-character shield.
+local function claimSpawnShield(inst)
+	if inst:IsA("SpawnLocation") then
+		inst.Duration = 0
+		return
+	end
+	if not inst:IsA("ForceField") then return end
+	if inst.Name ~= "SpawnShield" and inst.Name ~= "EscapeShield" then
+		inst:Destroy()
+		return
+	end
+	if not shieldBelongsOn(inst) then inst:Destroy() end
+end
+for _, inst in ipairs(Workspace:GetDescendants()) do claimSpawnShield(inst) end
+Workspace.DescendantAdded:Connect(claimSpawnShield)

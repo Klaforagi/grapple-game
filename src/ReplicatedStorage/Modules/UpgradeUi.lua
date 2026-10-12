@@ -6,13 +6,12 @@ local UserInputService = game:GetService("UserInputService")
 local Assets = require(ReplicatedStorage:WaitForChild("Assets"))
 local Catalog = require(script.Parent:WaitForChild("UpgradeCatalog"))
 
-local WINDOW_X, WINDOW_Y = 640, 700
+local WINDOW_X, WINDOW_Y = 640, 584
 local ROBUX = utf8.char(0xE002)
 local INK = Color3.fromRGB(244, 246, 252)
 local MUTED = Color3.fromRGB(176, 186, 204)
 local CARD = Color3.fromRGB(44, 48, 64)
 local BUY = Color3.fromRGB(0, 170, 85)
-local ROBUX_BUY = Color3.fromRGB(0, 122, 72)
 local IDLE = Color3.fromRGB(90, 96, 112)
 local GOLD = Color3.fromRGB(255, 196, 72)
 local EDGE = Color3.fromRGB(86, 92, 116)
@@ -121,7 +120,7 @@ function M.Mount(screen, onClose)
 		Position = UDim2.fromOffset(16, 94), Size = UDim2.new(1, -32, 1, -110),
 	})
 	make("UIListLayout", list, {
-		Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 	})
 
@@ -143,7 +142,7 @@ function M.Mount(screen, onClose)
 		row.icon.Visible = cost ~= nil and not row.pending
 		row.robux.Active = loaded and cost ~= nil and not row.pending
 		row.robux.AutoButtonColor = loaded and cost ~= nil and not row.pending
-		row.robux.BackgroundColor3 = (loaded and cost ~= nil and not row.pending) and ROBUX_BUY or IDLE
+		row.robux.BackgroundColor3 = (loaded and cost ~= nil and not row.pending) and BUY or IDLE
 		row.robux.Visible = cost ~= nil or not loaded
 		if not loaded then
 			row.buttonText.Text = "..."
@@ -176,13 +175,13 @@ function M.Mount(screen, onClose)
 	for index, stat in ipairs(Catalog.Stats) do
 		local card = make("Frame", list, {
 			Name = stat.id, LayoutOrder = index, BackgroundColor3 = CARD, BorderSizePixel = 0,
-			Size = UDim2.new(1, 0, 0, 140), ZIndex = 26,
+			Size = UDim2.new(1, 0, 0, 112), ZIndex = 26,
 		})
 		corner(card, 14)
 		make("UIStroke", card, {Color = EDGE, Thickness = 1})
 		local accent = make("Frame", card, {
 			BackgroundColor3 = ACCENTS[stat.accent], BorderSizePixel = 0,
-			Position = UDim2.fromOffset(0, 16), Size = UDim2.fromOffset(4, 108), ZIndex = 27,
+			Position = UDim2.fromOffset(0, 14), Size = UDim2.fromOffset(4, 84), ZIndex = 27,
 		})
 		corner(accent, 2)
 		local title = make("TextLabel", card, {
@@ -268,7 +267,7 @@ function M.Mount(screen, onClose)
 		})
 		local robux = make("TextButton", buys, {
 			Name = "BuyRobux", Text = "", AutoButtonColor = false, BorderSizePixel = 0,
-			Size = UDim2.fromOffset(128, 34), BackgroundColor3 = ROBUX_BUY, LayoutOrder = 2, ZIndex = 27,
+			Size = UDim2.fromOffset(128, 34), BackgroundColor3 = BUY, LayoutOrder = 2, ZIndex = 27,
 		})
 		corner(robux, 8)
 		local robuxText = make("TextLabel", robux, {

@@ -3,7 +3,6 @@ local Players = game:GetService("Players")
 local storage = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
 local Config = require(storage:WaitForChild("GrappleConfig"))
-local Upgrades = require(storage.Modules:WaitForChild("UpgradeCatalog"))
 local Remotes = require(storage.Modules:WaitForChild("GrappleRemotes"))
 local M = {}
 local initialized = setmetatable({}, {__mode = "k"})
@@ -34,9 +33,11 @@ function M.Fire(tool, aimPosition)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = {character}
-	local reach = Upgrades.ShotDistance(player, tool:GetAttribute("WallMode") == true)
-	local result = workspace:Raycast(ray.Origin, ray.Direction * reach, params)
-	local target = result and result.Position or ray.Origin + ray.Direction * reach
+	-- The hook still stops at its upgrade range. The aim point stays on the
+	-- clicked surface so a far ground shot keeps that direction.
+	local aimDistance = Config.aimRayLength or 100000
+	local result = workspace:Raycast(ray.Origin, ray.Direction * aimDistance, params)
+	local target = result and result.Position or ray.Origin + ray.Direction * aimDistance
 	Remotes.FireGrapple:FireServer(target, camera.CFrame.Position)
 end
 function M.Init(tool)
