@@ -130,6 +130,10 @@ local function grantRobux(userId, purchaseId)
 		state.ranks = readRanks(data)
 		state.pendingRobux = nil
 		publish(player, state.ranks)
+		-- A receipt retry is already granted. Only a new rank should tell the client.
+		if outcome == "granted" and stat then
+			reply(player, true, stat.id, state.ranks[stat.id], "ok")
+		end
 	else
 		outcome = nil
 	end

@@ -159,4 +159,16 @@ return function(serverSource, catalogSource)
 	assert(grant.OnInvoke(12, "up-1") == true, "robux receipt retry failed")
 	assert(loaded.HookDistanceRank == 1, "robux receipt ranked twice")
 	assert(#spend.calls == spent, "robux receipt spent coins")
+	local successes = 0
+	local prompts = 0
+	for index = 1, #made do
+		if made[index].Name == "UpgradeResult" and made[index].sent then
+			for _, message in ipairs(made[index].sent) do
+				if message[2] == true and message[5] == "ok" then successes += 1 end
+				if message[2] == true and message[5] == "prompt" then prompts += 1 end
+			end
+		end
+	end
+	assert(successes == 3, "successful coin and robux upgrades did not each report ok")
+	assert(prompts == 1, "robux prompt was treated as a finished upgrade")
 end

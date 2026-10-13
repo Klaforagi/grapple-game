@@ -1,10 +1,12 @@
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local SoundService = game:GetService("SoundService")
 local UserInputService = game:GetService("UserInputService")
 
 local Assets = require(ReplicatedStorage:WaitForChild("Assets"))
 local Catalog = require(script.Parent:WaitForChild("UpgradeCatalog"))
+local PlaySound = require(script.Parent:WaitForChild("PlaySound"))
 
 local WINDOW_X, WINDOW_Y = 640, 584
 local ROBUX = utf8.char(0xE002)
@@ -329,6 +331,8 @@ function M.Mount(screen, onClose)
 			end
 			if ok and reason ~= "prompt" then
 				statusText = ""
+				-- Created here, so only this player hears it. Prompts and failed spends stay silent.
+				if reason == "ok" then PlaySound(SoundService, "Upgrade") end
 			elseif reason == "coins" then
 				statusText = "Not enough coins"
 			elseif reason == "save" then
