@@ -5,6 +5,9 @@ function M.CanFlop(character)
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	if not humanoid or humanoid.Health <= 0 or not root or root.Anchored
 		or humanoid:GetAttribute("Ragdolled") ~= true or humanoid:GetAttribute("CapsuleLocked") then return false end
+	-- A push keeps them down so they can be bombed. Flop returns when that lock ends.
+	local pushUntil = humanoid:GetAttribute("PushRagdollUntil")
+	if type(pushUntil) == "number" and workspace:GetServerTimeNow() < pushUntil then return false end
 	local tooFast, touchingRunway = false, false
 	for _, part in ipairs(character:GetChildren()) do
 		if part:IsA("BasePart") then

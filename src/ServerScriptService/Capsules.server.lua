@@ -583,7 +583,7 @@ local function restoreCharacter(state, rescued)
 		-- Finish recovery while the capsule still excludes new combat effects.
 		-- None of the pre-capture stuns or voluntary ragdoll requests survive it.
 		for _, key in ipairs({"ManualRagdoll", "RagdollRecoveryRequested", "BombRagdollUntil",
-			"ForcedRagdollUntil", "FallRagdollUntil", "GrapplePhysicsLocked"}) do
+			"ForcedRagdollUntil", "FallRagdollUntil", "GrapplePhysicsLocked", "BombFall", "PushRagdollUntil"}) do
 			humanoid:SetAttribute(key, nil)
 		end
 		if humanoid.Health > 0 then

@@ -252,6 +252,16 @@ local function queueLaunch(character, humanoid, velocity, now, duration, pushDir
 	}
 	-- Shared knockdown deadline prevents overlapping pushes/blasts shortening a stun.
 	humanoid:SetAttribute("BombRagdollUntil", math.max(humanoid:GetAttribute("BombRagdollUntil") or 0, now + (duration or Config.bombRagdollDuration)))
+	if pushDirection then
+		local pushUntil = workspace:GetServerTimeNow() + (duration or Config.pushRagdollDuration or 5)
+		local currentPush = humanoid:GetAttribute("PushRagdollUntil")
+		if type(currentPush) ~= "number" or currentPush < pushUntil then
+			humanoid:SetAttribute("PushRagdollUntil", pushUntil)
+		end
+	else
+		-- The landing of this launch is not a fall bounce.
+		humanoid:SetAttribute("BombFall", true)
+	end
 	humanoid:SetAttribute("PhysicsServerUntil", now + (pushDirection and 0.65 or SERVER_HOLD))
 	humanoid:SetAttribute("RagdollActivatedAt", now)
 	humanoid:SetAttribute("BombRagdollDebug", Config.bombDebugRagdoll == true)
@@ -575,6 +585,7 @@ RunService.Heartbeat:Connect(function()
 		elseif now >= (humanoid:GetAttribute("BombRagdollUntil") or 0) and not humanoid:GetAttribute("GrapplePhysicsLocked") then
 			stunned[humanoid] = nil
 			humanoid:SetAttribute("BombRagdollUntil", nil)
+			humanoid:SetAttribute("BombFall", nil)
 			if not humanoid:GetAttribute("ManualRagdoll") then
 				Ragdoll.Set(humanoid, false, true)
 				if not humanoid:GetAttribute("Ragdolled") then humanoid:RemoveTag("Ragdoll") end

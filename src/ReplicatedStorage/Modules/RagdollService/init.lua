@@ -104,7 +104,8 @@ local function fallAssemblyCount(character)
 end
 
 function Service.NoteFallBounce(humanoid, distance)
-	if not humanoid or os.clock() - (lastFallBounceApply[humanoid] or 0) < FALL_BOUNCE_COOLDOWN then return end
+	if not humanoid or humanoid:GetAttribute("BombFall") == true
+		or os.clock() - (lastFallBounceApply[humanoid] or 0) < FALL_BOUNCE_COOLDOWN then return end
 	local speed = Service.FallBounceSpeed(distance, workspace.Gravity)
 	if speed <= 0 then return end
 	local watch = fallBounceWatch[humanoid]
@@ -134,7 +135,7 @@ local function pumpFallBounces()
 	for watched, watch in pairs(fallBounceWatch) do
 		local body = watched.Parent
 		if not body or watched.Health <= 0 or now > watch.expires or body ~= player.Character
-			or watched:GetAttribute("CapsuleLocked") then
+			or watched:GetAttribute("CapsuleLocked") or watched:GetAttribute("BombFall") == true then
 			fallBounceWatch[watched] = nil
 			continue
 		end

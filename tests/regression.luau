@@ -887,6 +887,13 @@ return function(sources)
 	runService.PreSimulation:Emit()
 	assert(math.abs(attackerRoot.AssemblyLinearVelocity.Y - clientRagdoll.FallBounceSpeed(40, world.Gravity)) < 0.001,
 		"fall bounce stacked on the next step")
+	attackerHumanoid:SetAttribute("BombFall", true)
+	attackerHumanoid:SetAttribute("FallBounceToken", 2)
+	attackerHumanoid:SetAttribute("FallBounceSpeed", clientRagdoll.FallBounceSpeed(320, world.Gravity))
+	runService.PreSimulation:Emit()
+	assert(math.abs(attackerRoot.AssemblyLinearVelocity.Y - clientRagdoll.FallBounceSpeed(40, world.Gravity)) < 0.001,
+		"bomb fall bounced on the owner")
+	attackerHumanoid:SetAttribute("BombFall", nil)
 	attackerHumanoid:SetAttribute("Ragdolled", false)
 	attackerHumanoid:SetAttribute("FallBounceSpeed", nil)
 	attackerHumanoid:SetAttribute("FallBounceToken", nil)
@@ -1134,6 +1141,23 @@ return function(sources)
 	runService.Heartbeat:Emit(0.1)
 	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),
 		"fall-created ragdoll did not recover automatically")
+	equipHumanoid:SetAttribute("BombFall", true)
+	equipHumanoid.FloorMaterial = env.Enum.Material.Air
+	equipHumanoid.State = env.Enum.HumanoidStateType.Freefall
+	equipRoot.Position = V.new(0, 160, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -40, 0)
+	runService.Heartbeat:Emit(0.1)
+	equipRoot.Position = V.new(0, 20, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(4, 0, 0)
+	equipHumanoid.FloorMaterial = "Ground"
+	runService.Heartbeat:Emit(0.1)
+	assert(equipHumanoid:HasTag("Ragdoll") and equipHumanoid:GetAttribute("FallBounceToken") == 1
+		and equipRoot.AssemblyLinearVelocity.Y == 0, "bomb fall bounced")
+	now += 3.01
+	runService.Heartbeat:Emit(0.1)
+	equipHumanoid:SetAttribute("BombFall", nil)
+	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),
+		"bomb fall ragdoll did not recover")
 	-- The body can be on the ground before FloorMaterial or the state machine updates.
 	equipHumanoid.FloorMaterial = env.Enum.Material.Air
 	equipHumanoid.State = env.Enum.HumanoidStateType.Freefall
@@ -1824,6 +1848,8 @@ manualHumanoid:AddTag("Ragdoll")
 	assert(world:FindFirstChild("PushHitbox").Size.X == config.pushWidth and world:FindFirstChild("PushHitbox").Size.Z == config.pushRange, "Push visual does not match box")
 	local pushDeadline = pushHumanoid:GetAttribute("BombRagdollUntil")
 	assert(pushDeadline == now + 5 and pushHumanoid:GetAttribute("Ragdolled"), "Push did not apply five-second ragdoll")
+	assert(pushHumanoid:GetAttribute("PushRagdollUntil") == world:GetServerTimeNow() + 5
+		and pushHumanoid:GetAttribute("BombFall") ~= true, "Push did not block flop for its knockdown only")
 	assert(not attackerHumanoid:GetAttribute("BombRagdollUntil"), "Push hit its own user")
 	remotes.UsePush.OnServerEvent:Emit(attacker)
 	assert(pushHumanoid:GetAttribute("BombRagdollUntil") == pushDeadline, "Push cooldown failed")

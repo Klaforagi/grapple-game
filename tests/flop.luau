@@ -8,6 +8,11 @@ return function(t)
 		if part:IsA("BasePart") then part:SetNetworkOwner(nil) end
 	end
 	assert(motion.CanFlop(character), "slow ragdoll could not flop")
+	humanoid:SetAttribute("PushRagdollUntil", workspace:GetServerTimeNow() + 5)
+	assert(not motion.CanFlop(character), "pushed ragdoll could flop")
+	humanoid:SetAttribute("PushRagdollUntil", workspace:GetServerTimeNow() - 1)
+	assert(motion.CanFlop(character), "expired push still blocked flop")
+	humanoid:SetAttribute("PushRagdollUntil", nil)
 	motion.Apply(character, direction, nil)
 	assert(root.AssemblyLinearVelocity.X == 24 and root.AssemblyLinearVelocity.Y == 42,
 		"flop did not apply bounded hop")

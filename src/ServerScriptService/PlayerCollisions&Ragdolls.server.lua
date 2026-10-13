@@ -298,7 +298,8 @@ local function commitFallRagdoll(humanoid, state, now, distance)
 	end
 	Ragdoll.Set(humanoid, true)
 	local speed = Ragdoll.FallBounceSpeed(distance, Workspace.Gravity)
-	if speed > 0 then
+	-- A bomb launch already threw them. Landing from that flight does not bounce.
+	if speed > 0 and humanoid:GetAttribute("BombFall") ~= true then
 		humanoid:SetAttribute("FallBounceSpeed", speed)
 		humanoid:SetAttribute("FallBounceToken", (humanoid:GetAttribute("FallBounceToken") or 0) + 1)
 		if serverSimulated then Ragdoll.ApplyFallBounce(humanoid.Parent, speed) end
