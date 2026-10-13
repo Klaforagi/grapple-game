@@ -218,11 +218,14 @@ return function(sources)
 		Color3 = {fromRGB = function() return {} end, fromHSV = function() return {} end}, ColorSequence = {new = function() return {} end},
 		PhysicalProperties = {new = function(d, f) return {Density = d, Friction = f} end},
 		RaycastParams = {new = function() return {} end}, OverlapParams = {new = function() return {} end},
-		Enum = {HumanoidStateType = {Physics = "Physics", Ragdoll = "Ragdoll", GettingUp = "GettingUp", Freefall = "Freefall", Running = "Running", Dead = "Dead"},
+		Enum = {HumanoidStateType = {Physics = "Physics", Ragdoll = "Ragdoll", GettingUp = "GettingUp", Freefall = "Freefall", Running = "Running", Swimming = "Swimming", Dead = "Dead"},
 			RenderPriority = {Camera = {Value = 200}},
 			ForceLimitMode = {PerAxis = "PerAxis"}, ActuatorRelativeTo = {World = "World"},
 			PositionAlignmentMode = {OneAttachment = "OneAttachment"}, RaycastFilterType = {Exclude = "Exclude"},
-			Material = {Neon = "Neon", Air = "Air"}, KeyCode = setmetatable({}, {__index = function(_, key) return key end})},
+			Material = {Neon = "Neon", Air = "Air", Water = "Water"}, KeyCode = setmetatable({}, {__index = function(_, key) return key end})},
+		Region3 = {new = function(min, max)
+			return setmetatable({Min = min, Max = max}, {__index = {ExpandToGrid = function(self) return self end}})
+		end},
 		os = {clock = function() return now end},
 		task = {delay = function(_, fn) table.insert(delayed, fn) end, defer = function(fn, ...) fn(...) end, spawn = function(fn, ...) fn(...) end},
 		typeof = function(value) return type(value) == "table" and value.kind or type(value) end,
@@ -1137,6 +1140,10 @@ return function(sources)
 		"short falls bounced too hard")
 	assert(ragdoll.FallBounceSpeed(400, world.Gravity) == ragdoll.FallBounceSpeed(2000, world.Gravity),
 		"fall bounce height was not capped")
+	assert(ragdoll.WaterPlunge(20) == 0 and ragdoll.WaterPlunge(40) > 0
+		and ragdoll.WaterPlunge(40) < ragdoll.WaterPlunge(120)
+		and ragdoll.WaterPlunge(400) == ragdoll.WaterPlunge(2000),
+		"water plunge did not scale with the fall")
 	now += 3.01
 	runService.Heartbeat:Emit(0.1)
 	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),
@@ -1158,6 +1165,49 @@ return function(sources)
 	equipHumanoid:SetAttribute("BombFall", nil)
 	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),
 		"bomb fall ragdoll did not recover")
+	-- A long drop into terrain water splashes. It does not ragdoll or bounce.
+	equipHumanoid.FloorMaterial = env.Enum.Material.Air
+	equipHumanoid.State = env.Enum.HumanoidStateType.Freefall
+	equipRoot.Position = V.new(0, 160, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -40, 0)
+	runService.Heartbeat:Emit(0.1)
+	equipRoot.Position = V.new(0, 20, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(3, 0, 0)
+	equipHumanoid.FloorMaterial = env.Enum.Material.Water
+	equipHumanoid.State = env.Enum.HumanoidStateType.Swimming
+	runService.Heartbeat:Emit(0.1)
+	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil")
+		and equipHumanoid:GetAttribute("FallBounceToken") == 1 and equipRoot.AssemblyLinearVelocity.Y == 0,
+		"swimming landing ragdolled")
+	equipHumanoid.FloorMaterial = env.Enum.Material.Air
+	equipHumanoid.State = env.Enum.HumanoidStateType.Freefall
+	equipRoot.Position = V.new(0, 180, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -50, 0)
+	runService.Heartbeat:Emit(0.1)
+	equipRoot.Position = V.new(0, 30, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -20, 0)
+	world.Terrain = {ReadVoxels = function() return {{{env.Enum.Material.Water}}} end}
+	world.Raycast = function() return {Instance = equipRoot, Position = equipRoot.Position, Normal = V.new(0, 1, 0)} end
+	runService.Heartbeat:Emit(0.1)
+	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil")
+		and equipHumanoid:GetAttribute("FallBounceToken") == 1 and equipRoot.AssemblyLinearVelocity.Y == -20,
+		"pool bottom ragdolled")
+	equipRoot.Position = V.new(0, 200, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -40, 0)
+	equipHumanoid.FloorMaterial = env.Enum.Material.Air
+	equipHumanoid.State = env.Enum.HumanoidStateType.Freefall
+	world.Raycast = function() return nil end
+	world.Terrain = nil
+	runService.Heartbeat:Emit(0.1)
+	equipRoot.Position = V.new(0, 100, 0)
+	equipRoot.AssemblyLinearVelocity = V.new(0, -80, 0)
+	runService.Heartbeat:Emit(0.1)
+	world.Terrain = {ReadVoxels = function() return {{{env.Enum.Material.Water}}} end}
+	remotes.FallLanded.OnServerEvent:Emit(equipPlayer, 80)
+	assert(not equipHumanoid:HasTag("Ragdoll") and equipHumanoid:GetAttribute("FallBounceToken") == 1,
+		"water landing report ragdolled")
+	world.Terrain = nil
+	world.Raycast = function() return nil end
 	-- The body can be on the ground before FloorMaterial or the state machine updates.
 	equipHumanoid.FloorMaterial = env.Enum.Material.Air
 	equipHumanoid.State = env.Enum.HumanoidStateType.Freefall

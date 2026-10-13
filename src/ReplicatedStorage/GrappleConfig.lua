@@ -130,6 +130,10 @@ return {
 	fallBounceMaxHeight = 90, -- Same cap as a very long fall; stays inside the fall lock
 	fallBounceFullDistance = 260, -- Drop that reaches the cap. Shorter drops stay on the flat part of the curve
 	fallBouncePower = 2.4, -- Higher bends the curve so only really high falls bounce hard
+	waterPlungeMinDistance = 20, -- Must fall from over this many studs. At or under it, they just swim.
+	waterPlungeMinDepth = 6, -- Studs under the surface on the shortest plunge
+	waterPlungeMaxDepth = 16, -- Cap so a huge fall does not drill to the bottom
+	waterPlungeFullDistance = 120, -- Drop that reaches the depth cap
 
 
 	--[[

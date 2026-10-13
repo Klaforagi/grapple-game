@@ -103,6 +103,71 @@ local function fallAssemblyCount(character)
 	return count
 end
 
+local function positionInWater(position)
+	if typeof(position) ~= "Vector3" then return false end
+	local terrain = workspace.Terrain
+	if not terrain or not terrain.ReadVoxels or not Region3 or not Region3.new then return false end
+	local water = Enum.Material and Enum.Material.Water
+	if water == nil then return false end
+	local pad = Vector3.new(0.05, 0.05, 0.05)
+	local ok, materials = pcall(function()
+		local region = Region3.new(position - pad, position + pad):ExpandToGrid(4)
+		return terrain:ReadVoxels(region, 4)
+	end)
+	if not ok or type(materials) ~= "table" then return false end
+	for x = 1, #materials do
+		local column = materials[x]
+		if type(column) == "table" then
+			for y = 1, #column do
+				local row = column[y]
+				if type(row) == "table" then
+					for z = 1, #row do
+						if row[z] == water then return true end
+					end
+				end
+			end
+		end
+	end
+	return false
+end
+
+-- Terrain water is a splash. The swim state lags a fast entry, so the voxel
+-- at the hips, the feet, and the reported landing point count too.
+function Service.InWater(character, humanoid, sample)
+	if humanoid then
+		local water = Enum.Material and Enum.Material.Water
+		if water ~= nil and humanoid.FloorMaterial == water then return true end
+		local swimming = Enum.HumanoidStateType and Enum.HumanoidStateType.Swimming
+		if swimming ~= nil then
+			local ok, state = pcall(function() return humanoid:GetState() end)
+			if ok and state == swimming then return true end
+		end
+	end
+	if positionInWater(sample) then return true end
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root or not root:IsA("BasePart") then return false end
+	if positionInWater(root.Position) then return true end
+	local foot = ((root.Size and root.Size.Y) or 2) * 0.5 + (tonumber(humanoid and humanoid.HipHeight) or 0)
+	return positionInWater(root.Position - Vector3.new(0, foot, 0))
+end
+
+-- How far and how fast a fall should keep sinking after it hits terrain water.
+-- Distance is the drop in studs. A fall of 20 or less does not plunge.
+-- The first return is depth in studs. The second is the downward speed to hold.
+function Service.WaterPlunge(distance, speed)
+	local config = grappleConfig()
+	local minimum = config.waterPlungeMinDistance or 20
+	if type(distance) ~= "number" or distance ~= distance or distance <= minimum then return 0, 0 end
+	local minDepth = config.waterPlungeMinDepth or 6
+	local maxDepth = config.waterPlungeMaxDepth or 16
+	local full = config.waterPlungeFullDistance or 120
+	if maxDepth < minDepth then maxDepth = minDepth end
+	local span = full - minimum
+	if span < 1 then span = 1 end
+	local t = math.clamp((distance - minimum) / span, 0, 1)
+	return minDepth + (maxDepth - minDepth) * t, math.clamp((tonumber(speed) or 0) * 0.22, 18, 36)
+end
+
 function Service.NoteFallBounce(humanoid, distance)
 	if not humanoid or humanoid:GetAttribute("BombFall") == true
 		or os.clock() - (lastFallBounceApply[humanoid] or 0) < FALL_BOUNCE_COOLDOWN then return end
@@ -1134,6 +1199,7 @@ function Service.WatchLocalFalls()
 	local DESCEND = 12
 	local ARREST = 0.2
 	local peakY, slowSince, sent, watched, duringFall
+	local airSpeed, airSpeedAt, wasInWater, plunge = 0, nil, false, nil
 	local function required(humanoid)
 		local minimum = Config.fallRagdollDistance or 30
 		local gravity = workspace.Gravity
@@ -1197,18 +1263,92 @@ function Service.WatchLocalFalls()
 		end
 		return false
 	end
+	local function solidBelow(character, humanoid, root)
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = {character}
+		params.IgnoreWater = true
+		local reach = (root.Size.Y * 0.5) + (tonumber(humanoid.HipHeight) or 2) + 1.5
+		local hit = workspace:Raycast(root.Position, Vector3.new(0, -reach, 0), params)
+		local water = Enum.Material and Enum.Material.Water
+		return hit ~= nil and hit.Position ~= nil and (water == nil or hit.Material ~= water)
+	end
+	local function restoreSwimming(humanoid)
+		if not humanoid or not humanoid.Parent or not humanoid.SetStateEnabled then return end
+		pcall(function()
+			humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
+			if humanoid.Health > 0 and Service.InWater(humanoid.Parent, humanoid) then
+				humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
+			end
+		end)
+	end
+	local function stopPlunge()
+		local humanoid = plunge and plunge.humanoid
+		plunge = nil
+		restoreSwimming(humanoid)
+	end
 	RunService.PostSimulation:Connect(function()
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		if character ~= watched or not humanoid or humanoid.Health <= 0 or not root or not root:IsA("BasePart")
 			or humanoid:GetAttribute("CapsuleLocked") then
+			if plunge then stopPlunge() end
 			watched, peakY, slowSince, sent, duringFall = character, nil, nil, false, false
+			airSpeed, airSpeedAt, wasInWater = 0, nil, false
 			fallRagdollArmed = false
 			return
 		end
 		local velocityY = root.AssemblyLinearVelocity.Y
 		local ragdolled = humanoid:GetAttribute("Ragdolled") == true or humanoid:HasTag("Ragdoll")
+		local inWater = Service.InWater(character, humanoid)
+		-- Swimming zeroes the fall on the surface. Hold the entry speed and sink, then swim.
+		if plunge and (plunge.humanoid ~= humanoid or ragdolled or humanoid:GetAttribute("GrapplePhysicsLocked")) then
+			stopPlunge()
+		end
+		if plunge then
+			local finished = root.Position.Y <= plunge.untilY or os.clock() >= plunge.expires or not inWater
+				or solidBelow(character, humanoid, root)
+			if finished then
+				local velocity = root.AssemblyLinearVelocity
+				root.AssemblyLinearVelocity = Vector3.new(velocity.X, 0, velocity.Z)
+				stopPlunge()
+			else
+				pcall(function()
+					humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
+					if humanoid:GetState() == Enum.HumanoidStateType.Swimming then
+						humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+					end
+				end)
+				local velocity = root.AssemblyLinearVelocity
+				root.AssemblyLinearVelocity = Vector3.new(velocity.X, -plunge.sink, velocity.Z)
+			end
+		elseif inWater and not wasInWater and not ragdolled and not humanoid:GetAttribute("GrapplePhysicsLocked") then
+			local drop = 0
+			if type(peakY) == "number" then drop = peakY - root.Position.Y end
+			local depth, sink = Service.WaterPlunge(drop, airSpeed)
+			if depth > 0 and not solidBelow(character, humanoid, root) then
+				plunge = {humanoid = humanoid, untilY = root.Position.Y - depth, sink = sink, expires = os.clock() + 1.2}
+				airSpeed, airSpeedAt = 0, nil
+				pcall(function()
+					humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
+					if humanoid:GetState() == Enum.HumanoidStateType.Swimming then
+						humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+					end
+				end)
+				local velocity = root.AssemblyLinearVelocity
+				root.AssemblyLinearVelocity = Vector3.new(velocity.X, -sink, velocity.Z)
+			end
+		end
+		if not inWater and not plunge then
+			if velocityY < -DESCEND then
+				airSpeed = math.max(airSpeed, -velocityY)
+				airSpeedAt = os.clock()
+			elseif not airSpeedAt or os.clock() - airSpeedAt >= ARREST then
+				airSpeed, airSpeedAt = 0, nil
+			end
+		end
+		wasInWater = inWater == true
 		local landed = limbLanded(character, humanoid, root)
 		if fallRagdollArmed then
 			if not landed then duringFall = true end
@@ -1222,6 +1362,11 @@ function Service.WatchLocalFalls()
 		end
 		if landed then
 			if peakY and not sent and peakY - y >= required(humanoid) then
+				if Service.InWater(character, humanoid, Vector3.new(root.Position.X, y, root.Position.Z)) then
+					peakY, slowSince = nil, nil
+					if not ragdolled then duringFall = false end
+					return
+				end
 				sent = true
 				Service.NoteFallBounce(humanoid, peakY - y)
 				Remotes.FallLanded:FireServer(y, peakY, duringFall == true)

@@ -334,6 +334,11 @@ Remotes.FallLanded.OnServerEvent:Connect(function(player, reportedY, reportedPea
 		state.fallPeakY = reportedPeak
 	end
 	if state.fallPeakY - y < fallDistanceRequired(humanoid) then return end
+	-- The owner's body is already in the water while this copy is still in the air.
+	if Ragdoll.InWater(character, humanoid, Vector3.new(root.Position.X, y, root.Position.Z)) then
+		state.fallPeakY, state.arrestedAt, state.wasRagdolled = nil, nil, nil
+		return
+	end
 	commitFallRagdoll(humanoid, state, os.clock(), state.fallPeakY - y)
 end)
 
@@ -392,7 +397,11 @@ RunService.Heartbeat:Connect(function()
 				if landed then
 					if state.fallPeakY and not state.triggered
 						and state.fallPeakY - height >= fallDistanceRequired(humanoid) then
-						commitFallRagdoll(humanoid, state, now, state.fallPeakY - height)
+						if Ragdoll.InWater(character, humanoid) then
+							state.fallPeakY, state.arrestedAt, state.wasRagdolled = nil, nil, nil
+						else
+							commitFallRagdoll(humanoid, state, now, state.fallPeakY - height)
+						end
 					else
 						state.fallPeakY, state.arrestedAt = nil, nil
 						state.wasRagdolled = nil
