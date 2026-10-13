@@ -1,3 +1,4 @@
+local ContentProvider = game:GetService("ContentProvider")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -90,7 +91,13 @@ function M.Mount(screen, onClose)
 		FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center,
 		Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder,
 	})
-	make("ImageLabel", balance, {
+	local pictures = {}
+	local function picture(parent, props)
+		local image = make("ImageLabel", parent, props)
+		if type(image.Image) == "string" and image.Image ~= "" then pictures[#pictures + 1] = image end
+		return image
+	end
+	picture(balance, {
 		Name = "Icon", BackgroundTransparency = 1, Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
 		Size = UDim2.fromOffset(22, 22), LayoutOrder = 1,
 	})
@@ -165,17 +172,20 @@ function M.Mount(screen, onClose)
 			BackgroundColor3 = pass.color, BorderSizePixel = 0, ClipsDescendants = true,
 		})
 		corner(art, 12)
-		local standIn = make("TextLabel", art, {
-			BackgroundTransparency = 1, BorderSizePixel = 0, Text = pass.name, TextWrapped = true,
-			Size = UDim2.fromScale(1, 1), Font = Enum.Font.GothamBold, TextScaled = true,
-			TextColor3 = inkOn(pass.color),
-		})
-		make("UIPadding", standIn, {
-			PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
-			PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
-		})
-		make("UITextSizeConstraint", standIn, {MinTextSize = 10, MaxTextSize = 26})
-		make("ImageLabel", art, {
+		-- The name only fills the tile until a picture exists. Art replaces it.
+		if type(pass.image) ~= "string" or pass.image == "" then
+			local standIn = make("TextLabel", art, {
+				BackgroundTransparency = 1, BorderSizePixel = 0, Text = pass.name, TextWrapped = true,
+				Size = UDim2.fromScale(1, 1), Font = Enum.Font.GothamBold, TextScaled = true,
+				TextColor3 = inkOn(pass.color),
+			})
+			make("UIPadding", standIn, {
+				PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
+				PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
+			})
+			make("UITextSizeConstraint", standIn, {MinTextSize = 10, MaxTextSize = 26})
+		end
+		picture(art, {
 			Name = "Picture", BackgroundTransparency = 1, BorderSizePixel = 0, Image = pass.image or "",
 			Size = UDim2.fromScale(1, 1), ScaleType = Enum.ScaleType.Crop, ZIndex = 2,
 		})
@@ -222,7 +232,7 @@ function M.Mount(screen, onClose)
 		})
 		corner(card, 14)
 		make("UIStroke", card, {Color = EDGE, Thickness = 1})
-		make("ImageLabel", card, {
+		picture(card, {
 			Name = "Picture", BackgroundTransparency = 1, BorderSizePixel = 0,
 			Image = (type(pack.image) == "string" and pack.image ~= "") and pack.image or Assets.Coins,
 			ScaleType = Enum.ScaleType.Fit,
@@ -256,6 +266,12 @@ function M.Mount(screen, onClose)
 
 	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(_, id, purchased)
 		if purchased == true then markOwned(id) end
+	end)
+
+	-- The shop stays hidden until the button is pressed. Fetch the pictures now
+	-- so the first open does not pop them in over the tiles.
+	task.spawn(function()
+		pcall(function() ContentProvider:PreloadAsync(pictures) end)
 	end)
 
 	local function refresh()

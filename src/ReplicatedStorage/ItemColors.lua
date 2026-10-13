@@ -18,8 +18,6 @@ local palettes = {Gun = originalPalette(), Rope = originalPalette(), Bomb = {
 palettes.Bomb.Teal = palettes.Bomb.Mint
 -- Swatches are intentionally separate from material-adjusted equipment colors.
 palettes.Swatches = {Gun = originalPalette(), Rope = originalPalette(), Bomb = table.clone(palettes.Bomb)}
-palettes.Swatches.Bomb.Mint = Color3.fromRGB(152, 255, 180)
-palettes.Swatches.Bomb.Teal = palettes.Swatches.Bomb.Mint
 local function gunRopePalette()
 	return {
 		Red = Color3.fromRGB(255, 0, 0), Orange = Color3.fromRGB(255, 85, 0), Yellow = Color3.fromRGB(255, 204, 0),
@@ -35,6 +33,11 @@ for _, target in ipairs({"Gun", "Rope"}) do
 		if not palettes.Swatches[target][name] then palettes.Swatches[target][name] = color end
 	end
 end
+-- Shared names use the gun and rope card. Bomb-only cards stay. Part colors stay on palettes.Bomb.
+for name, color in pairs(palettes.Swatches.Gun) do
+	if palettes.Swatches.Bomb[name] then palettes.Swatches.Bomb[name] = color end
+end
+palettes.Swatches.Bomb.Mint = palettes.Swatches.Bomb.Teal
 palettes.Order = {"Black", "White", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Cyan", "Teal", "Gray", "Lime", "Brown", "Gold"}
 -- Four close golds. Gun and rope shift through these the way rainbow shifts hues.
 palettes.GoldStops = {

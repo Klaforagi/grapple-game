@@ -2,5 +2,5 @@
 return {
 	Settings = "rbxassetid://15652354559",
 	Codex = "rbxassetid://127110909372919",
-	Coins = "rbxassetid://12394003884",
+	Coins = "rbxassetid://137097999028880",
 }

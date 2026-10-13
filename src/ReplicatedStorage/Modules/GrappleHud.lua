@@ -181,8 +181,8 @@ function M.Init()
 	local inventoryOpen, inventoryTab = false, "Gun"
 	-- SHOP through the coin total. On a phone this stack is scaled to stay above the hotbar.
 	local leftStack = make("Frame", screen, {
-		Name = "LeftStack", AnchorPoint = Vector2.new(0, 0), Position = UDim2.new(0, 18, 0.5, -74),
-		Size = UDim2.fromOffset(168, 244), BackgroundTransparency = 1,
+		Name = "LeftStack", AnchorPoint = Vector2.new(0, 0), Position = UDim2.new(0, 18, 0.5, -94),
+		Size = UDim2.fromOffset(168, 264), BackgroundTransparency = 1,
 	})
 	local leftStackScale = make("UIScale", leftStack, {Scale = 1})
 	local inventoryButton = button(leftStack, "INV", UDim2.fromOffset(0, 104), UDim2.fromOffset(44, 44), function() inventoryOpen = not inventoryOpen end)
@@ -208,13 +208,13 @@ function M.Init()
 	ragdollButton.Name = "RagdollButton"
 	local coins = make("Frame", leftStack, {
 		Name = "Coins", Position = UDim2.fromOffset(0, 208),
-		Size = UDim2.fromOffset(150, 36), BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(168, 56), BackgroundTransparency = 1,
 	})
 	make("ImageLabel", coins, {
-		Name = "Icon", Size = UDim2.fromOffset(36, 36), BackgroundTransparency = 1,
+		Name = "Icon", Size = UDim2.fromOffset(56, 56), BackgroundTransparency = 1,
 		Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
 	})
-	local coinAmount = label(coins, "0", UDim2.fromOffset(42, 0), UDim2.fromOffset(108, 36))
+	local coinAmount = label(coins, "0", UDim2.fromOffset(62, 0), UDim2.fromOffset(106, 56))
 	styleReelLabel(coinAmount)
 	coinAmount.TextSize = 18
 	local function updateCoins()
@@ -729,11 +729,11 @@ function M.Init()
 		if not camera then return end
 		if not UIS.TouchEnabled then
 			leftStackScale.Scale = 1
-			leftStack.Position = UDim2.new(0, 18, 0.5, -74)
+			leftStack.Position = UDim2.new(0, 18, 0.5, -94)
 			return
 		end
 		local viewport = camera.ViewportSize
-		local topMargin, bottomMargin, height = 8, 88, 244
+		local topMargin, bottomMargin, height = 8, 88, 264
 		local available = math.max(140, viewport.Y - topMargin - bottomMargin)
 		local scale = math.clamp(available / height, 0.55, 0.9)
 		leftStackScale.Scale = scale
