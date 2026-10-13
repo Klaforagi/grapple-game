@@ -126,6 +126,10 @@ return {
 	ragdollToggle_Cooldown = 0.5, -- Seconds after standing up before ragdoll can be triggered again
 	fallRagdollDistance = 40, -- Downward studs required; a jump is shorter than this and does not count
 	fallRagdollDuration = 3, -- Minimum ragdoll time after a long fall, starting the moment of landing
+	fallBounceMinHeight = 4, -- Qualifying fall, just above the ragdoll distance, only hops
+	fallBounceMaxHeight = 90, -- Same cap as a very long fall; stays inside the fall lock
+	fallBounceFullDistance = 260, -- Drop that reaches the cap. Shorter drops stay on the flat part of the curve
+	fallBouncePower = 2.4, -- Higher bends the curve so only really high falls bounce hard
 
 
 	--[[

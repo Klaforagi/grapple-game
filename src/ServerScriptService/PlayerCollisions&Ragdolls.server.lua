@@ -273,7 +273,7 @@ bodyLanded = function(character, humanoid, root)
 	return gap <= foot + 0.45 and gap >= -4
 end
 
-local function commitFallRagdoll(humanoid, state, now)
+local function commitFallRagdoll(humanoid, state, now, distance)
 	local gun = humanoid.Parent and humanoid.Parent:FindFirstChild(Config.toolName)
 	if gun and gun:GetAttribute("HasGrappled") then
 		state.fallPeakY, state.arrestedAt = nil, nil
@@ -288,7 +288,21 @@ local function commitFallRagdoll(humanoid, state, now)
 	humanoid:SetAttribute("FallRagdollUntil", deadline)
 	humanoid:SetAttribute("RagdollActivatedAt", now)
 	humanoid:AddTag("Ragdoll")
+	-- Read ownership before the ragdoll pass assigns the player. Only a server-simulated
+	-- body takes the velocity here. The owner's client applies it after the limbs split.
+	local root = humanoid.Parent and humanoid.Parent:FindFirstChild("HumanoidRootPart")
+	local serverSimulated = true
+	if root and root.GetNetworkOwner then
+		local ok, owner = pcall(function() return root:GetNetworkOwner() end)
+		serverSimulated = ok and owner == nil
+	end
 	Ragdoll.Set(humanoid, true)
+	local speed = Ragdoll.FallBounceSpeed(distance, Workspace.Gravity)
+	if speed > 0 then
+		humanoid:SetAttribute("FallBounceSpeed", speed)
+		humanoid:SetAttribute("FallBounceToken", (humanoid:GetAttribute("FallBounceToken") or 0) + 1)
+		if serverSimulated then Ragdoll.ApplyFallBounce(humanoid.Parent, speed) end
+	end
 end
 
 -- The owning client hits the ground before this server's copy of the body does.
@@ -319,7 +333,7 @@ Remotes.FallLanded.OnServerEvent:Connect(function(player, reportedY, reportedPea
 		state.fallPeakY = reportedPeak
 	end
 	if state.fallPeakY - y < fallDistanceRequired(humanoid) then return end
-	commitFallRagdoll(humanoid, state, os.clock())
+	commitFallRagdoll(humanoid, state, os.clock(), state.fallPeakY - y)
 end)
 
 RunService.Heartbeat:Connect(function()
@@ -377,7 +391,7 @@ RunService.Heartbeat:Connect(function()
 				if landed then
 					if state.fallPeakY and not state.triggered
 						and state.fallPeakY - height >= fallDistanceRequired(humanoid) then
-						commitFallRagdoll(humanoid, state, now)
+						commitFallRagdoll(humanoid, state, now, state.fallPeakY - height)
 					else
 						state.fallPeakY, state.arrestedAt = nil, nil
 						state.wasRagdolled = nil

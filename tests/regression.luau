@@ -808,6 +808,10 @@ return function(sources)
 			assert((attackerRoot.Position - anchor.Position).Magnitude <= 1.25001, "fast fall escaped the camera at " .. fps .. " FPS")
 			assert(attackerRoot.AssemblyLinearVelocity == velocity and attackerRoot.CFrame == originalRootFrame, "camera follow modified body physics")
 		end
+		attackerRoot.Position = anchor.Position + V.new(0, -6, 0)
+		cameraStep(1 / fps)
+		anchor.Position = anchor.CFrame.Position
+		assert((attackerRoot.Position - anchor.Position).Magnitude <= 0.75001, "ragdoll drop left the camera behind")
 		-- Resting sub-stud motion should still be filtered out.
 		local restingAnchor = anchor.CFrame
 		for frame = 1, fps do
@@ -852,6 +856,40 @@ return function(sources)
 	assert(attackerRoot.AssemblyAngularVelocity.Magnitude == 0, "client entry nudge conflicted with bomb launch")
 	attackerHumanoid:SetAttribute("BombRagdollUntil", nil)
 	attackerHumanoid:SetAttribute("Ragdolled", false)
+	instance("LocalScript", "Animate", attacker.Character).Clone = function(self)
+		local copy = instance("LocalScript", "Animate")
+		copy.Disabled = self.Disabled
+		return copy
+	end
+	attacker.Character:FindFirstChild("Animate"):SetAttribute("Original", true)
+	attackerHumanoid:SetAttribute("Ragdolled", true)
+	assert(attacker.Character:FindFirstChild("Animate").Disabled ~= true, "ragdoll disabled Animate")
+	attacker.Character:FindFirstChild("Animate").Disabled = true
+	attackerHumanoid:SetAttribute("Ragdolled", false)
+	assert(attacker.Character:FindFirstChild("Animate").Disabled ~= true
+		and attacker.Character:FindFirstChild("Animate"):GetAttribute("Original") == nil,
+		"standing did not restart Animate")
+	attacker.Character:FindFirstChild("Animate"):Destroy()
+	-- The owner applies the fall bounce once the ragdoll limbs exist. A second step must not add more speed.
+	attackerRoot.AssemblyLinearVelocity = V.new(4, 0, -3)
+	attackerHumanoid:SetAttribute("RagdollExpectedOwner", attacker.UserId)
+	attackerHumanoid:SetAttribute("FallBounceSpeed", clientRagdoll.FallBounceSpeed(40, world.Gravity))
+	attackerHumanoid:SetAttribute("FallBounceToken", 1)
+	runService.PreSimulation:Emit()
+	assert(attackerRoot.AssemblyLinearVelocity.Y == 0, "fall bounce ran before the ragdoll")
+	attackerHumanoid:SetAttribute("Ragdolled", true)
+	runService.PreSimulation:Emit()
+	assert(math.abs(attackerRoot.AssemblyLinearVelocity.Y - clientRagdoll.FallBounceSpeed(40, world.Gravity)) < 0.001
+		and attackerRoot.AssemblyLinearVelocity.X == 4 and attackerRoot.AssemblyLinearVelocity.Z == -3,
+		"owning client did not bounce a fall ragdoll")
+	assert(math.abs(attacker.Character:FindFirstChild("Limb1").AssemblyLinearVelocity.Y - clientRagdoll.FallBounceSpeed(40, world.Gravity)) < 0.001,
+		"owner bounce missed a limb")
+	runService.PreSimulation:Emit()
+	assert(math.abs(attackerRoot.AssemblyLinearVelocity.Y - clientRagdoll.FallBounceSpeed(40, world.Gravity)) < 0.001,
+		"fall bounce stacked on the next step")
+	attackerHumanoid:SetAttribute("Ragdolled", false)
+	attackerHumanoid:SetAttribute("FallBounceSpeed", nil)
+	attackerHumanoid:SetAttribute("FallBounceToken", nil)
 	attackerRoot.AssemblyLinearVelocity = savedEntryVelocity
 	for part, spin in pairs(savedEntrySpin) do part.AssemblyAngularVelocity = spin end
 	victimRoot.AssemblyAngularVelocity = V.new(3, 2, 1)
@@ -1057,6 +1095,8 @@ return function(sources)
 	runService.Heartbeat:Emit(0.1)
 	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),
 		"ordinary jump ragdolled on landing")
+	assert(equipRoot.AssemblyLinearVelocity.Y == 0 and equipHumanoid:GetAttribute("FallBounceSpeed") == nil,
+		"ordinary jump bounced on landing")
 	-- A long drop ragdolls on the landing frame, not in the air.
 	equipHumanoid.FloorMaterial = env.Enum.Material.Air
 	equipHumanoid.State = env.Enum.HumanoidStateType.Freefall
@@ -1071,10 +1111,25 @@ return function(sources)
 		"long fall activated ragdoll before ground contact")
 	equipHumanoid.FloorMaterial = "Ground"
 	equipHumanoid.State = env.Enum.HumanoidStateType.Freefall
-	equipRoot.AssemblyLinearVelocity = V.zero
+	equipRoot.AssemblyLinearVelocity = V.new(6, 0, -2)
 	runService.Heartbeat:Emit(0.1)
 	assert(equipHumanoid:HasTag("Ragdoll") and equipHumanoid:GetAttribute("FallRagdollUntil") == now + 3,
 		"landing did not start a three-second ragdoll")
+	assert(equipHumanoid:GetAttribute("FallBounceSpeed") == ragdoll.FallBounceSpeed(40, world.Gravity)
+		and equipHumanoid:GetAttribute("FallBounceToken") == 1, "long fall did not record a landing bounce")
+	assert(math.abs(equipRoot.AssemblyLinearVelocity.Y - ragdoll.FallBounceSpeed(40, world.Gravity)) < 0.001
+		and equipRoot.AssemblyLinearVelocity.X == 6 and equipRoot.AssemblyLinearVelocity.Z == -2,
+		"landing bounce did not keep sideways speed")
+	assert(math.abs(equipCharacter:FindFirstChild("Limb1").AssemblyLinearVelocity.Y - ragdoll.FallBounceSpeed(40, world.Gravity)) < 0.001,
+		"a split limb stayed on the ground")
+	assert(ragdoll.FallBounceSpeed(40, world.Gravity) < ragdoll.FallBounceSpeed(120, world.Gravity)
+		and ragdoll.FallBounceSpeed(120, world.Gravity) < ragdoll.FallBounceSpeed(320, world.Gravity),
+		"farther falls did not bounce higher")
+	assert(ragdoll.FallBounceHeight(80) - ragdoll.FallBounceHeight(40)
+		< ragdoll.FallBounceHeight(320) - ragdoll.FallBounceHeight(200),
+		"short falls bounced too hard")
+	assert(ragdoll.FallBounceSpeed(400, world.Gravity) == ragdoll.FallBounceSpeed(2000, world.Gravity),
+		"fall bounce height was not capped")
 	now += 3.01
 	runService.Heartbeat:Emit(0.1)
 	assert(not equipHumanoid:HasTag("Ragdoll") and not equipHumanoid:GetAttribute("FallRagdollUntil"),

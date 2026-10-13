@@ -4,11 +4,13 @@ local Players = game:GetService("Players")
 local Service = {}
 local rigs = setmetatable({}, {__mode = "k"})
 
--- A ragdoll can settle by fractions of a stud for several seconds. Keep the
--- camera still through that movement; only follow a meaningful displacement.
+-- Ground settle stays inside the deadzone, so the camera does not shake while
+-- a ragdoll is lying down. A real move snaps the view back to that same gap
+-- instead of leaving the body fallen away from the camera.
 local CAMERA_DEADZONE = 0.75
 local CAMERA_FOLLOW_SPEED = 12
-local CAMERA_MAX_LAG = 1.25 -- Studs; fast falls must not outrun the camera subject
+local CAMERA_MAX_LAG = 1.25
+local CAMERA_SNAP = 2
 local OWNERSHIP_CHECK_INTERVAL = 0.25
 local SETTLING_FRICTION = 5
 -- Low surface friction lets loose limbs slide across stair lips instead of
@@ -17,6 +19,140 @@ local RAGDOLL_SURFACE_FRICTION = 0.2
 local STAIR_SURFACE_FRICTION = 0.01
 local RUNWAY_SURFACE_FRICTION = 1
 local SOCKET_PROPERTIES = {"MaxFrictionTorque", "LimitsEnabled", "TwistLimitsEnabled", "UpperAngle", "TwistLowerAngle", "TwistUpperAngle", "Restitution"}
+-- One bounce per landing. The server token can arrive after the owner already applied the local estimate.
+local FALL_BOUNCE_WINDOW = 0.8
+local FALL_BOUNCE_COOLDOWN = 1
+local fallBounceWatch = {}
+local lastFallBounceApply = setmetatable({}, {__mode = "k"})
+local lastFallBounceToken = setmetatable({}, {__mode = "k"})
+
+local function grappleConfig()
+	return require(game:GetService("ReplicatedStorage"):WaitForChild("GrappleConfig"))
+end
+
+-- A qualifying drop only hops. Height stays low until the fall is actually long,
+-- then climbs to the same cap as before.
+function Service.FallBounceHeight(distance)
+	local config = grappleConfig()
+	local minimum = config.fallBounceMinHeight or 4
+	local maximum = config.fallBounceMaxHeight or 90
+	local fullDistance = config.fallBounceFullDistance or 260
+	local power = config.fallBouncePower or 2.4
+	local start = config.fallRagdollDistance or 40
+	if type(distance) ~= "number" or distance ~= distance or distance <= 0 then return 0 end
+	if maximum < minimum then maximum = minimum end
+	if power < 1 then power = 1 end
+	local span = fullDistance - start
+	if span <= 1 then span = 1 end
+	local t = math.clamp((distance - start) / span, 0, 1)
+	return minimum + (maximum - minimum) * (t ^ power)
+end
+
+function Service.FallBounceSpeed(distance, gravity)
+	local height = Service.FallBounceHeight(distance)
+	if height <= 0 then return 0 end
+	if type(gravity) ~= "number" or gravity <= 1 then gravity = 196.2 end
+	return math.sqrt(2 * gravity * height)
+end
+
+-- Set the upward speed on every loose assembly. Horizontal travel stays as it was.
+-- A small shoulder-axis roll keeps the bounce from leaving in the standing pose.
+function Service.ApplyFallBounce(character, upSpeed)
+	if not character or type(upSpeed) ~= "number" or upSpeed ~= upSpeed or upSpeed <= 0 then return end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local rootAssembly = root and (root.AssemblyRootPart or root)
+	local seen = {}
+	for _, part in ipairs(character:GetChildren()) do
+		if part:IsA("BasePart") then
+			local assembly = part.AssemblyRootPart or part
+			if not seen[assembly] and not assembly.Anchored then
+				seen[assembly] = true
+				local velocity = assembly.AssemblyLinearVelocity
+				if velocity and velocity.Y < upSpeed then
+					assembly.AssemblyLinearVelocity = Vector3.new(velocity.X, upSpeed, velocity.Z)
+					velocity = assembly.AssemblyLinearVelocity
+				end
+				local flat = velocity and Vector3.new(velocity.X, 0, velocity.Z)
+				local axis = flat and Vector3.new(flat.Z, 0, -flat.X)
+				if not axis or axis.Magnitude < 0.5 then
+					local look = assembly.CFrame and assembly.CFrame.LookVector
+					axis = look and Vector3.new(look.Z, 0, -look.X) or Vector3.new(1, 0, 0)
+				end
+				if axis.Magnitude < 0.05 then axis = Vector3.new(1, 0, 0) end
+				local spin = axis.Unit * (assembly == rootAssembly and 3.2 or -1.4)
+				local angular = assembly.AssemblyAngularVelocity or Vector3.new()
+				if (angular + spin).Magnitude <= 6 then
+					assembly.AssemblyAngularVelocity = angular + spin
+				end
+			end
+		end
+	end
+end
+
+local function fallAssemblyCount(character)
+	local seen, count = {}, 0
+	for _, part in ipairs(character:GetChildren()) do
+		if part:IsA("BasePart") then
+			local assembly = part.AssemblyRootPart or part
+			if not seen[assembly] then
+				seen[assembly] = true
+				count += 1
+			end
+		end
+	end
+	return count
+end
+
+function Service.NoteFallBounce(humanoid, distance)
+	if not humanoid or os.clock() - (lastFallBounceApply[humanoid] or 0) < FALL_BOUNCE_COOLDOWN then return end
+	local speed = Service.FallBounceSpeed(distance, workspace.Gravity)
+	if speed <= 0 then return end
+	local watch = fallBounceWatch[humanoid]
+	if watch and watch.token then return end
+	fallBounceWatch[humanoid] = {speed = speed, expires = os.clock() + FALL_BOUNCE_WINDOW}
+end
+
+local function pumpFallBounces()
+	local player = Players.LocalPlayer
+	if not player then return end
+	local now = os.clock()
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid and os.clock() - (lastFallBounceApply[humanoid] or 0) >= FALL_BOUNCE_COOLDOWN then
+		local token = humanoid:GetAttribute("FallBounceToken")
+		local speed = humanoid:GetAttribute("FallBounceSpeed")
+		if token and token ~= lastFallBounceToken[humanoid] and type(speed) == "number" and speed > 0 then
+			local watch = fallBounceWatch[humanoid]
+			if not watch or watch.token ~= token then
+				fallBounceWatch[humanoid] = {speed = speed, expires = now + FALL_BOUNCE_WINDOW, token = token}
+			end
+		end
+	elseif humanoid then
+		local token = humanoid:GetAttribute("FallBounceToken")
+		if token and token ~= lastFallBounceToken[humanoid] then lastFallBounceToken[humanoid] = token end
+	end
+	for watched, watch in pairs(fallBounceWatch) do
+		local body = watched.Parent
+		if not body or watched.Health <= 0 or now > watch.expires or body ~= player.Character
+			or watched:GetAttribute("CapsuleLocked") then
+			fallBounceWatch[watched] = nil
+			continue
+		end
+		if os.clock() < (watched:GetAttribute("PhysicsServerUntil") or 0) then continue end
+		local expected = watched:GetAttribute("RagdollExpectedOwner")
+		if expected and expected ~= 0 and expected ~= player.UserId then continue end
+		local ragdolled = watched:GetAttribute("Ragdolled") == true or watched:HasTag("Ragdoll")
+		-- Wait until this server accepts the fall. A local estimate alone must not bounce.
+		if not ragdolled or (not watch.token and watched:GetAttribute("FallRagdollUntil") == nil) then continue end
+		-- Motors replicate just after the ragdoll attribute. Wait until the limbs are
+		-- their own assemblies so the bounce is not left on the root that does not collide.
+		if fallAssemblyCount(body) < 2 and now < watch.expires - 0.2 then continue end
+		Service.ApplyFallBounce(body, watch.speed)
+		lastFallBounceApply[watched] = now
+		if watch.token then lastFallBounceToken[watched] = watch.token end
+		fallBounceWatch[watched] = nil
+	end
+end
 
 local function attachmentBody(attachment, character)
 	-- Native joint attachments may be nested inside other Attachments/Bones.
@@ -708,13 +844,58 @@ function Service.InitClient()
 		end)
 	end
 
+	local cameraLift = 0
+	local animateBaselines = setmetatable({}, {__mode = "k"})
+	local function clearRagdollAnimation(humanoid: Humanoid)
+		local character = humanoid.Parent
+		if not character or humanoid:GetAttribute("CapsuleLocked") == true then return end
+		-- Leave Animate running. Disabling it halts the script, and turning
+		-- Disabled back off does not start it again.
+		for _, item in ipairs(character:GetDescendants()) do
+			if (item:IsA("LocalScript") or item:IsA("Script")) and item.Name == "Animate" then
+				if animateBaselines[item] == nil then animateBaselines[item] = item.Disabled == true end
+			elseif item:IsA("Motor6D") or item:IsA("AnimationConstraint") then
+				item.Transform = CFrame.new()
+			end
+		end
+		local animator = humanoid:FindFirstChildOfClass("Animator")
+		if animator and animator.GetPlayingAnimationTracks then
+			for _, track in ipairs(animator:GetPlayingAnimationTracks()) do track:Stop(0) end
+		end
+	end
+	local function restoreRagdollAnimation(humanoid: Humanoid)
+		local character = humanoid.Parent
+		if not character or humanoid:GetAttribute("CapsuleLocked") == true then return end
+		local scripts = {}
+		for _, item in ipairs(character:GetDescendants()) do
+			if (item:IsA("LocalScript") or item:IsA("Script")) and item.Name == "Animate" then
+				table.insert(scripts, item)
+			end
+		end
+		for _, item in ipairs(scripts) do
+			local wasDisabled = animateBaselines[item]
+			animateBaselines[item] = nil
+			if wasDisabled == true then continue end
+			-- A script that was disabled while ragdolled is already dead. Replace
+			-- it so standing up runs Animate from the top.
+			local parent = item.Parent
+			if parent and item.Clone then
+				local clone = item:Clone()
+				clone.Disabled = false
+				item:Destroy()
+				clone.Parent = parent
+			elseif item.Disabled then
+				item.Disabled = false
+			end
+		end
+	end
 	local function updateCameraSubject(humanoid: Humanoid, enabled: boolean)
 		if not localPlayer or humanoid.Parent ~= localPlayer.Character then return end
 		local camera = workspace.CurrentCamera
 		if not camera then return end
 
 		if not enabled then
-			cameraRoot, cameraHumanoid = nil, nil
+			cameraRoot, cameraHumanoid, cameraLift = nil, nil, 0
 			if cameraAnchor and camera.CameraSubject == cameraAnchor then camera.CameraSubject = humanoid end
 			return
 		end
@@ -732,7 +913,15 @@ function Service.InitClient()
 			cameraAnchor.Size = Vector3.new(0.1, 0.1, 0.1)
 			cameraAnchor.Parent = workspace
 		end
-		cameraAnchor.CFrame = CFrame.new(root.Position)
+		-- The normal camera looks above the root. Keep that height so ragdoll
+		-- does not drop the body in the frame, then follow the root from there.
+		cameraLift = 0
+		local focus = camera.Focus
+		if typeof(focus) == "CFrame" then
+			local lift = focus.Position.Y - root.Position.Y
+			if lift == lift then cameraLift = math.clamp(lift, 0, 5) end
+		end
+		cameraAnchor.CFrame = CFrame.new(root.Position + Vector3.new(0, cameraLift, 0))
 		cameraRoot, cameraHumanoid = root, humanoid
 		camera.CameraSubject = cameraAnchor
 	end
@@ -843,6 +1032,7 @@ function Service.InitClient()
 				pendingEntryMotion[humanoid] = nil
 			end
 			wasRagdolled, wasLocked = ragdolled, locked
+			if enabled then clearRagdollAnimation(humanoid) else restoreRagdollAnimation(humanoid) end
 			updateCameraSubject(humanoid, enabled)
 			local restoreStateMachine = humanoid:GetAttribute("RagdollRestoreStateMachine")
 			if restoreStateMachine == nil then restoreStateMachine = previousStateMachine end
@@ -871,17 +1061,33 @@ function Service.InitClient()
 		local camera = workspace.CurrentCamera
 		if camera and camera.CameraSubject ~= cameraAnchor then camera.CameraSubject = cameraAnchor end
 
-		local offset = cameraRoot.Position - cameraAnchor.Position
+		local desired = cameraRoot.Position + Vector3.new(0, cameraLift, 0)
+		local offset = desired - cameraAnchor.Position
 		if offset.Magnitude <= CAMERA_DEADZONE then return end
-		-- Smooth small movements consistently across frame rates, but bound the
-		-- remaining distance. Unbounded easing trails fast falls by many studs.
-		local remaining = offset * math.exp(-math.max(0, dt) * CAMERA_FOLLOW_SPEED)
-		if remaining.Magnitude > CAMERA_MAX_LAG then
-			remaining = remaining.Unit * CAMERA_MAX_LAG
+		-- A collapse, fall, or bounce closes on this frame. Smaller shifts still
+		-- ease, and anything inside the deadzone never moves the camera.
+		local remaining
+		if offset.Magnitude >= CAMERA_SNAP then
+			remaining = offset.Unit * CAMERA_DEADZONE
+		else
+			remaining = offset * math.exp(-math.max(0, dt) * CAMERA_FOLLOW_SPEED)
+			if remaining.Magnitude > CAMERA_MAX_LAG then
+				remaining = remaining.Unit * CAMERA_MAX_LAG
+			end
 		end
-		cameraAnchor.CFrame = CFrame.new(cameraRoot.Position - remaining)
+		cameraAnchor.CFrame = CFrame.new(desired - remaining)
 	end)
+	-- Transform is local. Stop the jump/fall pose before the animator writes it
+	-- back over the loose limbs, including during the bounce.
+	if RunService.PreAnimation then
+		RunService.PreAnimation:Connect(function()
+			for humanoid in pairs(activeRigs) do
+				if humanoid.Parent then clearRagdollAnimation(humanoid) end
+			end
+		end)
+	end
 	RunService.PreSimulation:Connect(function()
+		pumpFallBounces()
 		for humanoid, deadline in pairs(pendingEntryMotion) do
 			if not humanoid.Parent or os.clock() > deadline or startAirborneMotion(humanoid) then
 				pendingEntryMotion[humanoid] = nil
@@ -1016,6 +1222,7 @@ function Service.WatchLocalFalls()
 		if landed then
 			if peakY and not sent and peakY - y >= required(humanoid) then
 				sent = true
+				Service.NoteFallBounce(humanoid, peakY - y)
 				Remotes.FallLanded:FireServer(y, peakY, duringFall == true)
 			end
 			peakY, slowSince = nil, nil
