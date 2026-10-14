@@ -32,8 +32,9 @@ local function publishCollection(player, data)
 	local owned = type(data) == "table" and data.cosmetics
 	if type(owned) == "table" then
 		for id, value in pairs(owned) do
-			if type(id) == "string" and #id <= 100 and value == true then
-				player:SetAttribute("Owned_" .. id, true)
+			local copies = value == true and 1 or type(value) == "number" and value == value and value < math.huge and math.max(0, math.floor(value)) or 0
+			if type(id) == "string" and #id <= 100 then
+				player:SetAttribute("Owned_" .. id, copies)
 			end
 		end
 	end
@@ -485,7 +486,7 @@ refund.Name = "RefundHeldCoins"
 refund.OnInvoke = refundHeld
 refund.Parent = ReplicatedStorage
 
--- Save the charge, duplicate refund, and unlock in ONE coin record update.
+-- Save the charge and added cosmetic copy in ONE coin record update.
 -- An ambiguous network failure retains the request ID for the next attempt.
 -- The last receipt makes retries idempotent, including UpdateAsync retries.
 local rollCosmetic = Instance.new("BindableFunction")
@@ -523,7 +524,8 @@ rollCosmetic.OnInvoke = function(player)
 				player:SetAttribute("Coins", state.base + state.earned)
 				publishCollection(player, data)
 			end
-			result = {ok = true, itemId = receipt.itemId, duplicate = receipt.duplicate, refund = receipt.refund}
+			result = {ok = true, itemId = receipt.itemId, duplicate = receipt.duplicate,
+				copies = receipt.copies or catalog.Quantity(data.cosmetics and data.cosmetics[receipt.itemId])}
 		else
 			result = {ok = false, message = "You need 100 coins to roll."}
 		end
@@ -532,6 +534,56 @@ rollCosmetic.OnInvoke = function(player)
 	return result
 end
 rollCosmetic.Parent = ReplicatedStorage
+
+-- Selling removes one copy and credits held coins in the same atomic write.
+-- It shares the coin lock with rolls, purchases, spending, and periodic saves.
+local sellCosmetic = Instance.new("BindableFunction")
+sellCosmetic.Name = "SellCosmetic"
+sellCosmetic.OnInvoke = function(player, itemId, requestId)
+	local state = sessions[player]
+	if not state or not state.loaded then return {ok = false, message = "Your collection is still loading."} end
+	local catalog = require(ReplicatedStorage.Modules:WaitForChild("CosmeticCatalog"))
+	local transaction = require(ReplicatedStorage.Modules:WaitForChild("CosmeticTransaction"))
+	local item = catalog.ById[itemId]
+	if not item or item.Starter or type(requestId) ~= "string" or #requestId == 0 or #requestId > 64 then
+		return {ok = false, message = "That item cannot be sold."}
+	end
+	while state.saving do task.wait() end
+	if sessions[player] ~= state then return {ok = false, message = "Please rejoin to sell."} end
+	if state.earned ~= state.saved then
+		save(player, state)
+		if state.earned ~= state.saved then return {ok = false, message = "Coins could not save. Please try again."} end
+	end
+	while state.saving do task.wait() end
+	if sessions[player] ~= state then return {ok = false, message = "Please rejoin to sell."} end
+	state.saving = true
+	local ok, data = pcall(function()
+		return store:UpdateAsync("player_" .. player.UserId, function(previous)
+			return transaction.Sell(previous, {id = requestId, itemId = itemId}, catalog)
+		end)
+	end)
+	local result = {ok = false, retry = true, message = "Sale not confirmed. Click again to retry."}
+	if ok then
+		local receipt = type(data) == "table" and data.lastCosmeticSale
+		if receipt and receipt.id == requestId and receipt.itemId == itemId then
+			state.base = data.coins - state.saved
+			if sessions[player] == state then
+				-- Stop using the sold skin before publishing the last copy's removal.
+				if catalog.Quantity(data.cosmetics[itemId]) == 0 and player:GetAttribute(catalog.Attributes[item.Kind]) == item.Name then
+					player:SetAttribute(catalog.Attributes[item.Kind], catalog.Defaults[item.Kind])
+				end
+				player:SetAttribute("Coins", state.base + state.earned)
+				publishCollection(player, data)
+			end
+			result = {ok = true, itemId = itemId, copies = receipt.copies, price = receipt.price}
+		else
+			result = {ok = false, message = "You do not own a copy of that item."}
+		end
+	end
+	state.saving = false
+	return result
+end
+sellCosmetic.Parent = ReplicatedStorage
 
 -- Spending never lowers lifetime coins. An admin reset is a separate write:
 -- it may zero both balances, and it updates the live session so leaving

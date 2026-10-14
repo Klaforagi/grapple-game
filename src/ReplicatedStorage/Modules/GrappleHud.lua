@@ -183,7 +183,7 @@ function M.Init()
 		Size = UDim2.fromOffset(168, 264), BackgroundTransparency = 1,
 	})
 	local leftStackScale = make("UIScale", leftStack, {Scale = 1})
-	local inventoryButton = button(leftStack, "INV", UDim2.fromOffset(0, 104), UDim2.fromOffset(44, 44), function() inventoryOpen = not inventoryOpen end)
+	local inventoryButton = button(leftStack, "INV", UDim2.fromOffset(0, 104), UDim2.fromOffset(44, 44))
 	inventoryButton.Font, inventoryButton.TextSize = Enum.Font.GothamBold, 12
 	make("UIStroke", inventoryButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
 	local shopButton = button(leftStack, "SHOP", UDim2.fromOffset(0, 0), UDim2.fromOffset(44, 44))
@@ -239,7 +239,7 @@ function M.Init()
 		hint.TextSize, hint.TextXAlignment = 13, Enum.TextXAlignment.Center
 		styleReelLabel(hint)
 	end
-	local inventory = require(script.Parent:WaitForChild("CollectionUi")).CreateInventory(leftStack, Remotes.SetGrappleColor)
+	local inventory = require(script.Parent:WaitForChild("CollectionUi")).CreateInventory(screen, Remotes.SetGrappleColor, function() inventoryOpen = false end)
 	local function hold(b, direction)
 		b.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -350,9 +350,9 @@ function M.Init()
 		if adminUi then adminUi.hide() end
 	end
 	-- The native hotbar is core UI, so it draws above these windows and still takes taps.
-	-- Hide it while the shop or upgrades are open, then put it back.
+	-- One owner coordinates hotbar visibility across windows, including the station.
 	local function overlayOpen()
-		return shopOpen or upgradesOpen
+		return shopOpen or upgradesOpen or inventoryOpen or codexOpen or player:GetAttribute("CosmeticRollOpen") == true
 	end
 	local function syncHotbar()
 		local enabled = not overlayOpen()
@@ -394,6 +394,7 @@ function M.Init()
 			codexWindow.Visible = false
 		end
 		if visible then
+			inventoryOpen = false
 			hideShop()
 			hideUpgrades()
 			hideAdmin()
@@ -537,12 +538,14 @@ function M.Init()
 		codexOpen = visible
 		codexWindow.Visible = visible
 		if visible then
+			inventoryOpen = false
 			settingsOpen = false
 			settingsWindow.Visible = false
 			hideShop()
 			hideUpgrades()
 			hideAdmin()
 		end
+		syncHotbar()
 	end
 	closeCodex.Activated:Connect(function() showCodex(false) end)
 	local function placeMenuList()
@@ -570,6 +573,7 @@ function M.Init()
 		showCodex(true)
 	end)
 	adminUi = AdminUi.Mount(screen, function()
+		inventoryOpen = false
 		settingsOpen = false
 		settingsWindow.Visible = false
 		codexOpen = false
@@ -673,8 +677,36 @@ function M.Init()
 		showUpgrades(not upgradesOpen)
 	end)
 	inventoryButton.Activated:Connect(function()
-		if inventoryOpen then hideUpgrades() end
+		-- Toggle and close competing windows together; separate Activated handlers
+		-- must not depend on which callback Roblox dispatches first.
+		inventoryOpen = not inventoryOpen
+		if inventoryOpen then
+			hideShop()
+			hideUpgrades()
+			hideAdmin()
+			showSettings(false)
+			showCodex(false)
+			showMenu(false)
+		end
+		inventory.Visible = player.Character ~= nil and inventoryOpen
+		syncHotbar()
 	end)
+	inventory:GetPropertyChangedSignal("Visible"):Connect(syncHotbar)
+	local function stationVisibility()
+		if player:GetAttribute("CosmeticRollOpen") == true then
+			inventoryOpen = false
+			inventory.Visible = false
+			showSettings(false)
+			showCodex(false)
+			showMenu(false)
+			hideShop()
+			hideUpgrades()
+			hideAdmin()
+		end
+		syncHotbar()
+	end
+	player:GetAttributeChangedSignal("CosmeticRollOpen"):Connect(stationVisibility)
+	stationVisibility()
 
 	local settingRevision = {}
 	local function saveSetting(key, value, immediate)

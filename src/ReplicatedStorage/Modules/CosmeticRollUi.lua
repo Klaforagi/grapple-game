@@ -6,42 +6,19 @@ local HttpService = game:GetService("HttpService")
 local Catalog = require(script.Parent:WaitForChild("CosmeticCatalog"))
 local Ui = require(script.Parent:WaitForChild("CollectionUi"))
 local make, text, round = Ui.Make, Ui.Text, Ui.Round
-local blue = Color3.fromRGB(65, 133, 244)
-local ink = Color3.fromRGB(41, 57, 82)
-local white = Color3.fromRGB(255, 255, 255)
+local Style = require(script.Parent:WaitForChild("CosmeticStyle"))
+local ScreenFocus = require(script.Parent:WaitForChild("CosmeticScreenFocus"))
+local SoundService = game:GetService("SoundService")
+local Debris = game:GetService("Debris")
+local accent, ink, white = Style.Accent, Style.Ink, Style.Text
+text = Style.Label
 local function tween(object, duration, props, style)
 	local animation = TweenService:Create(object, TweenInfo.new(duration, style or Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
 	animation:Play()
 	return animation
 end
 
-local function icon(parent, item)
-	local function piece(position, size, color, radius)
-		local frame = make("Frame", parent, {Position = position, Size = size, BorderSizePixel = 0,
-			BackgroundColor3 = color or item.Color})
-		round(frame, radius or 8)
-		if not color then Ui.Paint(frame, item) end
-		return frame
-	end
-	if item.Kind == "Bomb" then
-		local fuse = piece(UDim2.fromOffset(60, 7), UDim2.fromOffset(8, 25), ink, 4)
-		fuse.Rotation = 22
-		piece(UDim2.fromOffset(65, 5), UDim2.fromOffset(10, 10), Color3.fromRGB(255, 203, 68), 5)
-		piece(UDim2.fromOffset(28, 27), UDim2.fromOffset(66, 66), nil, 40)
-		piece(UDim2.fromOffset(40, 37), UDim2.fromOffset(15, 9), white, 5).BackgroundTransparency = 0.35
-	elseif item.Kind == "Gun" then
-		piece(UDim2.fromOffset(26, 45), UDim2.fromOffset(23, 46), nil, 6).Rotation = 14
-		piece(UDim2.fromOffset(17, 25), UDim2.fromOffset(83, 31))
-		piece(UDim2.fromOffset(91, 29), UDim2.fromOffset(14, 23), ink, 4)
-		piece(UDim2.fromOffset(26, 30), UDim2.fromOffset(48, 6), white, 3).BackgroundTransparency = 0.55
-	else
-		for i = 0, 2 do
-			local loop = piece(UDim2.fromOffset(30 + i * 6, 20 + i * 9), UDim2.fromOffset(56, 46), white, 24)
-			loop.BackgroundTransparency = 1
-			make("UIStroke", loop, {Thickness = 7, Color = item.Name == "Rainbow" and Color3.fromHSV(i / 3, 0.8, 1) or item.Color})
-		end
-	end
-end
+local icon = Style.Icon
 
 local RollUi = {}
 function RollUi.Init()
@@ -49,75 +26,62 @@ function RollUi.Init()
 	local remote = ReplicatedStorage:WaitForChild("RequestCosmeticRoll")
 	local random = Random.new()
 	local screen = make("ScreenGui", player:WaitForChild("PlayerGui"), {Name = "CosmeticRollGui", ResetOnSpawn = false,
-		DisplayOrder = 30, ZIndexBehavior = Enum.ZIndexBehavior.Sibling})
-	local shade = make("Frame", screen, {Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(20, 32, 56),
-		BackgroundTransparency = 0.45, BorderSizePixel = 0, Visible = false, Active = true})
+		DisplayOrder = 40, ZIndexBehavior = Enum.ZIndexBehavior.Sibling})
+	local focusScreens = ScreenFocus.new(player:WaitForChild("PlayerGui"), screen)
+	local shade = make("Frame", screen, {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+		BorderSizePixel = 0, Visible = false, Active = false})
 	local panel = make("Frame", shade, {Name = "RollWindow", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(580, 628), BackgroundColor3 = Color3.fromRGB(245, 248, 255), BorderSizePixel = 0})
-	round(panel, 24)
-	make("UIStroke", panel, {Color = white, Thickness = 4})
+		Size = UDim2.fromOffset(680, 548)})
+	Style.Surface(panel, Style.Panel, 8)
 	local scale = make("UIScale", panel, {Scale = 1})
-	local header = make("Frame", panel, {Size = UDim2.new(1, 0, 0, 112), BackgroundColor3 = blue, BorderSizePixel = 0})
-	round(header, 24)
-	make("UIGradient", header, {Color = ColorSequence.new(blue, Color3.fromRGB(103, 175, 255)), Rotation = 18})
-	text(header, "COLOR CLUB", UDim2.fromOffset(24, 15), UDim2.fromOffset(430, 36), 30, white)
-	text(header, "GUN  +  ROPE  +  BOMB", UDim2.fromOffset(26, 55), UDim2.fromOffset(400, 22), 13, Color3.fromRGB(221, 239, 255))
-	local collection = text(header, "", UDim2.fromOffset(26, 80), UDim2.fromOffset(400, 22), 14, white)
-	local close = make("TextButton", panel, {Position = UDim2.new(1, -54, 0, 17), Size = UDim2.fromOffset(36, 36),
-		Text = "X", TextSize = 18, Font = Enum.Font.GothamBold, TextColor3 = ink, BackgroundColor3 = white, BorderSizePixel = 0})
-	round(close, 12)
-	local balance = text(panel, "", UDim2.fromOffset(24, 124), UDim2.fromOffset(280, 26), 16)
-	local oddsButton = make("TextButton", panel, {Position = UDim2.fromOffset(358, 120), Size = UDim2.fromOffset(198, 32),
-		Text = "View items & odds", Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = blue,
-		BackgroundColor3 = Color3.fromRGB(224, 235, 255), BorderSizePixel = 0})
-	round(oddsButton, 10)
-	local hero = make("Frame", panel, {Position = UDim2.fromOffset(20, 164), Size = UDim2.fromOffset(540, 216),
-		BackgroundColor3 = Color3.fromRGB(226, 235, 251), BorderSizePixel = 0, ClipsDescendants = true})
-	round(hero, 18)
-	make("UIGradient", hero, {Color = ColorSequence.new(Color3.fromRGB(232, 240, 255), Color3.fromRGB(212, 226, 252)), Rotation = 90})
+	local header = make("Frame", panel, {Size = UDim2.new(1, 0, 0, 94)})
+	Style.Surface(header, Style.Header, 8)
+	text(header, "COSMETICS", UDim2.fromOffset(24, 12), UDim2.fromOffset(360, 36), 30)
+	text(header, "GUN  /  ROPE  /  BOMB", UDim2.fromOffset(26, 55), UDim2.fromOffset(340, 22), 13, Style.Muted)
+	local collection = text(header, "", UDim2.fromOffset(366, 51), UDim2.fromOffset(280, 26), 15, Style.Accent)
+	collection.TextXAlignment = Enum.TextXAlignment.Right
+	local close = Style.Button(panel, "X", UDim2.new(1, -58, 0, 12), UDim2.fromOffset(42, 36), Color3.fromRGB(195, 76, 87))
+	local balance = text(panel, "", UDim2.fromOffset(24, 106), UDim2.fromOffset(300, 26), 16, Color3.fromRGB(255, 209, 115))
+	local oddsButton = Style.Button(panel, "Items & odds", UDim2.fromOffset(458, 104), UDim2.fromOffset(198, 32), Style.ButtonColor)
+	oddsButton.TextSize = 14
+	local hero = make("Frame", panel, {Position = UDim2.fromOffset(20, 150), Size = UDim2.fromOffset(640, 216), ClipsDescendants = true})
+	Style.Surface(hero, Style.Slot, 6)
 	local strip = make("Frame", hero, {Position = UDim2.fromOffset(0, 30), Size = UDim2.fromOffset(5200, 166), BackgroundTransparency = 1})
-	local pointer = text(hero, "▼", UDim2.new(0.5, -16, 0, 0), UDim2.fromOffset(32, 30), 27, blue)
+	local pointer = text(hero, "▼", UDim2.new(0.5, -16, 0, 0), UDim2.fromOffset(32, 30), 27, accent)
 	pointer.TextXAlignment, pointer.ZIndex = Enum.TextXAlignment.Center, 5
 	local focus = make("Frame", hero, {Position = UDim2.new(0.5, -71, 0, 26), Size = UDim2.fromOffset(142, 174),
 		BackgroundTransparency = 1, ZIndex = 4})
-	round(focus, 16)
-	local focusStroke = make("UIStroke", focus, {Thickness = 3, Color = blue})
-	local headline = text(panel, "Find your next favorite!", UDim2.fromOffset(24, 391), UDim2.fromOffset(532, 30), 23)
+	round(focus, 5)
+	local focusStroke = make("UIStroke", focus, {Thickness = 3, Color = accent})
+	local headline = text(panel, "Roll a cosmetic", UDim2.fromOffset(24, 378), UDim2.fromOffset(632, 30), 23)
 	headline.TextXAlignment = Enum.TextXAlignment.Center
-	local detail = text(panel, "One roll. Every category. A little surprise.", UDim2.fromOffset(24, 426), UDim2.fromOffset(532, 36), 14, Color3.fromRGB(104, 121, 145))
+	local detail = text(panel, "", UDim2.fromOffset(24, 414), UDim2.fromOffset(632, 36), 15, Style.Muted)
 	detail.TextXAlignment, detail.TextWrapped = Enum.TextXAlignment.Center, true
-	local rollButton = make("TextButton", panel, {Position = UDim2.fromOffset(100, 474), Size = UDim2.fromOffset(380, 58),
-		BackgroundColor3 = Color3.fromRGB(66, 192, 132), BorderSizePixel = 0, Font = Enum.Font.GothamBold, TextSize = 23,
-		TextColor3 = white, Text = "ROLL  •  100 COINS"})
-	round(rollButton, 18)
-	make("UIStroke", rollButton, {Color = Color3.fromRGB(42, 148, 100), Thickness = 2})
-	local footer = text(panel, "Duplicates give coins back!", UDim2.fromOffset(24, 544), UDim2.fromOffset(532, 20), 13, Color3.fromRGB(104, 121, 145))
+	local rollButton = Style.Button(panel, "ROLL  /  100 COINS", UDim2.fromOffset(150, 466), UDim2.fromOffset(380, 52), Color3.fromRGB(62, 165, 110))
+	rollButton.TextSize = 23
+	local footer = text(panel, "", UDim2.fromOffset(24, 525), UDim2.fromOffset(632, 18), 12, Style.Muted)
 	footer.TextXAlignment = Enum.TextXAlignment.Center
-	local refunds = text(panel, "Common 10  •  Uncommon 25  •  Rare 50\nEpic 75  •  Legendary 100", UDim2.fromOffset(24, 568), UDim2.fromOffset(532, 40), 12, Color3.fromRGB(104, 121, 145))
-	refunds.TextXAlignment = Enum.TextXAlignment.Center
-	local oddsPanel = make("Frame", panel, {Position = UDim2.fromOffset(20, 164), Size = UDim2.fromOffset(540, 298),
-		BackgroundColor3 = Color3.fromRGB(245, 248, 255), BorderSizePixel = 0, Visible = false, ZIndex = 10})
-	local oddsScroll = make("ScrollingFrame", oddsPanel, {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+	local oddsPanel = make("Frame", panel, {Position = UDim2.fromOffset(20, 150), Size = UDim2.fromOffset(640, 300), Visible = false, ZIndex = 10})
+	Style.Surface(oddsPanel, Style.Slot, 6)
+	local oddsScroll = make("ScrollingFrame", oddsPanel, {Position = UDim2.fromOffset(10, 6), Size = UDim2.new(1, -20, 1, -12), BackgroundTransparency = 1,
 		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 5, BorderSizePixel = 0,
-		ScrollingDirection = Enum.ScrollingDirection.Y})
+		ScrollBarImageColor3 = Style.Muted, ScrollingDirection = Enum.ScrollingDirection.Y})
 	make("UIListLayout", oddsScroll, {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder})
 	local tiers, odds = Catalog.Odds()
 	local order = 0
-	local explanation = text(oddsScroll, "Highest rarity checked first. Empty tiers are skipped.\nEach item in the winning tier has an equal chance.", UDim2.new(), UDim2.new(1, -12, 0, 42), 12)
-	explanation.TextWrapped = true
 	for _, rarity in ipairs(Catalog.Rarities) do
-		order += 1
 		local pool = Catalog.Pools[rarity.Name]
-		local heading = rarity.Name == "Common" and "COMMON  •  Fallback" or string.format("%s  •  %g%% check", string.upper(rarity.Name), rarity.Chance * 100)
-		heading ..= #pool == 0 and "  •  No items yet" or string.format("  •  %.4f%% overall", tiers[rarity.Name] * 100)
-		local row = text(oddsScroll, heading, UDim2.new(), UDim2.new(1, -12, 0, 26), 13)
+		if #pool == 0 then continue end
+		order += 1
+		local heading = string.format("%s  /  %.4f%%", string.upper(rarity.Name), tiers[rarity.Name] * 100)
+		local row = text(oddsScroll, heading, UDim2.new(), UDim2.new(1, -12, 0, 26), 13, rarity.Color)
 		row.LayoutOrder = order
 		for _, item in ipairs(pool) do
 			order += 1
-			local rowFrame = make("Frame", oddsScroll, {Size = UDim2.new(1, -12, 0, 34), BackgroundColor3 = white, BorderSizePixel = 0, LayoutOrder = order})
-			round(rowFrame, 8)
+			local rowFrame = make("Frame", oddsScroll, {Size = UDim2.new(1, -12, 0, 34), BackgroundColor3 = Style.ButtonColor, BackgroundTransparency = 0.55, BorderSizePixel = 0, LayoutOrder = order})
+			round(rowFrame, 4)
 			local swatch = make("Frame", rowFrame, {Position = UDim2.fromOffset(8, 7), Size = UDim2.fromOffset(20, 20), BorderSizePixel = 0})
-			round(swatch, 6) Ui.Paint(swatch, item)
+			round(swatch, 4) Ui.Paint(swatch, item)
 			text(rowFrame, item.Kind .. " / " .. item.Name, UDim2.fromOffset(38, 0), UDim2.new(1, -150, 1, 0), 13)
 			local chance = text(rowFrame, string.format("%.4f%%", odds[item.Id] * 100), UDim2.new(1, -100, 0, 0), UDim2.fromOffset(90, 34), 13)
 			chance.TextXAlignment = Enum.TextXAlignment.Right
@@ -127,11 +91,15 @@ function RollUi.Init()
 	local function card(item, index)
 		local rarity = Catalog.Rarity(item.Rarity)
 		local frame = make("Frame", strip, {Position = UDim2.fromOffset((index - 1) * 146, 0), Size = UDim2.fromOffset(132, 166),
-			BackgroundColor3 = white, BorderSizePixel = 0})
-		round(frame, 14)
-		local category = text(frame, string.upper(item.Kind), UDim2.fromOffset(8, 7), UDim2.fromOffset(116, 18), 10, Color3.fromRGB(112, 131, 156))
+			BackgroundColor3 = Style.Slot, BorderSizePixel = 0})
+		Style.Surface(frame, Style.ButtonColor, 5)
+		local category = text(frame, string.upper(item.Kind), UDim2.fromOffset(8, 7), UDim2.fromOffset(116, 18), 10, Style.Muted)
 		category.TextXAlignment = Enum.TextXAlignment.Center
-		local art = make("Frame", frame, {Position = UDim2.fromOffset(5, 23), Size = UDim2.fromOffset(122, 100), BackgroundTransparency = 1})
+		-- Composite the icon into one texture before moving it. Its strokes,
+		-- gradients, and overlapping shapes must scroll as one rendered unit.
+		local art = make("CanvasGroup", frame, {Name = "ItemIcon", Position = UDim2.fromOffset(5, 23),
+			Size = UDim2.fromOffset(122, 100), BackgroundTransparency = 1, BorderSizePixel = 0,
+			GroupColor3 = Color3.new(1, 1, 1), GroupTransparency = 0})
 		icon(art, item)
 		local name = text(frame, item.Name, UDim2.fromOffset(4, 120), UDim2.fromOffset(124, 22), 15)
 		name.TextXAlignment = Enum.TextXAlignment.Center
@@ -139,18 +107,58 @@ function RollUi.Init()
 		tag.TextXAlignment = Enum.TextXAlignment.Center
 		return frame
 	end
+	local idle, resumePreviewAt, idleOffset = true, 0, 0
+	local idleCards, previewBag = {}, {}
+	local function nextPreviewItem()
+		if #previewBag == 0 then
+			for _, item in ipairs(Catalog.Items) do if not item.Starter then table.insert(previewBag, item) end end
+			for i = #previewBag, 2, -1 do
+				local j = random:NextInteger(1, i)
+				previewBag[i], previewBag[j] = previewBag[j], previewBag[i]
+			end
+		end
+		return table.remove(previewBag)
+	end
 	local function preview()
+		idle, idleOffset = true, 0
+		table.clear(idleCards)
 		strip:ClearAllChildren()
-		for i = 1, 8 do card(Catalog.Roll(random), i) end
-		strip.Position = UDim2.fromOffset(-88, 30)
+		for i = 1, 7 do idleCards[i] = card(nextPreviewItem(), i) end
+		strip.Position = UDim2.fromOffset(0, 30)
+		pointer.Visible, focus.Visible = false, false
 	end
 	preview()
 	local busy, waiting, activeZone, dismissed, availableAt = false, false, nil, false, 0
 	local pendingRequest
+	local spinning, lastPassed = false, 0
+	local function tick()
+		local sounds = ReplicatedStorage:FindFirstChild("Sounds")
+		local source = sounds and sounds:FindFirstChild("Tick", true)
+		if not source or not source:IsA("Sound") then return end
+		local sound = source:Clone()
+		sound.Looped = false
+		sound.TimePosition = 0
+		sound.Parent = SoundService
+		sound:Play()
+		sound.Ended:Once(function() sound:Destroy() end)
+		Debris:AddItem(sound, math.max(5, sound.TimeLength + 1))
+	end
+	local function updateTicks()
+		-- Count centers crossing the pointer, even if a slow frame crosses two.
+		local passed = math.floor((320 - strip.Position.X.Offset - 66) / 146)
+		if shade.Visible then for _ = lastPassed + 1, passed do tick() end end
+		lastPassed = passed
+	end
 	local function show(visible)
 		if shade.Visible == visible then return end
 		shade.Visible = visible
+		player:SetAttribute("CosmeticRollOpen", visible)
+		focusScreens(visible)
 		if visible then
+			if not busy then
+				preview()
+				headline.Text, detail.Text = "Roll a cosmetic", ""
+			end
 			panel.Position = UDim2.fromScale(0.5, 0.54)
 			tween(panel, 0.25, {Position = UDim2.fromScale(0.5, 0.5)}, Enum.EasingStyle.Back)
 		end
@@ -159,7 +167,7 @@ function RollUi.Init()
 	oddsButton.Activated:Connect(function()
 		if busy then return end
 		oddsPanel.Visible = not oddsPanel.Visible
-		oddsButton.Text = oddsPanel.Visible and "Back to rolling" or "View items & odds"
+		oddsButton.Text = oddsPanel.Visible and "Back to rolling" or "Items & odds"
 	end)
 	local function celebrate(color)
 		for i = 1, 24 do
@@ -173,16 +181,17 @@ function RollUi.Init()
 		if busy or not activeZone or os.clock() < availableAt or player:GetAttribute("CosmeticRollAllowed") ~= true then return end
 		if player:GetAttribute("CollectionLoaded") ~= true then return end
 		busy, waiting = true, true
+		if not idle then preview() end
 		availableAt = os.clock() + Catalog.Cooldown
 		oddsPanel.Visible = false
-		oddsButton.Text = "View items & odds"
-		headline.Text, detail.Text = "Picking a little surprise...", "Getting your roll ready"
-		focusStroke.Color = blue
+		oddsButton.Text = "Items & odds"
+		headline.Text, detail.Text = "Rolling...", ""
+		focusStroke.Color = accent
 		pendingRequest = pendingRequest or HttpService:GenerateGUID(false)
 		local ok, result = pcall(function() return remote:InvokeServer(activeZone, pendingRequest) end)
 		waiting = false
 		if not ok or type(result) ~= "table" or not result.ok then
-			headline.Text = "Let's try that again"
+			headline.Text = "Couldn't roll"
 			detail.Text = ok and type(result) == "table" and result.message or "Connection interrupted. Retry to check your roll."
 			busy = false
 			return
@@ -190,20 +199,28 @@ function RollUi.Init()
 		pendingRequest = nil
 		local item = Catalog.ById[result.itemId]
 		if not item then busy = false detail.Text = "Collection updated. Please rejoin to refresh the catalog." return end
+		idle = false
+		table.clear(idleCards)
 		strip:ClearAllChildren()
+		pointer.Visible, focus.Visible = true, true
 		local winnerIndex = 28
 		for i = 1, 31 do card(i == winnerIndex and item or Catalog.Roll(random), i) end
 		strip.Position = UDim2.fromOffset(0, 30)
-		headline.Text, detail.Text = "Here we go!", "Which color will join your collection?"
-		local landing = 270 - ((winnerIndex - 1) * 146 + 66)
+		lastPassed = math.floor((320 - 66) / 146)
+		spinning = true
+		headline.Text, detail.Text = "Rolling...", ""
+		local landing = 320 - ((winnerIndex - 1) * 146 + 66)
 		local animation = tween(strip, 3.7, {Position = UDim2.fromOffset(landing, 30)}, Enum.EasingStyle.Quint)
 		animation.Completed:Wait()
+		updateTicks()
+		spinning = false
 		local rarity = Catalog.Rarity(item.Rarity)
 		focusStroke.Color = rarity.Color
 		headline.Text = item.Name .. " " .. item.Kind
-		detail.Text = result.duplicate and string.format("%s duplicate  •  +%d coins refunded", item.Rarity, result.refund)
-			or item.Rarity .. "  •  NEW! Find it in your inventory."
+		detail.Text = result.duplicate and string.format("%s  /  Added to your stack  /  x%d", item.Rarity, result.copies or Catalog.Copies(player, item.Kind, item.Name))
+			or item.Rarity .. "  /  NEW"
 		celebrate(rarity.Color)
+		resumePreviewAt = os.clock() + 4
 		busy = false
 	end)
 
@@ -218,10 +235,9 @@ function RollUi.Init()
 		local billboard = make("BillboardGui", screen, {Name = "CollectionProgress", Adornee = part,
 			Size = UDim2.fromOffset(260, 84), StudsOffsetWorldSpace = aboveModel,
 			MaxDistance = Catalog.BillboardDistance, AlwaysOnTop = true})
-		local background = make("Frame", billboard, {Size = UDim2.fromScale(1, 1), BackgroundColor3 = blue, BorderSizePixel = 0, BackgroundTransparency = 0.08})
-		round(background, 18)
-		make("UIStroke", background, {Color = white, Thickness = 2})
-		local title = text(background, "COLOR CLUB  •  100 COINS", UDim2.fromOffset(8, 9), UDim2.fromOffset(244, 23), 15, white)
+		local background = make("Frame", billboard, {Size = UDim2.fromScale(1, 1), BackgroundColor3 = accent, BorderSizePixel = 0, BackgroundTransparency = 0.08})
+		Style.Surface(background, Style.Panel, 6)
+		local title = text(background, "COSMETICS  •  100 COINS", UDim2.fromOffset(8, 9), UDim2.fromOffset(244, 23), 15, white)
 		title.TextXAlignment = Enum.TextXAlignment.Center
 		local owned = text(background, Ui.OwnedText(player), UDim2.fromOffset(8, 35), UDim2.fromOffset(244, 24), 18, white)
 		owned.TextXAlignment = Enum.TextXAlignment.Center
@@ -246,8 +262,24 @@ function RollUi.Init()
 	local elapsed = 0
 	RunService.RenderStepped:Connect(function(dt)
 		local camera = workspace.CurrentCamera
-		if camera then scale.Scale = math.min(1, (camera.ViewportSize.X - 24) / 580, (camera.ViewportSize.Y - 64) / 628) end
-		if waiting then strip.Position = UDim2.fromOffset(-88 - (os.clock() * 230) % 730, 30) end
+		if camera then scale.Scale = math.max(0.01, math.min(1, (camera.ViewportSize.X - 24) / 680, (camera.ViewportSize.Y - 64) / 548)) end
+		if spinning then updateTicks() end
+		if shade.Visible and not oddsPanel.Visible then
+			if not busy and not idle and os.clock() >= resumePreviewAt then
+				preview()
+				headline.Text, detail.Text = "Roll a cosmetic", ""
+			end
+			if idle then
+				idleOffset -= 32 * math.min(dt, 0.25)
+				while idleOffset <= -146 do
+					idleOffset += 146
+					table.remove(idleCards, 1):Destroy()
+					table.insert(idleCards, card(nextPreviewItem(), 7))
+					for i, frame in ipairs(idleCards) do frame.Position = UDim2.fromOffset((i - 1) * 146, 0) end
+				end
+				strip.Position = UDim2.fromOffset(idleOffset, 30)
+			end
+		end
 		elapsed += dt
 		if elapsed < 0.15 then return end
 		elapsed = 0
@@ -273,10 +305,10 @@ function RollUi.Init()
 		local cooldown = math.max(0, math.ceil(availableAt - os.clock()))
 		local enabled = not busy and allowed and loaded and cooldown == 0 and activeZone ~= nil
 		rollButton.AutoButtonColor = enabled
-		rollButton.BackgroundColor3 = enabled and Color3.fromRGB(66, 192, 132) or Color3.fromRGB(153, 172, 193)
+		rollButton.TextTransparency = enabled and 0 or 0.35
 		rollButton.Text = busy and "ROLLING..." or not loaded and "LOADING COLLECTION..." or not allowed and "ROLLS UNAVAILABLE"
 			or cooldown > 0 and ("READY IN " .. cooldown .. "s") or "ROLL  •  100 COINS"
-		footer.Text = allowed and "Duplicates give coins back!" or (player:GetAttribute("CosmeticRollPolicy") or "Checking roll availability...")
+		footer.Text = allowed and "" or (player:GetAttribute("CosmeticRollPolicy") or "Checking roll availability...")
 	end)
 end
 return RollUi

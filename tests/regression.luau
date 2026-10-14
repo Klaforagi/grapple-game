@@ -7,6 +7,8 @@ return function(sources)
 		assert(loadstring(sources.coinTests))()(sources.coins, catalog, transaction)
 		assert(loadstring(sources.cosmeticRollTests))()(sources.cosmeticRollServer, catalog)
 		assert(loadstring(sources.cosmeticPersistenceTests))()(sources.cosmeticPersistence, catalog)
+		assert(loadstring(sources.cosmeticFocusTests))()(sources.cosmeticFocus)
+		assert(loadstring(sources.cosmeticSaleTests))()(sources.cosmeticSales, catalog)
 	end
 	assert(loadstring(sources.mobileFlopTests))()(sources.mobileFlopButton)
 	assert(loadstring(sources.mapCoinTests))()(sources.mapCoins)

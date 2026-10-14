@@ -3,17 +3,18 @@
 local Palettes = require(script.Parent.Parent:WaitForChild("ItemColors"))
 local Catalog = {
 	Cost = 100,
+	SellPrices = {Common = 10, Uncommon = 25, Rare = 100, Epic = 200, Legendary = 500},
 	ModelName = "CosmeticRollStation", PartName = "RollZone",
 	OpenDistance = 10, ServerDistance = 14, BillboardDistance = 45,
 	Cooldown = 5,
 	Defaults = {Gun = "Black", Rope = "Gray", Bomb = "Cyan"},
 	Attributes = {Gun = "GrappleGunColor", Rope = "GrappleRopeColor", Bomb = "BombColor"},
 	Rarities = {
-		{Name = "Legendary", Chance = 0.001, Refund = 100, Color = Color3.fromRGB(255, 185, 49)},
-		{Name = "Epic", Chance = 0.01, Refund = 75, Color = Color3.fromRGB(179, 110, 255)},
-		{Name = "Rare", Chance = 0.10, Refund = 50, Color = Color3.fromRGB(78, 157, 255)},
-		{Name = "Uncommon", Chance = 0.35, Refund = 25, Color = Color3.fromRGB(71, 203, 142)},
-		{Name = "Common", Chance = 1, Refund = 10, Color = Color3.fromRGB(152, 169, 190)},
+		{Name = "Legendary", Chance = 0.005, Color = Color3.fromRGB(255, 185, 49)},
+		{Name = "Epic", Chance = 0.01, Color = Color3.fromRGB(179, 110, 255)},
+		{Name = "Rare", Chance = 0.10, Color = Color3.fromRGB(78, 157, 255)},
+		{Name = "Uncommon", Chance = 0.35, Color = Color3.fromRGB(71, 203, 142)},
+		{Name = "Common", Chance = 1, Color = Color3.fromRGB(152, 169, 190)},
 	},
 	Items = {}, ById = {}, Pools = {},
 }
@@ -55,18 +56,33 @@ table.sort(Catalog.Items, function(a, b)
 	return a.Kind < b.Kind
 end)
 
-function Catalog.Owns(player, kind, name)
-	if kind == "Bomb" and name == "Banana" then return player:GetAttribute("Admin") == true end
-	local item = Catalog.ById[tostring(kind) .. "_" .. tostring(name)]
-	return item ~= nil and (item.Starter or player:GetAttribute("Owned_" .. item.Id) == true)
+-- Legacy boolean ownership represents one copy. Keep the Owned_ attribute name
+-- so existing saves and clients migrate without losing any unlocks.
+function Catalog.Quantity(value)
+	if value == true then return 1 end
+	if type(value) ~= "number" or value ~= value or value == math.huge then return 0 end
+	return math.max(0, math.floor(value))
 end
 
-function Catalog.Count(player)
-	local count = 0
+function Catalog.Copies(player, kind, name)
+	if kind == "Bomb" and name == "Banana" then return player:GetAttribute("Admin") == true and 1 or 0 end
+	local item = Catalog.ById[tostring(kind) .. "_" .. tostring(name)]
+	if not item then return 0 end
+	return item.Starter and 1 or Catalog.Quantity(player:GetAttribute("Owned_" .. item.Id))
+end
+
+function Catalog.Owns(player, kind, name)
+	return Catalog.Copies(player, kind, name) > 0
+end
+
+function Catalog.Count(player, kind)
+	local count, total = 0, 0
 	for _, item in ipairs(Catalog.Items) do
+		if kind and kind ~= "All" and item.Kind ~= kind then continue end
+		total += 1
 		if Catalog.Owns(player, item.Kind, item.Name) then count += 1 end
 	end
-	return count, #Catalog.Items
+	return count, total
 end
 
 function Catalog.Rarity(name)

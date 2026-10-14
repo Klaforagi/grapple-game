@@ -2,6 +2,7 @@ return function(source, cosmeticCatalog, cosmeticTransaction)
 	local now, saved, heartbeat, leaving, shutdown = 0, nil, nil, nil, nil
 	local player = {Name = "CoinTester", UserId = 77, attributes = {}}
 	function player:SetAttribute(key, value) self.attributes[key] = value end
+	function player:GetAttribute(key) return self.attributes[key] end
 	local players = {PlayerAdded = {Connect = function() end},
 		PlayerRemoving = {Connect = function(_, fn) leaving = fn end}}
 	function players:GetPlayers() return {player} end
@@ -12,7 +13,9 @@ return function(source, cosmeticCatalog, cosmeticTransaction)
 	local failAfterCommit = false
 	function store:GetAsync() return saved end
 	function store:UpdateAsync(_, transform)
-		saved = transform(saved)
+		local updated = transform(saved)
+		if updated == nil then return nil end
+		saved = updated
 		if failAfterCommit then failAfterCommit = false error("response lost after commit") end
 		return saved
 	end
@@ -124,15 +127,46 @@ return function(source, cosmeticCatalog, cosmeticTransaction)
 	assert(first.ok and not first.duplicate and saved.coins == 401 and saved.earned == 1)
 	assert(player.attributes["Owned_" .. first.itemId] and saved.cosmetics[first.itemId], "unlock was not published/saved")
 	local second = roll.OnInvoke(player)
-	assert(second.ok and second.duplicate and second.refund == 10 and saved.coins == 311)
+	assert(second.ok and second.duplicate and second.copies == 2 and saved.coins == 301)
 	failAfterCommit = true
 	local failed = roll.OnInvoke(player)
-	assert(not failed.ok and saved.coins == 221, "ambiguous write did not commit")
+	assert(not failed.ok and saved.coins == 201, "ambiguous write did not commit")
 	local recovered = roll.OnInvoke(player)
-	assert(recovered.ok and saved.coins == 221 and player.attributes.Coins == 221, "retry charged twice or left stale balance")
+	assert(recovered.ok and saved.coins == 201 and player.attributes.Coins == 201, "retry charged twice or left stale balance")
+	assert(recovered.copies == 3 and saved.cosmetics[first.itemId] == 3, "retry added an extra copy")
 	leaving(player)
 	player.attributes = {}
 	boot()
 	assert(player.attributes["Owned_" .. first.itemId] and player.attributes.CollectionLoaded, "rejoin lost collection")
-	assert(player.attributes.Coins == 221, "rejoin lost roll balance")
+	assert(player.attributes.Coins == 201, "rejoin lost roll balance")
+	assert(player.attributes["Owned_" .. first.itemId] == 3, "rejoin lost stack quantity")
+	-- Previously saved true values still publish as one copy.
+	saved.cosmetics.Gun_Rainbow = true
+	leaving(player)
+	player.attributes = {}
+	boot()
+	assert(player.attributes.Owned_Gun_Rainbow == 1, "legacy ownership did not load as one copy")
+	local sale
+	for _, object in ipairs(made) do if object.Name == "SellCosmetic" then sale = object end end
+	player:SetAttribute("GrappleGunColor", "Rainbow")
+	local sold = sale.OnInvoke(player, "Gun_Rainbow", "sale-1")
+	assert(sold.ok and sold.price == 500 and saved.coins == 701 and saved.earned == 1)
+	assert(player.attributes.Owned_Gun_Rainbow == 0 and player.attributes.GrappleGunColor == "Black", "last copy did not fall back to starter")
+	assert(sale.OnInvoke(player, "Gun_Rainbow", "sale-1").ok and saved.coins == 701, "sale retry duplicated credit")
+	assert(not sale.OnInvoke(player, "Gun_Rainbow", "sale-2").ok and saved.coins == 701, "oversold")
+	assert(not sale.OnInvoke(player, "Gun_Black", "sale-3").ok and saved.coins == 701, "sold default")
+	local item = cosmeticCatalog.ById[first.itemId]
+	player:SetAttribute(cosmeticCatalog.Attributes[item.Kind], item.Name)
+	assert(sale.OnInvoke(player, item.Id, "sale-4").ok and saved.coins == 711)
+	assert(player.attributes["Owned_" .. item.Id] == 2 and player:GetAttribute(cosmeticCatalog.Attributes[item.Kind]) == item.Name,
+		"selling a spare changed equipped skin")
+	failAfterCommit = true
+	assert(not sale.OnInvoke(player, item.Id, "sale-5").ok and saved.coins == 721)
+	assert(sale.OnInvoke(player, item.Id, "sale-5").ok and saved.coins == 721 and saved.cosmetics[item.Id] == 1,
+		"ambiguous sale retry paid twice")
+	assert(sale.OnInvoke(player, item.Id, "sale-6").ok and saved.coins == 731 and saved.cosmetics[item.Id] == 0)
+	leaving(player)
+	player.attributes = {}
+	boot()
+	assert(player.attributes.Coins == 731 and player.attributes["Owned_" .. item.Id] == 0, "rejoin restored sold copies or lost proceeds")
 end
