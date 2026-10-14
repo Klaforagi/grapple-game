@@ -134,6 +134,9 @@ return {
 	waterPlungeMinDepth = 6, -- Studs under the surface on the shortest plunge
 	waterPlungeMaxDepth = 16, -- Cap so a huge fall does not drill to the bottom
 	waterPlungeFullDistance = 120, -- Drop that reaches the depth cap
+	mapCoinCap = 15, -- Grass pickups in the world at once
+	mapCoinRespawn = 180, -- Seconds after a pickup before its replacement appears
+	mapCoinReach = 48, -- How far a lagged runner can still be and still collect
 
 
 	--[[

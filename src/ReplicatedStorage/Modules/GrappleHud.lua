@@ -215,6 +215,7 @@ function M.Init()
 		Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
 	})
 	local coinAmount = label(coins, "0", UDim2.fromOffset(62, 0), UDim2.fromOffset(106, 56))
+	coinAmount.Name = "Amount"
 	styleReelLabel(coinAmount)
 	coinAmount.TextSize = 18
 	local function updateCoins()

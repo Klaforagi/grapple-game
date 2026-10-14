@@ -3,6 +3,7 @@
 return function(sources)
 	assert(loadstring(sources.mobileFlopTests))()(sources.mobileFlopButton)
 	assert(loadstring(sources.coinTests))()(sources.coins)
+	assert(loadstring(sources.mapCoinTests))()(sources.mapCoins)
 	assert(loadstring(sources.upgradeTests))()(sources.upgradeServer, sources.upgrades)
 	assert(loadstring(sources.playedTimeTests))()(sources.playedTime, sources.playedTimeClient)
 	assert(loadstring(sources.killsBoardTests))()(sources.killsServer, sources.killsBoardClient)
