@@ -137,6 +137,7 @@ return {
 	mapCoinCap = 15, -- Grass pickups in the world at once
 	mapCoinRespawn = 180, -- Seconds after a pickup before its replacement appears
 	mapCoinReach = 48, -- How far a lagged runner can still be and still collect
+	mapCoinZoneCap = 4, -- Max coins in each XZ quadrant around 0, 0
 
 
 	--[[

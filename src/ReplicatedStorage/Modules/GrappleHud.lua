@@ -9,7 +9,6 @@ local CAS = game:GetService("ContextActionService")
 local RunService = game:GetService("RunService")
 local Config = require(storage:WaitForChild("GrappleConfig"))
 local Assets = require(storage:WaitForChild("Assets"))
-local Palettes = require(storage:WaitForChild("ItemColors"))
 local ShopUi = require(script.Parent:WaitForChild("ShopUi"))
 local UpgradeUi = require(script.Parent:WaitForChild("UpgradeUi"))
 local AdminUi = require(script.Parent:WaitForChild("AdminUi"))
@@ -177,8 +176,7 @@ function M.Init()
 	local wallButton = button(wallControls, "OFF", UDim2.fromOffset(0, 0), UDim2.fromOffset(78, 36), toggleWallMode)
 	wallButton.Font, wallButton.TextSize = Enum.Font.GothamBold, 14
 	make("UIStroke", wallButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
-	local palette = Palettes.Order
-	local inventoryOpen, inventoryTab = false, "Gun"
+	local inventoryOpen = false
 	-- SHOP through the coin total. On a phone this stack is scaled to stay above the hotbar.
 	local leftStack = make("Frame", screen, {
 		Name = "LeftStack", AnchorPoint = Vector2.new(0, 0), Position = UDim2.new(0, 18, 0.5, -94),
@@ -241,48 +239,7 @@ function M.Init()
 		hint.TextSize, hint.TextXAlignment = 13, Enum.TextXAlignment.Center
 		styleReelLabel(hint)
 	end
-	local inventory = make("Frame", leftStack, {Name = "GrappleInventory", Position = UDim2.fromOffset(54, 22), Size = UDim2.fromOffset(184, 208), BackgroundColor3 = Color3.fromRGB(39, 51, 65), Visible = false})
-	rounded(inventory)
-	make("UIStroke", inventory, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
-	local gunTab = button(inventory, "Gun", UDim2.fromOffset(10, 10), UDim2.fromOffset(52, 28))
-	local ropeTab = button(inventory, "Rope", UDim2.fromOffset(66, 10), UDim2.fromOffset(52, 28))
-	local bombTab = button(inventory, "Bomb", UDim2.fromOffset(122, 10), UDim2.fromOffset(52, 28))
-	local colorButtons = {}
-	for index, entry in ipairs(palette) do
-		local colorName, color = entry, Palettes.Swatches.Gun[entry]
-		local column, row = (index - 1) % 4, math.floor((index - 1) / 4)
-		local swatch = button(inventory, colorName, UDim2.fromOffset(10 + column * 42, 48 + row * 48), UDim2.fromOffset(36, 42), function()
-			local selected = inventoryTab == "Bomb" and (colorName == "Gray" and "Banana" or colorName == "Teal" and "Mint") or colorName
-			Remotes.SetGrappleColor:FireServer(inventoryTab, selected)
-		end)
-		swatch.BackgroundColor3, swatch.TextColor3, swatch.TextSize = color, Color3.fromRGB(27, 42, 53), 8
-		if colorName == "Gold" then
-			swatch.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-			make("UIGradient", swatch, {Color = ColorSequence.new({
-				ColorSequenceKeypoint.new(0, Palettes.GoldStops[1]),
-				ColorSequenceKeypoint.new(0.33, Palettes.GoldStops[2]),
-				ColorSequenceKeypoint.new(0.66, Palettes.GoldStops[3]),
-				ColorSequenceKeypoint.new(1, Palettes.GoldStops[4]),
-			})})
-		end
-		make("UIStroke", swatch, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
-		table.insert(colorButtons, swatch)
-	end
-	gunTab.Activated:Connect(function() inventoryTab = "Gun" end)
-	local rainbowButton = button(inventory, "Rainbow", UDim2.fromOffset(10, 198), UDim2.fromOffset(164, 30), function()
-		Remotes.SetGrappleColor:FireServer(inventoryTab, "Rainbow")
-	end)
-	rainbowButton.Visible = false
-	rainbowButton.Font = Enum.Font.GothamBold
-	rainbowButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	local rainbowPoints = {}
-	for index = 0, 16 do
-		rainbowPoints[index + 1] = ColorSequenceKeypoint.new(index / 16, Palettes.RainbowAt(index / 16))
-	end
-	make("UIGradient", rainbowButton, {Color = ColorSequence.new(rainbowPoints)})
-	make("UIStroke", rainbowButton, {Color = Color3.fromRGB(27, 42, 53), Thickness = 1})
-	ropeTab.Activated:Connect(function() inventoryTab = "Rope" end)
-	bombTab.Activated:Connect(function() inventoryTab = "Bomb" end)
+	local inventory = require(script.Parent:WaitForChild("CollectionUi")).CreateInventory(leftStack, Remotes.SetGrappleColor)
 	local function hold(b, direction)
 		b.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -575,82 +532,7 @@ function M.Init()
 	codexTitle.Font, codexTitle.TextSize = Enum.Font.GothamBold, 20
 	local closeCodex = button(codexWindow, "X", UDim2.new(1, -44, 0, 9), UDim2.fromOffset(32, 30))
 	closeCodex.Font = Enum.Font.GothamBold
-	local codexScroll = make("ScrollingFrame", codexWindow, {
-		Name = "Items", Position = UDim2.fromOffset(12, 48), Size = UDim2.new(1, -24, 1, -60),
-		BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 4,
-		CanvasSize = UDim2.fromOffset(0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		ScrollingDirection = Enum.ScrollingDirection.Y,
-	})
-	make("UIPadding", codexScroll, {PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 8)})
-	make("UIListLayout", codexScroll, {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder})
-	-- Everyone owns the full catalog until a per-player unlock list exists.
-	local function ownsCodexItem(kind, name)
-		return type(kind) == "string" and type(name) == "string"
-	end
-	local function codexItems(kind)
-		local items = {}
-		for _, name in ipairs(palette) do
-			local display = name
-			if kind == "Bomb" and name == "Gray" then display = "Banana"
-			elseif kind == "Bomb" and name == "Teal" then display = "Mint" end
-			local color = Palettes.Swatches[kind][display]
-			if Palettes[kind][display] and color then
-				items[#items + 1] = {name = display, color = color, gold = display == "Gold"}
-			end
-		end
-		items[#items + 1] = {name = "Rainbow", rainbow = true}
-		return items
-	end
-	local function paintSwatch(swatch, item)
-		swatch.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-		if item.rainbow then
-			local points = {}
-			for index = 0, 8 do
-				points[index + 1] = ColorSequenceKeypoint.new(index / 8, Palettes.RainbowAt(index / 8))
-			end
-			make("UIGradient", swatch, {Color = ColorSequence.new(points)})
-		elseif item.gold then
-			make("UIGradient", swatch, {Color = ColorSequence.new({
-				ColorSequenceKeypoint.new(0, Palettes.GoldStops[1]),
-				ColorSequenceKeypoint.new(0.33, Palettes.GoldStops[2]),
-				ColorSequenceKeypoint.new(0.66, Palettes.GoldStops[3]),
-				ColorSequenceKeypoint.new(1, Palettes.GoldStops[4]),
-			})})
-		else
-			swatch.BackgroundColor3 = item.color
-		end
-	end
-	local rowOrder = 0
-	for _, group in ipairs({{"Gun", "Gun"}, {"Rope", "Rope"}, {"Bomb", "Bomb"}}) do
-		rowOrder += 1
-		local header = label(codexScroll, group[1], UDim2.fromOffset(4, 0), UDim2.new(1, -12, 0, 22))
-		header.Font, header.TextSize = Enum.Font.GothamBold, 14
-		header.LayoutOrder = rowOrder
-		for _, item in ipairs(codexItems(group[2])) do
-			rowOrder += 1
-			local owned = ownsCodexItem(group[2], item.name)
-			local row = make("Frame", codexScroll, {
-				Name = item.name, BackgroundTransparency = 1, BorderSizePixel = 0,
-				Size = UDim2.new(1, -8, 0, 34), LayoutOrder = rowOrder,
-			})
-			local swatch = make("Frame", row, {
-				BorderSizePixel = 0, AnchorPoint = Vector2.new(0, 0.5),
-				Position = UDim2.new(0, 4, 0.5, 0), Size = UDim2.fromOffset(22, 22),
-			})
-			make("UICorner", swatch, {CornerRadius = UDim.new(0, 6)})
-			make("UIStroke", swatch, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
-			paintSwatch(swatch, item)
-			local nameLabel = label(row, item.name, UDim2.fromOffset(34, 0), UDim2.new(1, -112, 1, 0))
-			nameLabel.Font, nameLabel.TextSize = Enum.Font.GothamBold, 15
-			nameLabel.TextYAlignment = Enum.TextYAlignment.Center
-			if not owned then nameLabel.TextTransparency = 0.45 end
-			local status = label(row, owned and "Owned" or "Locked", UDim2.new(1, -78, 0, 0), UDim2.fromOffset(70, 34))
-			status.Font, status.TextSize = Enum.Font.GothamMedium, 14
-			status.TextXAlignment = Enum.TextXAlignment.Right
-			status.TextYAlignment = Enum.TextYAlignment.Center
-			status.TextColor3 = owned and Color3.fromRGB(72, 165, 92) or Color3.fromRGB(150, 160, 170)
-		end
-	end
+	require(script.Parent:WaitForChild("CollectionUi")).PopulateCodex(codexWindow)
 	local function showCodex(visible)
 		codexOpen = visible
 		codexWindow.Visible = visible
@@ -1047,22 +929,6 @@ function M.Init()
 		inventoryButton.Visible = player.Character ~= nil
 		ragdollButton.Visible = player.Character ~= nil
 		inventory.Visible = player.Character ~= nil and inventoryOpen
-		rainbowButton.Visible = true
-		for index, swatch in ipairs(colorButtons) do
-			local name = palette[index]
-			if inventoryTab == "Bomb" and name == "Gray" then name = "Banana" end
-			swatch.Text = inventoryTab == "Bomb" and name == "Teal" and "Mint" or name
-			swatch.Visible = Palettes[inventoryTab][name] ~= nil
-			if swatch.Visible then
-				swatch.BackgroundColor3 = name == "Gold" and inventoryTab ~= "Bomb" and Color3.fromRGB(255, 255, 255)
-					or Palettes.Swatches[inventoryTab][name]
-			end
-		end
-		rainbowButton.Position = UDim2.fromOffset(10, inventoryTab == "Bomb" and 198 or 246)
-		inventory.Size = UDim2.fromOffset(184, inventoryTab == "Bomb" and 238 or 286)
-		gunTab.BackgroundColor3 = inventoryTab == "Gun" and Color3.fromRGB(72, 165, 92) or Color3.fromRGB(178, 70, 70)
-		ropeTab.BackgroundColor3 = inventoryTab == "Rope" and Color3.fromRGB(72, 165, 92) or Color3.fromRGB(178, 70, 70)
-		bombTab.BackgroundColor3 = inventoryTab == "Bomb" and Color3.fromRGB(72, 165, 92) or Color3.fromRGB(178, 70, 70)
 		local wallMode = equipped and equipped:GetAttribute("WallMode") == true
 		wallButton.Text = wallMode and "ON" or "OFF"
 		wallButton.BackgroundColor3 = wallMode and Color3.fromRGB(72, 165, 92) or Color3.fromRGB(178, 70, 70)

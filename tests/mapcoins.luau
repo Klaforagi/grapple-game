@@ -4,6 +4,7 @@ return function(source)
 	local guid = 0
 	local blocked = true
 	local cover = false
+	local useOrigin = false
 	local heartbeats = {}
 	local remoteFn
 	local fired = {}
@@ -21,8 +22,14 @@ return function(source)
 	local function cframe(position)
 		return setmetatable({Position = position or vec()}, cfMT)
 	end
+	local zoneSpots = {vec(32, 40, 32), vec(32, 40, 16), vec(16, 40, 32), vec(16, 40, 16)}
+	local zoneAt = 0
 	local grass = {Name = "Grass", Size = vec(80, 2, 80), Material = "Grass",
-		CFrame = {PointToWorldSpace = function(_, point) return point end}}
+		CFrame = {PointToWorldSpace = function(_, point)
+			if not useOrigin then return point end
+			zoneAt += 1
+			return zoneSpots[((zoneAt - 1) % #zoneSpots) + 1]
+		end}}
 	function grass:IsA(class) return class == "BasePart" end
 	function grass:IsDescendantOf() return false end
 	local leaves = {Name = "Leaves", Material = "Grass", Size = vec(8, 6, 8), Parent = true}
@@ -108,7 +115,11 @@ return function(source)
 	local workspace = {
 		GetDescendants = function() return {grass, leaves} end,
 		FindFirstChild = function() return nil end,
-		Raycast = function() return {Position = vec(10, 1, 8), Normal = vec(0, 1, 0), Instance = grass} end,
+		Raycast = function(_, origin)
+			local spot = vec(10, 1, 8)
+			if useOrigin and origin then spot = vec(origin.X, 1, origin.Z) end
+			return {Position = spot, Normal = vec(0, 1, 0), Instance = grass}
+		end,
 		GetPartBoundsInBox = function() return blocked and {tree} or {} end,
 	}
 	local root = {Position = vec(0, 80, 0)}
@@ -220,4 +231,12 @@ return function(source)
 	now += 5
 	beat()
 	assert(coins() == 1, "open grass stayed empty after the leaves moved")
+	root.Position = vec(0, 80, 0)
+	useOrigin = true
+	now += 5
+	beat()
+	assert(coins() == 4, "one quadrant did not stop at 4 coins=" .. coins())
+	now += 5
+	beat()
+	assert(coins() == 4, "a fifth coin spawned in a full quadrant")
 end

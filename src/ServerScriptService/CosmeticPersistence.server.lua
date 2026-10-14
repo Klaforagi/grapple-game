@@ -3,6 +3,9 @@ local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = require(ReplicatedStorage.Modules:WaitForChild("GrappleRemotes"))
+local Catalog = require(ReplicatedStorage.Modules:WaitForChild("CosmeticCatalog"))
+local AdminList = require(script.Parent:WaitForChild("AdminList"))
+local loaded, saving = {}, {}
 
 local store = DataStoreService:GetDataStore("GrappleCosmetics_v1")
 local colorKeys = {"GrappleGunColor", "GrappleRopeColor", "BombColor"}
@@ -27,12 +30,23 @@ local function validSetting(key, value)
 end
 
 local function load(player)
-	local ok, data = pcall(function() return store:GetAsync("player_" .. player.UserId) end)
+	for kind, name in pairs(Catalog.Defaults) do player:SetAttribute(Catalog.Attributes[kind], name) end
+	player:SetAttribute("Admin", AdminList.IsAdmin(player.UserId))
+	local ok, data
+	repeat
+		ok, data = pcall(function() return store:GetAsync("player_" .. player.UserId) end)
+		if not ok then task.wait(10) end
+	until ok or player.Parent ~= Players
+	if player.Parent ~= Players then return end
+	while player.Parent == Players and player:GetAttribute("CollectionLoaded") ~= true do task.wait(0.1) end
+	if player.Parent ~= Players then return end
 	if ok and type(data) == "table" then
 		if data.BombColor == "Teal" then data.BombColor = "Mint" end
-		for _, key in ipairs(colorKeys) do
+		for kind, key in pairs(Catalog.Attributes) do
 			if key == "BombColor" and data[key] == "Lime" then data[key] = "Green" end
-			if type(data[key]) == "string" then player:SetAttribute(key, data[key]) end
+			if type(data[key]) == "string" and Catalog.Owns(player, kind, data[key]) then
+				player:SetAttribute(key, data[key])
+			end
 		end
 		for key, default in pairs(settingDefaults) do
 			local value = data[key]
@@ -46,9 +60,13 @@ local function load(player)
 		if player:GetAttribute(key) == nil then player:SetAttribute(key, default) end
 	end
 	player:SetAttribute("SettingsLoaded", true)
+	loaded[player] = true
 end
 
 local function save(player)
+	while saving[player] do task.wait() end
+	if not loaded[player] then return end
+	saving[player] = true
 	local data = {}
 	for _, key in ipairs(colorKeys) do data[key] = player:GetAttribute(key) end
 	for key, default in pairs(settingDefaults) do
@@ -56,8 +74,15 @@ local function save(player)
 		if not validSetting(key, value) then value = default end
 		data[key] = value
 	end
-	local ok = pcall(function() store:SetAsync("player_" .. player.UserId, data) end)
+	local ok = pcall(function()
+		store:UpdateAsync("player_" .. player.UserId, function(previous)
+			local record = type(previous) == "table" and previous or {}
+			for key, value in pairs(data) do record[key] = value end
+			return record
+		end)
+	end)
 	if not ok then warn("[PlayerSettings] Could not save " .. player.Name) end
+	saving[player] = nil
 end
 
 Remotes.SetPlayerSetting.OnServerEvent:Connect(function(player, key, value)
@@ -66,8 +91,14 @@ Remotes.SetPlayerSetting.OnServerEvent:Connect(function(player, key, value)
 end)
 
 Players.PlayerAdded:Connect(function(player) task.spawn(load, player) end)
-Players.PlayerRemoving:Connect(save)
+Players.PlayerRemoving:Connect(function(player) save(player) loaded[player] = nil end)
 for _, player in ipairs(Players:GetPlayers()) do task.spawn(load, player) end
 game:BindToClose(function()
 	for _, player in ipairs(Players:GetPlayers()) do save(player) end
+end)
+task.spawn(function()
+	while true do
+		task.wait(60)
+		for _, player in ipairs(Players:GetPlayers()) do task.spawn(save, player) end
+	end
 end)

@@ -11,6 +11,7 @@ local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage:WaitForChild("GrappleConfig"))
 local MAX_COINS = Config.mapCoinCap or 100
 local RESPAWN_SECONDS = Config.mapCoinRespawn or 300
+local ZONE_CAP = Config.mapCoinZoneCap or 4
 local REACH = Config.mapCoinReach or 48
 local REACH_Y = 24
 local CLEAR_PADDING = 6
@@ -246,9 +247,10 @@ local function collect(coin, player)
 		return false
 	end
 	local model = coin.model
+	local zone = coin.quadrant
 	removeCoin(coin)
-	delayed[#delayed + 1] = os.clock() + RESPAWN_SECONDS
-	table.sort(delayed)
+	delayed[#delayed + 1] = {at = os.clock() + RESPAWN_SECONDS, quadrant = zone}
+	table.sort(delayed, function(a, b) return a.at < b.at end)
 	if collectRemote then collectRemote:FireClient(player, model, amount) end
 	return true
 end
@@ -294,20 +296,58 @@ local function place(copy, surface)
 	return Vector3.new(surface.X, placed.Y, surface.Z), boxSize
 end
 
-local function spawnOne()
+local function quadrantOf(position)
+	-- Height is ignored. The cross of X = 0 and Z = 0 splits the map into four zones.
+	local east = position.X >= 0
+	local north = position.Z >= 0
+	if east and north then return 1 end
+	if not east and north then return 2 end
+	if east and not north then return 3 end
+	return 4
+end
+
+local function quadrantCounts()
+	local counts = {0, 0, 0, 0}
+	for _, coin in ipairs(alive) do
+		local index = coin.quadrant
+		if index and counts[index] then counts[index] += 1 end
+	end
+	return counts
+end
+
+local function openQuadrants(prefer)
+	local counts = quadrantCounts()
+	local open = {}
+	for index = 1, 4 do
+		if counts[index] < ZONE_CAP then open[#open + 1] = index end
+	end
+	table.sort(open, function(a, b)
+		if prefer and a ~= b then
+			if a == prefer then return true end
+			if b == prefer then return false end
+		end
+		if counts[a] ~= counts[b] then return counts[a] < counts[b] end
+		return a < b
+	end)
+	return open
+end
+
+local function spawnOne(prefer)
 	if not template then return false end
 	local _, coinSize = measure(template)
-	for _ = 1, ATTEMPTS do
-		local part = pickGrass()
-		local surface = part and surfacePoint(part)
-		if surface and not tooClose(surface) and not blocked(surface, coinSize, part) then
-			local copy = template:Clone()
-			local position = place(copy, surface)
-			copy.Parent = coinsFolder
-			local coin = {model = copy, position = position, claimed = false}
-			alive[#alive + 1] = coin
-			hookTouches(coin, prepare(copy))
-			return true
+	for _, quadrant in ipairs(openQuadrants(prefer)) do
+		for _ = 1, ATTEMPTS do
+			local part = pickGrass()
+			local surface = part and surfacePoint(part)
+			if surface and quadrantOf(surface) == quadrant and not tooClose(surface) and not blocked(surface, coinSize, part) then
+				local copy = template:Clone()
+				local position = place(copy, surface)
+				copy.Parent = coinsFolder
+				local coin = {model = copy, position = position, claimed = false, quadrant = quadrant}
+				alive[#alive + 1] = coin
+				hookTouches(coin, prepare(copy))
+				return true
+			end
 		end
 	end
 	return false
@@ -315,12 +355,18 @@ end
 
 local function canSpawn(now)
 	if #alive >= MAX_COINS then return false end
-	if #delayed > 0 then return delayed[1] <= now end
+	local counts = quadrantCounts()
+	local room = false
+	for index = 1, 4 do
+		if counts[index] < ZONE_CAP then room = true break end
+	end
+	if not room then return false end
+	if #delayed > 0 then return delayed[1].at <= now end
 	return unspawned > 0
 end
 
 local function noteSpawn(now)
-	if #delayed > 0 and delayed[1] <= now then
+	if #delayed > 0 and delayed[1].at <= now then
 		table.remove(delayed, 1)
 	elseif unspawned > 0 then
 		unspawned -= 1
@@ -360,12 +406,14 @@ RunService.Heartbeat:Connect(function()
 	if now < retryAt then return end
 	refreshGrass(now)
 	local spawned = 0
+	local prefer = (#delayed > 0 and delayed[1].at <= now) and delayed[1].quadrant or nil
 	while spawned < SPAWNS_PER_STEP and canSpawn(now) do
-		if not spawnOne() then
+		if not spawnOne(prefer) then
 			retryAt = now + RETRY_SECONDS
 			break
 		end
 		noteSpawn(now)
+		prefer = (#delayed > 0 and delayed[1].at <= now) and delayed[1].quadrant or nil
 		spawned += 1
 	end
 end)

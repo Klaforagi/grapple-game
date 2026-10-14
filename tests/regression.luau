@@ -1,8 +1,14 @@
 -- Runs the real game modules against a small Roblox API mock.
 -- This validates state/cleanup, not the engine's physics solver or GUI rendering.
 return function(sources)
+	do
+		local catalog, transaction = assert(loadstring(sources.cosmeticTests))()(sources)
+		sources.testCosmeticCatalog = catalog
+		assert(loadstring(sources.coinTests))()(sources.coins, catalog, transaction)
+		assert(loadstring(sources.cosmeticRollTests))()(sources.cosmeticRollServer, catalog)
+		assert(loadstring(sources.cosmeticPersistenceTests))()(sources.cosmeticPersistence, catalog)
+	end
 	assert(loadstring(sources.mobileFlopTests))()(sources.mobileFlopButton)
-	assert(loadstring(sources.coinTests))()(sources.coins)
 	assert(loadstring(sources.mapCoinTests))()(sources.mapCoins)
 	assert(loadstring(sources.upgradeTests))()(sources.upgradeServer, sources.upgrades)
 	assert(loadstring(sources.playedTimeTests))()(sources.playedTime, sources.playedTimeClient)
@@ -200,6 +206,7 @@ return function(sources)
 	local toolSetupModule = instance("ModuleScript", "GrappleToolSetup", storage.Modules)
 	instance("ModuleScript", "KillCredit", storage.Modules)
 	instance("ModuleScript", "UpgradeCatalog", storage.Modules)
+	instance("ModuleScript", "CosmeticCatalog", storage.Modules)
 	local world = instance("Workspace")
 	function world:GetServerTimeNow() return now end
 	world.Gravity = 196.2
@@ -245,6 +252,7 @@ return function(sources)
 	local playedSounds = {}
 	local toolSetup
 	env.require = function(module)
+		if module.Name == "CosmeticCatalog" then return sources.testCosmeticCatalog end
 		if module.Name == "ItemColors" then return execute(sources.itemColors) end
 		if module == configModule then return config end
 		if module == remoteModule then return remotes end
@@ -301,6 +309,24 @@ return function(sources)
 	local starterScript = instance("LocalScript", "OldEquipController", starterGun)
 	starterScript.Disabled = false
 	execute(sources.server)
+	do
+		attacker:SetAttribute("CollectionLoaded", true)
+		remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Gun", "Rainbow")
+		assert(attacker:GetAttribute("GrappleGunColor") == nil, "locked color equipped")
+		remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Gun", "Black")
+		assert(attacker:GetAttribute("GrappleGunColor") == "Black", "starter could not equip")
+		attacker:SetAttribute("Owned_Gun_Rainbow", true)
+		remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Gun", "Rainbow")
+		assert(attacker:GetAttribute("GrappleGunColor") == "Rainbow", "owned color could not equip")
+		remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Bomb", "Banana")
+		assert(attacker:GetAttribute("BombColor") == nil, "non-admin equipped banana")
+		attacker:SetAttribute("Admin", true)
+		remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Bomb", "Banana")
+		assert(attacker:GetAttribute("BombColor") == "Banana", "admin lost banana")
+		attacker:SetAttribute("Admin", nil)
+		attacker:SetAttribute("BombColor", nil)
+		attacker:SetAttribute("GrappleGunColor", nil)
+	end
 	assert(starterScript.Disabled and starterGun:GetAttribute("GrappleManagedTool"), "StarterPack gun was not prepared before cloning")
 	assert(not handle.Anchored and not handle.CanCollide and handle.Massless, "gun parts were only prepared after firing")
 	hitParts = {victimRoot}

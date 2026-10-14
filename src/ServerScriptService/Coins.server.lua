@@ -28,6 +28,18 @@ local profiles = {}
 local sessions = {}
 local nextRefresh = 0
 
+local function publishCollection(player, data)
+	local owned = type(data) == "table" and data.cosmetics
+	if type(owned) == "table" then
+		for id, value in pairs(owned) do
+			if type(id) == "string" and #id <= 100 and value == true then
+				player:SetAttribute("Owned_" .. id, true)
+			end
+		end
+	end
+	player:SetAttribute("CollectionLoaded", true)
+end
+
 local function displayName(player)
 	if type(player.DisplayName) == "string" and player.DisplayName ~= "" then
 		return player.DisplayName
@@ -277,6 +289,7 @@ local function joined(player)
 				state.base = held
 				state.lifetime = earned + state.earned
 				state.loaded = true
+				publishCollection(player, data)
 				player:SetAttribute("Coins", state.base + state.earned)
 				publishEarned(player, state.lifetime)
 				queueRank(player.UserId, state.lifetime)
@@ -471,6 +484,54 @@ local refund = Instance.new("BindableFunction")
 refund.Name = "RefundHeldCoins"
 refund.OnInvoke = refundHeld
 refund.Parent = ReplicatedStorage
+
+-- Save the charge, duplicate refund, and unlock in ONE coin record update.
+-- An ambiguous network failure retains the request ID for the next attempt.
+-- The last receipt makes retries idempotent, including UpdateAsync retries.
+local rollCosmetic = Instance.new("BindableFunction")
+rollCosmetic.Name = "RollCosmetic"
+rollCosmetic.OnInvoke = function(player)
+	local state = sessions[player]
+	if not state or not state.loaded then return {ok = false, message = "Your collection is still loading."} end
+	local catalog = require(ReplicatedStorage.Modules:WaitForChild("CosmeticCatalog"))
+	local transaction = require(ReplicatedStorage.Modules:WaitForChild("CosmeticTransaction"))
+	while state.saving do task.wait() end
+	if sessions[player] ~= state then return {ok = false, message = "Please rejoin to roll."} end
+	if state.earned ~= state.saved then
+		save(player, state)
+		if state.earned ~= state.saved then return {ok = false, message = "Coins could not save. Please try again."} end
+	end
+	while state.saving do task.wait() end
+	if sessions[player] ~= state then return {ok = false, message = "Please rejoin to roll."} end
+	state.saving = true
+	if not state.pendingRoll then
+		state.pendingRoll = {id = HttpService:GenerateGUID(false), itemId = catalog.Roll(Random.new()).Id}
+	end
+	local request = state.pendingRoll
+	local ok, data = pcall(function()
+		return store:UpdateAsync("player_" .. player.UserId, function(previous)
+			return transaction.Apply(previous, request, catalog)
+		end)
+	end)
+	local result = {ok = false, message = "Could not confirm the roll. Try again to recover it."}
+	if ok then
+		state.pendingRoll = nil
+		if type(data) == "table" and data.lastCosmeticRoll and data.lastCosmeticRoll.id == request.id then
+			local receipt = data.lastCosmeticRoll
+			state.base = data.coins - state.saved
+			if sessions[player] == state then
+				player:SetAttribute("Coins", state.base + state.earned)
+				publishCollection(player, data)
+			end
+			result = {ok = true, itemId = receipt.itemId, duplicate = receipt.duplicate, refund = receipt.refund}
+		else
+			result = {ok = false, message = "You need 100 coins to roll."}
+		end
+	end
+	state.saving = false
+	return result
+end
+rollCosmetic.Parent = ReplicatedStorage
 
 -- Spending never lowers lifetime coins. An admin reset is a separate write:
 -- it may zero both balances, and it updates the live session so leaving

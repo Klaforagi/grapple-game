@@ -8,6 +8,7 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("GrappleConfig"))
 local Upgrades = require(ReplicatedStorage.Modules:WaitForChild("UpgradeCatalog"))
+local Cosmetics = require(ReplicatedStorage.Modules:WaitForChild("CosmeticCatalog"))
 local Remotes = require(ReplicatedStorage.Modules:WaitForChild("GrappleRemotes"))
 local Ragdoll = require(ReplicatedStorage.Modules:WaitForChild("RagdollService"))
 local ToolSetup = require(ReplicatedStorage.Modules:WaitForChild("GrappleToolSetup"))
@@ -676,6 +677,7 @@ local function setGrappleColor(player, target, colorName)
 	if target == "Bomb" and colorName == "Teal" then colorName = "Mint" end
 	if target == "Bomb" and colorName == "Lime" then colorName = "Green" end
 	if not Palettes[target][colorName] and colorName ~= "Rainbow" then return false end
+	if colorName == "Banana" and player:GetAttribute("Admin") ~= true then return false end
 	if target == "Bomb" then
 		player:SetAttribute("BombColor", colorName)
 		local bomb = findInventoryTool(player, Config.bombToolName)
@@ -696,6 +698,7 @@ local function setGrappleColor(player, target, colorName)
 end
 
 Remotes.SetGrappleColor.OnServerEvent:Connect(function(player, target, colorName)
+	if player:GetAttribute("CollectionLoaded") ~= true or not Cosmetics.Owns(player, target, colorName) then return end
 	setGrappleColor(player, target, colorName)
 end)
 

@@ -2,6 +2,8 @@
 
 Rojo source for the grapple, ragdoll, and HUD systems. Sync this project into your existing Studio place; the gun model and optional sounds remain Studio assets.
 
+Cosmetics now unlock through 100-coin rolls at a `CosmeticRollStation` model containing a `RollZone` part. See [cosmetic rolls setup, rarity pools, refunds, and item expansion](docs/cosmetic-rolls.md). The inventory and codex use saved ownership; Gun / Black, Rope / Gray, and Bomb / Cyan are the three starters.
+
 The equipped tool must match `GrappleConfig.toolName` (default: `Grapple Gun`). Its `FirePoint` attachment is used when present; otherwise one is created at the Handle. `GrappleToolSetup` prepares the gun in StarterPack, Backpack, and the character, including replacement Backpacks after respawn. Gun parts are unanchored, massless, and non-colliding before the first equip. Embedded Scripts/LocalScripts in this tool are disabled: the persistent HUD/tool controller and server handler now own equip/use behavior, preventing an old asset controller from rejecting ragdoll equips. ModuleScripts, existing joints, and the model remain intact. Any custom behavior previously implemented by embedded scripts needs to live in the current controllers. Other tools are unaffected.
 
 Bombs detonate 3.5 seconds after throwing and play `ReplicatedStorage/Sounds/Explode` at the blast position. The held sphere is hidden and disabled until the six-second throw cooldown finishes, including when unequipped. Projectiles permanently ignore the thrower's character, accessories, and equipment for their lifetime (including parts added or reparented after throwing). Other tools and non-colliding effects/camera parts are not sticky surfaces.

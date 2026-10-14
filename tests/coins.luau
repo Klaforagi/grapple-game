@@ -1,4 +1,4 @@
-return function(source)
+return function(source, cosmeticCatalog, cosmeticTransaction)
 	local now, saved, heartbeat, leaving, shutdown = 0, nil, nil, nil, nil
 	local player = {Name = "CoinTester", UserId = 77, attributes = {}}
 	function player:SetAttribute(key, value) self.attributes[key] = value end
@@ -9,9 +9,11 @@ return function(source)
 		if id == player.UserId then return player end
 	end
 	local store = {}
+	local failAfterCommit = false
 	function store:GetAsync() return saved end
 	function store:UpdateAsync(_, transform)
 		saved = transform(saved)
+		if failAfterCommit then failAfterCommit = false error("response lost after commit") end
 		return saved
 	end
 	local session = 0
@@ -34,6 +36,12 @@ return function(source)
 		RunService = {Heartbeat = {Connect = function(_, fn) heartbeat = fn end}},
 	}
 	local env = setmetatable({
+		require = function(name)
+			if name == "CosmeticCatalog" then return cosmeticCatalog end
+			if name == "CosmeticTransaction" then return cosmeticTransaction end
+			error("unexpected module " .. tostring(name))
+		end,
+		Random = {new = function() return {NextNumber = function() return 0.9 end, NextInteger = function(_, first) return first end} end},
 		game = {GetService = function(_, name) return services[name] end,
 			BindToClose = function(_, fn) shutdown = fn end},
 		Instance = {new = function()
@@ -44,6 +52,7 @@ return function(source)
 		os = {clock = function() return now end, time = function() return 1000 + now end},
 		task = {spawn = function(fn, ...) fn(...) end, wait = function() error("unexpected retry") end},
 	}, {__index = getfenv()})
+	services.ReplicatedStorage.Modules = {WaitForChild = function(_, name) return name end}
 	local function boot()
 		local fn = assert(loadstring(source))
 		setfenv(fn, env)
@@ -108,4 +117,22 @@ return function(source)
 	now = 300
 	heartbeat()
 	assert(player.attributes.Coins == 1 and saved.coins == 1 and saved.earned == 1, "minute after a reset restored the old total")
+	assert(admin.OnInvoke("grant", 77, 500))
+	local roll
+	for _, object in ipairs(made) do if object.Name == "RollCosmetic" then roll = object end end
+	local first = roll.OnInvoke(player)
+	assert(first.ok and not first.duplicate and saved.coins == 401 and saved.earned == 1)
+	assert(player.attributes["Owned_" .. first.itemId] and saved.cosmetics[first.itemId], "unlock was not published/saved")
+	local second = roll.OnInvoke(player)
+	assert(second.ok and second.duplicate and second.refund == 10 and saved.coins == 311)
+	failAfterCommit = true
+	local failed = roll.OnInvoke(player)
+	assert(not failed.ok and saved.coins == 221, "ambiguous write did not commit")
+	local recovered = roll.OnInvoke(player)
+	assert(recovered.ok and saved.coins == 221 and player.attributes.Coins == 221, "retry charged twice or left stale balance")
+	leaving(player)
+	player.attributes = {}
+	boot()
+	assert(player.attributes["Owned_" .. first.itemId] and player.attributes.CollectionLoaded, "rejoin lost collection")
+	assert(player.attributes.Coins == 221, "rejoin lost roll balance")
 end
