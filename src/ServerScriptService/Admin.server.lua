@@ -9,7 +9,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local AdminList = require(script.Parent:WaitForChild("AdminList"))
 
-local COLOR_KEYS = {Gun = "GrappleGunColor", Rope = "GrappleRopeColor", Bomb = "BombColor"}
 local RESETS = {coins = "AdminCoins", kills = "AdminKills", time = "AdminPlayedTime", upgrades = "AdminUpgrades"}
 
 local stores = {}
@@ -144,7 +143,7 @@ local function normalizeColor(target, colorName)
 	if target ~= "Gun" and target ~= "Rope" and target ~= "Bomb" then return nil end
 	colorName = trim(colorName)
 	if colorName == "" then return nil end
-	if target == "Bomb" and colorName == "Teal" then colorName = "Mint" end
+	if colorName == "Teal" then colorName = "Mint" end
 	if target == "Bomb" and colorName == "Lime" then colorName = "Green" end
 	local colors = colorPalettes()
 	if colorName ~= "Rainbow" and (type(colors[target]) ~= "table" or colors[target][colorName] == nil) then
@@ -327,33 +326,14 @@ local function setColor(admin, query, target, colorName)
 	if not normalized then return reply(admin, false, "color", "That color is not in the palette.") end
 	local userId, nameOrError = resolveUser(query)
 	if not userId then return reply(admin, false, "color", nameOrError) end
-	local player = Players:GetPlayerByUserId(userId)
-	if player then
-		local started = os.clock()
-		while player.Parent == Players and player:GetAttribute("SettingsLoaded") ~= true and os.clock() - started < 20 do
-			task.wait(0.1)
-		end
-		if player:GetAttribute("SettingsLoaded") ~= true then
-			return reply(admin, false, "color", "Their settings are still loading.")
-		end
-		if invoke("AdminSetGrappleColor", userId, target, normalized) ~= true then
-			return reply(admin, false, "color", "Could not set that color.")
-		end
-	else
-		local dataStore = storeNamed("GrappleCosmetics_v1")
-		if not dataStore then return reply(admin, false, "color", "Could not save that color.") end
-		local key = COLOR_KEYS[target]
-		local ok = pcall(function()
-			dataStore:UpdateAsync("player_" .. userId, function(previous)
-				local record = type(previous) == "table" and previous or {}
-				record[key] = normalized
-				return record
-			end)
-		end)
-		if not ok then return reply(admin, false, "color", "Could not save that color.") end
+	local catalog = require(ReplicatedStorage.Modules:WaitForChild("CosmeticCatalog"))
+	local item = catalog.ById[target .. "_" .. normalized]
+	if not item or item.Starter then return reply(admin, false, "color", "That cosmetic cannot be granted.") end
+	if invoke("AdminCosmetics", "grant", userId, item.Id) ~= true then
+		return reply(admin, false, "color", "Could not add that cosmetic to their inventory.")
 	end
 	local who = nameOrError or tostring(userId)
-	reply(admin, true, "color", "Set " .. string.lower(target) .. " color to " .. normalized .. " for " .. who .. ".")
+	reply(admin, true, "color", "Added " .. normalized .. " " .. string.lower(target) .. " to " .. who .. "'s inventory.")
 end
 
 local function setBan(admin, query, reason, banned)

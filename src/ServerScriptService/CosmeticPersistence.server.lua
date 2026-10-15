@@ -43,6 +43,8 @@ local function load(player)
 	if player.Parent ~= Players then return end
 	if ok and type(data) == "table" then
 		if data.BombColor == "Teal" then data.BombColor = "Mint" end
+		if data.GrappleGunColor == "Teal" then data.GrappleGunColor = "Mint" end
+		if data.GrappleRopeColor == "Teal" then data.GrappleRopeColor = "Mint" end
 		for kind, key in pairs(Catalog.Attributes) do
 			if key == "BombColor" and data[key] == "Lime" then data[key] = "Green" end
 			if type(data[key]) == "string" and Catalog.Owns(player, kind, data[key]) then

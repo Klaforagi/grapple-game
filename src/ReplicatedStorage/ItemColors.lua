@@ -23,7 +23,7 @@ local function gunRopePalette()
 		Red = Color3.fromRGB(255, 0, 0), Orange = Color3.fromRGB(255, 85, 0), Yellow = Color3.fromRGB(255, 204, 0),
 		Green = Color3.fromRGB(16, 104, 0), Blue = Color3.fromRGB(0, 17, 255), Purple = Color3.fromRGB(97, 17, 167),
 		Pink = Color3.fromRGB(255, 1, 230), White = Color3.fromRGB(255, 255, 255), Black = Color3.fromRGB(0, 0, 0),
-		Gray = Color3.fromRGB(126, 126, 126), Cyan = Color3.fromRGB(0, 233, 254), Teal = Color3.fromRGB(74, 255, 164),
+		Gray = Color3.fromRGB(126, 126, 126), Cyan = Color3.fromRGB(0, 233, 254), Mint = Color3.fromRGB(74, 255, 164),
 		Lime = Color3.fromRGB(47, 255, 0), Brown = Color3.fromRGB(70, 0, 1), Gold = Color3.fromRGB(232, 164, 38),
 	}
 end
@@ -38,7 +38,7 @@ for name, color in pairs(palettes.Swatches.Gun) do
 	if palettes.Swatches.Bomb[name] then palettes.Swatches.Bomb[name] = color end
 end
 palettes.Swatches.Bomb.Mint = palettes.Swatches.Bomb.Teal
-palettes.Order = {"Black", "White", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Cyan", "Teal", "Gray", "Lime", "Brown", "Gold"}
+palettes.Order = {"Black", "White", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Cyan", "Mint", "Gray", "Lime", "Brown", "Gold"}
 -- Four close golds. Gun and rope shift through these the way rainbow shifts hues.
 palettes.GoldStops = {
 	Color3.fromRGB(176, 108, 24),

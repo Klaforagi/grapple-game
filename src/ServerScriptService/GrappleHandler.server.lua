@@ -48,6 +48,8 @@ local WallMode: {[Player]: boolean} = {}
 local escaping: {[Player]: boolean} = {}
 local pendingEscape: {[Player]: boolean} = {}
 local seenEscape: {[string]: boolean} = {}
+local pendingEscapeKills: {[number]: {targetId: number, expiresAt: number}} = {}
+local seenEscapeKills: {[string]: boolean} = {}
 local wallOwnership = {}
 local lastFire: {[Player]: number} = {}
 local cooldownUntil: {[Player]: number} = {}
@@ -675,7 +677,7 @@ local function setGrappleColor(player, target, colorName)
 	if (target ~= "Gun" and target ~= "Rope" and target ~= "Bomb") or typeof(colorName) ~= "string" then
 		return false
 	end
-	if target == "Bomb" and colorName == "Teal" then colorName = "Mint" end
+	if colorName == "Teal" then colorName = "Mint" end
 	if target == "Bomb" and colorName == "Lime" then colorName = "Green" end
 	if not Palettes[target][colorName] and colorName ~= "Rainbow" then return false end
 	if colorName == "Banana" and player:GetAttribute("Admin") ~= true then return false end
@@ -990,6 +992,29 @@ grantEscapeRemote.Name = "GrantEscapeRobux"
 grantEscapeRemote.OnInvoke = grantEscape
 grantEscapeRemote.Parent = ReplicatedStorage
 
+local function grantEscapeKill(userId, purchaseId)
+	if type(userId) ~= "number" or type(purchaseId) ~= "string" or purchaseId == "" then return false end
+	if seenEscapeKills[purchaseId] then return true end
+	local pending = pendingEscapeKills[userId]
+	pendingEscapeKills[userId] = nil
+	seenEscapeKills[purchaseId] = true
+	if not pending or pending.expiresAt < os.clock() then return true end
+	local target = Players:GetPlayerByUserId(pending.targetId)
+	local character = target and target.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid and humanoid.Health > 0 then
+		humanoid:SetAttribute("DeathEscapeKiller", userId)
+		humanoid:SetAttribute("DeathCause", "EscapeKill")
+		humanoid.Health = 0
+	end
+	return true
+end
+
+local grantEscapeKillRemote = Instance.new("BindableFunction")
+grantEscapeKillRemote.Name = "GrantEscapeKillRobux"
+grantEscapeKillRemote.OnInvoke = grantEscapeKill
+grantEscapeKillRemote.Parent = ReplicatedStorage
+
 local function escapeTether(player: Player, method)
 	if not tetherOwner(player) then
 		Remotes.EscapeTether:FireClient(player, false, "gone")
@@ -1005,8 +1030,38 @@ local function escapeTether(player: Player, method)
 		Remotes.EscapeTether:FireClient(player, true, "prompt")
 		return
 	end
+	if method == "kill" then
+		local productId = Config.escapeKillRobuxProductId
+		if type(productId) ~= "number" or productId <= 0 then
+			Remotes.EscapeTether:FireClient(player, false, "unavailable")
+			return
+		end
+		local owner = tetherOwner(player)
+		if not owner then
+			Remotes.EscapeTether:FireClient(player, false, "gone")
+			return
+		end
+		pendingEscapeKills[player.UserId] = {targetId = owner.UserId, expiresAt = os.clock() + 120}
+		Remotes.EscapeTether:FireClient(player, true, "killprompt")
+		return
+	end
 	if escaping[player] then return end
 	escaping[player] = true
+	local useFreeEscape = ReplicatedStorage:FindFirstChild("UseFreeEscape")
+	if useFreeEscape and player:GetAttribute("FreeEscapes") and player:GetAttribute("FreeEscapes") > 0 then
+		local ok, used = pcall(function() return useFreeEscape:Invoke(player) end)
+		if ok and used == true then
+			if tetherOwner(player) then
+				releaseAndShield(player)
+				escaping[player] = nil
+				Remotes.EscapeTether:FireClient(player, true, "free")
+				return
+			end
+			escaping[player] = nil
+			Remotes.EscapeTether:FireClient(player, false, "gone")
+			return
+		end
+	end
 	local cost = math.floor(tonumber(Config.escapeCoinCost) or 30)
 	local spend = ReplicatedStorage:WaitForChild("SpendCoins")
 	local ok, spent = pcall(function()

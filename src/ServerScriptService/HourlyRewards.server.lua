@@ -37,12 +37,15 @@ local function claim(player, index)
 	index = math.floor(index)
 	local tier = Hourly.Tiers[index]
 	if not tier or session.seconds < tier.minutes * 60 or Hourly.Has(session.claimed, index) then return end
-	if not pay(player, session.day, index, tier.coins) then return end
+	-- Keep the tier labels at their base value; only the actual payout and gain
+	-- popup reflect the 2x Coins pass.
+	local amount = tier.coins * (player:GetAttribute("TestPass_2xCoins") == true and 2 or 1)
+	if not pay(player, session.day, index, amount) then return end
 	session.claimed = Hourly.Mark(session.claimed, index)
 	session.dirty = true
 	session.saveAt = 0
 	publish(player, session)
-	if Remotes.CoinGain then Remotes.CoinGain:FireClient(player, tier.coins) end
+	if Remotes.CoinGain then Remotes.CoinGain:FireClient(player, amount) end
 end
 
 local function save(player)

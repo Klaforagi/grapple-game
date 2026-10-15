@@ -16,12 +16,7 @@ local INK = Style.Text
 local MUTED = Style.Muted
 local BUY = Color3.fromRGB(62, 165, 110)
 local IDLE = Style.ButtonColor
-local ACCENTS = {
-	speed = Color3.fromRGB(255, 196, 72),
-	distance = Color3.fromRGB(96, 196, 255),
-	duration = Color3.fromRGB(72, 214, 160),
-	resistance = Color3.fromRGB(255, 140, 120),
-}
+local RANK_COLOR = Style.Accent
 
 local M = {}
 
@@ -129,7 +124,7 @@ function M.Mount(screen, onClose)
 		row.rankLabel.Text = string.format("Rank %d / %d", rank, Catalog.MaxRank)
 		row.current.Text = Catalog.Text(stat, rank)
 		for index, pip in ipairs(row.pips) do
-			pip.BackgroundColor3 = index <= rank and ACCENTS[stat.accent] or Style.Ink
+			pip.BackgroundColor3 = index <= rank and RANK_COLOR or Style.Ink
 		end
 		local afford = loaded and cost ~= nil and coins >= cost and not row.pending
 		row.button.Active = loaded and cost ~= nil and not row.pending
@@ -174,29 +169,24 @@ function M.Mount(screen, onClose)
 			Size = UDim2.new(1, 0, 0, 112), ZIndex = 26,
 		})
 		Style.Surface(card, Style.Slot, 6)
-		local accent = make("Frame", card, {
-			BackgroundColor3 = ACCENTS[stat.accent], BorderSizePixel = 0,
-			Position = UDim2.fromOffset(0, 14), Size = UDim2.fromOffset(4, 84), ZIndex = 27,
-		})
-		corner(accent, 2)
 		local title = strokeText(make("TextLabel", card, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = stat.name,
-			Position = UDim2.fromOffset(18, 10), Size = UDim2.new(1, -168, 0, 24),
-			Font = Enum.Font.GothamBold, TextSize = 20, TextColor3 = INK,
+			Position = UDim2.fromOffset(18, 10), Size = UDim2.new(1, -168, 0, 27),
+			Font = Enum.Font.GothamBold, TextSize = 23, TextColor3 = INK,
 			TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 27,
 		}))
-		local rankLabel = make("TextLabel", card, {
+		local rankLabel = strokeText(make("TextLabel", card, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = "Rank 0 / 10",
-			Position = UDim2.fromOffset(250, 54), Size = UDim2.fromOffset(160, 18),
-			Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Style.Text,
-			TextXAlignment = Enum.TextXAlignment.Left, TextStrokeTransparency = 1, ZIndex = 27,
-		})
-		make("TextLabel", card, {
+			Position = UDim2.fromOffset(250, 76), Size = UDim2.fromOffset(160, 24),
+			Font = Enum.Font.GothamBold, TextSize = 17, TextColor3 = Style.Text,
+			TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 27,
+		}))
+		strokeText(make("TextLabel", card, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = stat.description,
 			Position = UDim2.fromOffset(18, 34), Size = UDim2.new(1, -176, 0, 20),
-			Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Style.Text,
-			TextXAlignment = Enum.TextXAlignment.Left, TextStrokeTransparency = 1, ZIndex = 27,
-		})
+			Font = Enum.Font.GothamBold, TextSize = 18, TextColor3 = Style.Text,
+			TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 27,
+		}))
 		local pips = make("Frame", card, {
 			BackgroundTransparency = 1, BorderSizePixel = 0,
 			Position = UDim2.fromOffset(18, 58), Size = UDim2.fromOffset(220, 12), ZIndex = 27,
@@ -222,18 +212,18 @@ function M.Mount(screen, onClose)
 			FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 8),
 			VerticalAlignment = Enum.VerticalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder,
 		})
-		local current = make("TextLabel", values, {
+		local current = strokeText(make("TextLabel", values, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", LayoutOrder = 1,
 			AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 24),
-			Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = INK,
-			TextStrokeTransparency = 1, ZIndex = 28,
-		})
-		local nextText = make("TextLabel", values, {
+			Font = Enum.Font.GothamBold, TextSize = 18, TextColor3 = INK,
+			ZIndex = 28,
+		}))
+		local nextText = strokeText(make("TextLabel", values, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", LayoutOrder = 2,
 			AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 24),
-			Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Style.Accent,
-			TextStrokeTransparency = 1, ZIndex = 28,
-		})
+			Font = Enum.Font.GothamBold, TextSize = 18, TextColor3 = Style.Accent,
+			ZIndex = 28,
+		}))
 		local buys = make("Frame", card, {
 			Name = "Buys", BackgroundTransparency = 1, BorderSizePixel = 0,
 			AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0),
@@ -260,22 +250,22 @@ function M.Mount(screen, onClose)
 			BackgroundTransparency = 1, Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
 			Size = UDim2.fromOffset(16, 16), LayoutOrder = 1, ZIndex = 28,
 		})
-		local buttonText = make("TextLabel", coinFace, {
+		local buttonText = strokeText(make("TextLabel", coinFace, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", LayoutOrder = 2,
 			AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 34),
-			Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Style.Text,
-			TextStrokeTransparency = 1, ZIndex = 28,
-		})
+			Font = Enum.Font.GothamBold, TextSize = 18, TextColor3 = Style.Text,
+			ZIndex = 28,
+		}))
 		local robux = make("TextButton", buys, {
 			Name = "BuyRobux", Text = "", AutoButtonColor = false, BorderSizePixel = 0,
 			Size = UDim2.fromOffset(128, 34), BackgroundTransparency = 1, LayoutOrder = 2, ZIndex = 27,
 		})
 		Style.Backdrop(robux, BUY, 6)
-		local robuxText = make("TextLabel", robux, {
+		local robuxText = strokeText(make("TextLabel", robux, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = ROBUX .. " " .. tostring(Catalog.RobuxPrice),
-			Size = UDim2.fromScale(1, 1), Font = Enum.Font.GothamBold, TextSize = 16,
-			TextColor3 = Style.Text, TextStrokeTransparency = 1, ZIndex = 28,
-		})
+			Size = UDim2.fromScale(1, 1), Font = Enum.Font.GothamBold, TextSize = 18,
+			TextColor3 = Style.Text, ZIndex = 28,
+		}))
 		local row = {
 			stat = stat, pips = pipFrames, rankLabel = rankLabel, current = current,
 			next = nextText, button = button, buttonText = buttonText, icon = icon,

@@ -300,10 +300,10 @@ function M.Mount(screen, onOpen)
 		end)
 	end
 	local colorName = field(colorPage, "Color", "Red, Gold, Rainbow, Mint", 3)
-	local applyColor = actionButton(colorPage, "Apply", "Give Color", 4, GREEN)
+	local applyColor = actionButton(colorPage, "Apply", "Give Cosmetic", 4, GREEN)
 	make("TextLabel", colorPage, {
 		BackgroundTransparency = 1,
-		Text = "Uses the gun, rope, and bomb palette names, including Rainbow. Bomb Teal is saved as Mint.",
+		Text = "Adds one copy to their inventory without equipping it. Uses the gun, rope, and bomb palette names, including Rainbow.",
 		Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = MUTED,
 		TextStrokeColor3 = Style.Ink, TextStrokeTransparency = 0.55, TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,

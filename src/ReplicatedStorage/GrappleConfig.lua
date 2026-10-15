@@ -65,6 +65,8 @@ return {
 	killCoinReward = 1,
 	escapeRobuxPrice = 9,
 	escapeRobuxProductId = 0,
+	escapeKillRobuxPrice = 19,
+	escapeKillRobuxProductId = 0,
 
 	--[[
 	+------------------------------------------------+

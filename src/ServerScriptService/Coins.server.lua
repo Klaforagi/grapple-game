@@ -31,6 +31,8 @@ local nextRefresh = 0
 local function publishCollection(player, data)
 	local owned = type(data) == "table" and data.cosmetics
 	if type(owned) == "table" then
+		local catalog = require(ReplicatedStorage.Modules:WaitForChild("CosmeticCatalog"))
+		catalog.NormalizeCosmetics(owned)
 		for id, value in pairs(owned) do
 			local copies = value == true and 1 or type(value) == "number" and value == value and value < math.huge and math.max(0, math.floor(value)) or 0
 			if type(id) == "string" and #id <= 100 then
@@ -506,7 +508,7 @@ rollCosmetic.OnInvoke = function(player)
 	if sessions[player] ~= state then return {ok = false, message = "Please rejoin to roll."} end
 	state.saving = true
 	if not state.pendingRoll then
-		local luck = player.GetAttribute and player:GetAttribute("TestPass_2xLuck") == true and 2 or 1
+		local luck = catalog.LuckMultiplier(player)
 		state.pendingRoll = {id = HttpService:GenerateGUID(false), itemId = catalog.Roll(Random.new(), luck).Id}
 	end
 	local request = state.pendingRoll
@@ -618,6 +620,46 @@ local function adminReadCoins(userId)
 	return {coins = state.base + state.earned, earned = state.lifetime or 0}
 end
 
+-- Admin cosmetic gifts use the same coin record as rolls, so they survive for
+-- offline players and immediately publish as an inventory stack for online ones.
+local function adminGrantCosmetic(userId, itemId)
+	if type(userId) ~= "number" or type(itemId) ~= "string" then return false end
+	local catalog = require(ReplicatedStorage.Modules:WaitForChild("CosmeticCatalog"))
+	local item = catalog.ById[itemId]
+	if not item or item.Starter then return false end
+	local player = Players:GetPlayerByUserId(userId)
+	local state = player and sessions[player]
+	if state and not state.loaded then
+		local started = os.clock()
+		while sessions[player] == state and not state.loaded and os.clock() - started < 20 do task.wait(0.1) end
+	end
+	if player and (not state or sessions[player] ~= state or not state.loaded) then return false end
+	if state then
+		while state.saving do task.wait() end
+		if sessions[player] ~= state then return false end
+		if state.earned ~= state.saved then
+			save(player, state)
+			if state.earned ~= state.saved then return false end
+		end
+		while state.saving do task.wait() end
+		if sessions[player] ~= state then return false end
+		state.saving = true
+	end
+	local ok, data = pcall(function()
+		return store:UpdateAsync("player_" .. userId, function(previous)
+			local record = type(previous) == "table" and previous or {coins = 0, earned = 0}
+			record.cosmetics = type(record.cosmetics) == "table" and record.cosmetics or {}
+			record.cosmetics[item.Id] = catalog.Quantity(record.cosmetics[item.Id]) + 1
+			return record
+		end)
+	end)
+	if state then
+		if ok and type(data) == "table" and sessions[player] == state then publishCollection(player, data) end
+		state.saving = false
+	end
+	return ok and type(data) == "table"
+end
+
 local function adminResetCoins(userId)
 	if type(userId) ~= "number" then return false end
 	local lookup = Players.GetPlayerByUserId
@@ -674,3 +716,11 @@ adminCoins.OnInvoke = function(action, userId, amount)
 	return false
 end
 adminCoins.Parent = ReplicatedStorage
+
+local adminCosmetics = Instance.new("BindableFunction")
+adminCosmetics.Name = "AdminCosmetics"
+adminCosmetics.OnInvoke = function(action, userId, itemId)
+	if action == "grant" then return adminGrantCosmetic(userId, itemId) end
+	return false
+end
+adminCosmetics.Parent = ReplicatedStorage

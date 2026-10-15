@@ -63,6 +63,14 @@ function M.Init()
 	end
 	local CLOSE_RED = Color3.fromRGB(195, 76, 87)
 	local GO_GREEN = Color3.fromRGB(62, 165, 110)
+	local function withCommas(amount)
+		local value = tostring(math.max(0, math.floor(tonumber(amount) or 0)))
+		while true do
+			local formatted, count = string.gsub(value, "^(%d+)(%d%d%d)", "%1,%2")
+			value = formatted
+			if count == 0 then return value end
+		end
+	end
 	local function label(parent, text, position, size, color)
 		local instance = make("TextLabel", parent, {
 			Text = text, Position = position, Size = size, BackgroundTransparency = 1,
@@ -246,7 +254,7 @@ function M.Init()
 	-- stay in the same frame until a digit is gained or lost.
 	local coinDigits = 0
 	local function updateCoins()
-		local shown = tostring(math.max(0, math.floor(tonumber(player:GetAttribute("Coins")) or 0)))
+		local shown = withCommas(player:GetAttribute("Coins"))
 		coinAmount.Text = shown
 		local digits = math.max(1, #shown)
 		if digits == coinDigits then return end
@@ -298,9 +306,8 @@ function M.Init()
 	-- Bottom-anchored at the old text's bottom edge, so escape buttons grow upward.
 	local tetherPanel = make("Frame", screen, {
 		Name = "TetherCountdown", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 0.75, 28),
-		Size = UDim2.fromOffset(380, 56), BorderSizePixel = 0, Visible = false,
+		Size = UDim2.fromOffset(380, 56), BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
 	})
-	Style.Surface(tetherPanel, Style.Panel, 8)
 	local tetherScale = make("UIScale", tetherPanel, {Scale = 1})
 	local tetherText = label(tetherPanel, "", UDim2.fromOffset(12, 4), UDim2.new(1, -24, 1, -16), Color3.new(1, 1, 1))
 	styleReelLabel(tetherText)
@@ -313,15 +320,15 @@ function M.Init()
 	})
 	local function requestEscape(method)
 		if not beingTethered or escapePending then return end
-		if method == "robux" then
-			local productId = Config.escapeRobuxProductId
+		if method == "kill" then
+			local productId = Config.escapeKillRobuxProductId
 			if type(productId) ~= "number" or productId <= 0 then return end
 		end
 		escapePending = true
 		escapeNote = ""
 		Remotes.EscapeTether:FireServer(method)
 	end
-	local coinEscape = button(escapeRow, "", UDim2.fromOffset(0, 0), UDim2.new(0.5, -4, 1, 0), function()
+	local coinEscape = button(escapeRow, "", UDim2.fromOffset(0, 0), UDim2.new(0.5, -6, 1, 0), function()
 		requestEscape("coins")
 	end, GO_GREEN)
 	local coinFace = make("Frame", coinEscape, {
@@ -332,21 +339,21 @@ function M.Init()
 		VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 6),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	})
-	make("ImageLabel", coinFace, {
+	local coinIcon = make("ImageLabel", coinFace, {
 		BackgroundTransparency = 1, Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
 		Size = UDim2.fromOffset(16, 16), LayoutOrder = 1, ZIndex = 3,
 	})
 	local coinEscapeText = make("TextLabel", coinFace, {
-		BackgroundTransparency = 1, BorderSizePixel = 0, Text = tostring(Config.escapeCoinCost or 30),
+		BackgroundTransparency = 1, BorderSizePixel = 0, Text = "",
 		Font = Enum.Font.GothamBlack, TextSize = 15, TextColor3 = Style.Text,
 		TextStrokeColor3 = Style.Ink, TextStrokeTransparency = 0.45,
 		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 36), LayoutOrder = 2, ZIndex = 3,
 	})
-	local robuxEscape = button(escapeRow, utf8.char(0xE002) .. "  " .. tostring(Config.escapeRobuxPrice or 9), UDim2.new(0.5, 4, 0, 0), UDim2.new(0.5, -4, 1, 0), function()
-		requestEscape("robux")
+	local killEscape = button(escapeRow, utf8.char(0xE002) .. "  Kill (" .. tostring(Config.escapeKillRobuxPrice or 19) .. ")", UDim2.new(0.5, 6, 0, 0), UDim2.new(0.5, -6, 1, 0), function()
+		requestEscape("kill")
 	end, GO_GREEN)
-	robuxEscape.TextSize = 15
-	robuxEscape.TextColor3 = Style.Text
+	killEscape.TextSize = 15
+	killEscape.TextColor3 = Style.Text
 	local function clearIncoming()
 		beingTethered = false
 		tetherInfo.incoming = nil
@@ -363,6 +370,11 @@ function M.Init()
 		escapePending = false
 		if reason == "prompt" then
 			local productId = Config.escapeRobuxProductId
+			if type(productId) == "number" and productId > 0 then
+				pcall(function() MarketplaceService:PromptProductPurchase(player, productId) end)
+			end
+		elseif reason == "killprompt" then
+			local productId = Config.escapeKillRobuxProductId
 			if type(productId) == "number" and productId > 0 then
 				pcall(function() MarketplaceService:PromptProductPurchase(player, productId) end)
 			end
@@ -968,11 +980,10 @@ function M.Init()
 		end
 		if shouldSave then saveSetting("LocalClockTime", clock, true) end
 	end
-	local presetWidth, presetGap = 92, 9
+	local presetWidth, presetGap = 140, 14
 	for index, preset in ipairs({
-		{text = "08:00", clock = 8},
-		{text = "17:30", clock = 17.5},
-		{text = "20:00", clock = 20},
+		{text = "Day", clock = 8},
+		{text = "Night", clock = 20},
 	}) do
 		local choice = button(timeControls, preset.text, UDim2.fromOffset((index - 1) * (presetWidth + presetGap), 20), UDim2.fromOffset(presetWidth, 36), function()
 			applyLocalTime(preset.clock, true)
@@ -1172,18 +1183,21 @@ function M.Init()
 		end
 		local showEscape = tetherInfo.incoming ~= nil
 		local baseHeight = #lines > 1 and 80 or 56
-		local escapeExtra = showEscape and 44 or 0
+		-- Keep outgoing tether text at the same height as incoming text. The
+		-- reserved row is invisible unless this player can actually escape.
+		local escapeExtra = #lines > 0 and 44 or 0
 		tetherPanel.Visible = #lines > 0
 		tetherPanel.Size = UDim2.fromOffset(380, baseHeight + escapeExtra)
-		-- On a phone the text already sits clear of the hotbar, so lift by the
-		-- button row instead of drawing the buttons down into it.
-		local lift = (showEscape and UIS.TouchEnabled) and escapeExtra or 0
+		-- On a phone the reserved row keeps the status clear of the hotbar.
+		local lift = (escapeExtra > 0 and UIS.TouchEnabled) and escapeExtra or 0
 		tetherPanel.Position = UDim2.new(0.5, 0, 0.75, 28 - lift)
 		tetherText.Position = UDim2.fromOffset(12, 4)
 		tetherText.Size = UDim2.new(1, -24, 0, baseHeight - 8)
 		tetherText.Text = table.concat(lines, "\n")
 		escapeRow.Visible = showEscape
-		coinEscapeText.Text = escapeNote ~= "" and escapeNote or tostring(Config.escapeCoinCost or 30)
+		local freeEscapes = math.max(0, math.floor(tonumber(player:GetAttribute("FreeEscapes")) or 0))
+		coinIcon.Visible = freeEscapes <= 0
+		coinEscapeText.Text = escapeNote ~= "" and escapeNote or (freeEscapes > 0 and ("Escape (" .. tostring(freeEscapes) .. " free left)") or ("Escape (" .. tostring(Config.escapeCoinCost or 30) .. ")"))
 		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 		if UIS.TouchEnabled then
 			local touchGui = playerGui:FindFirstChild("TouchGui")

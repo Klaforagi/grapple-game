@@ -11,6 +11,7 @@ local GrappleConfig = require(ReplicatedStorage:WaitForChild("GrappleConfig"))
 local grant = ReplicatedStorage:WaitForChild("GrantCoins")
 local grantUpgrade = ReplicatedStorage:WaitForChild("GrantUpgradeRobux")
 local grantEscape = ReplicatedStorage:WaitForChild("GrantEscapeRobux")
+local grantEscapeKill = ReplicatedStorage:WaitForChild("GrantEscapeKillRobux")
 
 local packs = {}
 for _, pack in ipairs(Catalog.Coins) do
@@ -35,6 +36,14 @@ MarketplaceService.ProcessReceipt = function(receipt)
 	if type(escapeId) == "number" and escapeId > 0 and receipt.ProductId == escapeId then
 		local ok, granted = pcall(function()
 			return grantEscape:Invoke(receipt.PlayerId, receipt.PurchaseId)
+		end)
+		if ok and granted == true then return Enum.ProductPurchaseDecision.PurchaseGranted end
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	local escapeKillId = GrappleConfig.escapeKillRobuxProductId
+	if type(escapeKillId) == "number" and escapeKillId > 0 and receipt.ProductId == escapeKillId then
+		local ok, granted = pcall(function()
+			return grantEscapeKill:Invoke(receipt.PlayerId, receipt.PurchaseId)
 		end)
 		if ok and granted == true then return Enum.ProductPurchaseDecision.PurchaseGranted end
 		return Enum.ProductPurchaseDecision.NotProcessedYet

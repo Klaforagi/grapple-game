@@ -6,7 +6,7 @@ local Catalog = {
 	SellPrices = {Common = 10, Uncommon = 25, Rare = 100, Epic = 200, Legendary = 500},
 	ModelName = "CosmeticRollStation", PartName = "RollZone",
 	-- The root sits above the feet, so a floor plate still counts as standing on the zone.
-	StandHeight = 5, ServerPadding = 2, BillboardDistance = 45,
+	StandHeight = 5, ServerPadding = 2, BillboardDistance = 60,
 	Cooldown = 5,
 	Defaults = {Gun = "Black", Rope = "Gray", Bomb = "Cyan"},
 	Attributes = {Gun = "GrappleGunColor", Rope = "GrappleRopeColor", Bomb = "BombColor"},
@@ -20,8 +20,8 @@ local Catalog = {
 	Items = {}, ById = {}, Pools = {},
 }
 local overrides = {
-	Gun = {Rainbow = "Legendary", Teal = "Uncommon", Lime = "Uncommon", Pink = "Uncommon"},
-	Rope = {Rainbow = "Legendary", Teal = "Uncommon", Lime = "Uncommon", Pink = "Uncommon"},
+	Gun = {Rainbow = "Legendary", Mint = "Uncommon", Lime = "Uncommon", Pink = "Uncommon"},
+	Rope = {Rainbow = "Legendary", Mint = "Uncommon", Lime = "Uncommon", Pink = "Uncommon"},
 	Bomb = {Rainbow = "Legendary", Mint = "Uncommon", Pink = "Uncommon"},
 }
 local ranks = {}
@@ -32,8 +32,8 @@ end
 for _, kind in ipairs({"Gun", "Rope", "Bomb"}) do
 	local names = {}
 	for name in pairs(Palettes[kind]) do
-		-- Teal is only a legacy alias for Bomb/Mint; Gold is reserved for VIP.
-		if name ~= "Gold" and name ~= "Banana" and not (kind == "Bomb" and name == "Teal") then
+		-- Teal is a legacy Mint alias; Gold is reserved for VIP.
+		if name ~= "Gold" and name ~= "Banana" and name ~= "Teal" then
 			table.insert(names, name)
 		end
 	end
@@ -63,6 +63,19 @@ function Catalog.Quantity(value)
 	if value == true then return 1 end
 	if type(value) ~= "number" or value ~= value or value == math.huge then return 0 end
 	return math.max(0, math.floor(value))
+end
+
+function Catalog.NormalizeCosmetics(owned)
+	if type(owned) ~= "table" then return owned end
+	for _, kind in ipairs({"Gun", "Rope"}) do
+		local legacyId, mintId = kind .. "_Teal", kind .. "_Mint"
+		local legacyCopies = Catalog.Quantity(owned[legacyId])
+		if legacyCopies > 0 then
+			owned[mintId] = math.max(Catalog.Quantity(owned[mintId]), legacyCopies)
+			owned[legacyId] = nil
+		end
+	end
+	return owned
 end
 
 function Catalog.Copies(player, kind, name)
@@ -95,13 +108,21 @@ function Catalog.Rarity(name)
 end
 
 -- Independent highest-first checks. Empty tiers are skipped, never a dead roll.
--- luck scales every non-common check. 2 is the 2x Luck pass. Common stays the fallback.
+-- 2x Luck doubles only Legendary, Epic, and Rare checks; the lower tiers stay unchanged.
+local function getsLuckBonus(rarityName)
+	return rarityName == "Legendary" or rarityName == "Epic" or rarityName == "Rare"
+end
+
+function Catalog.LuckMultiplier(player)
+	return player and player:GetAttribute("TestPass_2xLuck") == true and 2 or 1
+end
+
 function Catalog.Roll(random, luck)
 	local scale = type(luck) == "number" and luck > 1 and luck or 1
 	for _, rarity in ipairs(Catalog.Rarities) do
 		local pool = Catalog.Pools[rarity.Name]
 		local chance = rarity.Chance
-		if scale ~= 1 and rarity.Name ~= "Common" then chance = math.min(1, chance * scale) end
+		if scale ~= 1 and getsLuckBonus(rarity.Name) then chance = math.min(1, chance * scale) end
 		if #pool > 0 and (rarity.Name == "Common" or random:NextNumber() < chance) then
 			return pool[random:NextInteger(1, #pool)]
 		end
@@ -109,11 +130,14 @@ function Catalog.Roll(random, luck)
 	error("The cosmetic catalog needs at least one rollable Common")
 end
 
-function Catalog.Odds()
+function Catalog.Odds(luck)
 	local remaining, tiers, items = 1, {}, {}
+	local scale = type(luck) == "number" and luck > 1 and luck or 1
 	for _, rarity in ipairs(Catalog.Rarities) do
 		local pool = Catalog.Pools[rarity.Name]
-		local chance = #pool > 0 and remaining * rarity.Chance or 0
+		local check = rarity.Chance
+		if scale ~= 1 and getsLuckBonus(rarity.Name) then check = math.min(1, check * scale) end
+		local chance = #pool > 0 and remaining * check or 0
 		tiers[rarity.Name] = chance
 		remaining -= chance
 		for _, item in ipairs(pool) do items[item.Id] = chance / #pool end

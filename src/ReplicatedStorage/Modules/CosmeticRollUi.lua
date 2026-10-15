@@ -14,6 +14,14 @@ local SoundService = game:GetService("SoundService")
 local Debris = game:GetService("Debris")
 local accent, ink, white = Style.Accent, Style.Ink, Style.Text
 text = Style.Label
+local function withCommas(amount)
+	local value = tostring(math.max(0, math.floor(tonumber(amount) or 0)))
+	while true do
+		local formatted, count = string.gsub(value, "^(%d+)(%d%d%d)", "%1,%2")
+		value = formatted
+		if count == 0 then return value end
+	end
+end
 local function tween(object, duration, props, style)
 	local animation = TweenService:Create(object, TweenInfo.new(duration, style or Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
 	animation:Play()
@@ -40,8 +48,8 @@ function RollUi.Init()
 	Style.Surface(header, Style.Header, 8)
 	text(header, "COSMETICS", UDim2.fromOffset(24, 12), UDim2.fromOffset(360, 36), 30)
 	text(header, "GUN  /  ROPE  /  BOMB", UDim2.fromOffset(26, 55), UDim2.fromOffset(340, 22), 13, Style.Muted)
-	local collection = text(header, "", UDim2.fromOffset(366, 51), UDim2.fromOffset(280, 26), 15, Style.Accent)
-	collection.TextXAlignment = Enum.TextXAlignment.Right
+	local luckStatus = text(header, "", UDim2.fromOffset(380, 55), UDim2.fromOffset(180, 22), 13, Style.Muted)
+	luckStatus.TextXAlignment = Enum.TextXAlignment.Right
 	local close = Style.Button(panel, "X", UDim2.new(1, -58, 0, 12), UDim2.fromOffset(42, 36), Color3.fromRGB(195, 76, 87))
 	local balance = text(panel, "", UDim2.fromOffset(24, 106), UDim2.fromOffset(300, 26), 16, Color3.fromRGB(255, 209, 115))
 	local oddsButton = Style.Button(panel, "Items & odds", UDim2.fromOffset(458, 104), UDim2.fromOffset(198, 32), Style.ButtonColor)
@@ -69,7 +77,8 @@ function RollUi.Init()
 		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 5, BorderSizePixel = 0,
 		ScrollBarImageColor3 = Style.Muted, ScrollingDirection = Enum.ScrollingDirection.Y})
 	make("UIListLayout", oddsScroll, {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder})
-	local tiers, odds = Catalog.Odds()
+	local tierLabels, oddsLabels = {}, {}
+	local tiers, odds = Catalog.Odds(Catalog.LuckMultiplier(player))
 	local order = 0
 	for _, rarity in ipairs(Catalog.Rarities) do
 		local pool = Catalog.Pools[rarity.Name]
@@ -78,6 +87,7 @@ function RollUi.Init()
 		local heading = string.format("%s  /  %.4f%%", string.upper(rarity.Name), tiers[rarity.Name] * 100)
 		local row = text(oddsScroll, heading, UDim2.new(), UDim2.new(1, -12, 0, 26), 13, rarity.Color)
 		row.LayoutOrder = order
+		tierLabels[rarity.Name] = row
 		for _, item in ipairs(pool) do
 			order += 1
 			local rowFrame = make("Frame", oddsScroll, {Size = UDim2.new(1, -12, 0, 34), BackgroundColor3 = Style.ButtonColor, BackgroundTransparency = 0.55, BorderSizePixel = 0, LayoutOrder = order})
@@ -87,8 +97,25 @@ function RollUi.Init()
 			text(rowFrame, item.Kind .. " / " .. item.Name, UDim2.fromOffset(38, 0), UDim2.new(1, -150, 1, 0), 13)
 			local chance = text(rowFrame, string.format("%.4f%%", odds[item.Id] * 100), UDim2.new(1, -100, 0, 0), UDim2.fromOffset(90, 34), 13)
 			chance.TextXAlignment = Enum.TextXAlignment.Right
+			oddsLabels[item.Id] = chance
 		end
 	end
+	local function refreshLuck()
+		local multiplier = Catalog.LuckMultiplier(player)
+		local active = multiplier > 1
+		luckStatus.Text = active and "2x Luck active" or "2x Luck not active"
+		luckStatus.TextColor3 = active and Style.Accent or Color3.fromRGB(195, 76, 87)
+		local currentTiers, currentOdds = Catalog.Odds(multiplier)
+		for _, rarity in ipairs(Catalog.Rarities) do
+			local label = tierLabels[rarity.Name]
+			if label then label.Text = string.format("%s  /  %.4f%%", string.upper(rarity.Name), currentTiers[rarity.Name] * 100) end
+		end
+		for itemId, label in pairs(oddsLabels) do
+			label.Text = string.format("%.4f%%", (currentOdds[itemId] or 0) * 100)
+		end
+	end
+	refreshLuck()
+	player:GetAttributeChangedSignal("TestPass_2xLuck"):Connect(refreshLuck)
 
 	local function card(item, index)
 		local rarity = Catalog.Rarity(item.Rarity)
@@ -236,18 +263,22 @@ function RollUi.Init()
 		local bounds, size = part:FindFirstAncestor(Catalog.ModelName):GetBoundingBox()
 		local height = (math.abs(bounds.RightVector.Y) * size.X + math.abs(bounds.UpVector.Y) * size.Y
 			+ math.abs(bounds.LookVector.Y) * size.Z) * 0.5
-		local aboveModel = bounds.Position + Vector3.new(0, height + 2, 0) - part.Position
+		local aboveModel = bounds.Position + Vector3.new(0, height + 12, 0) - part.Position
 		local billboard = make("BillboardGui", screen, {Name = "CollectionProgress", Adornee = part,
-			Size = UDim2.fromOffset(260, 84), StudsOffsetWorldSpace = aboveModel,
-			MaxDistance = Catalog.BillboardDistance, AlwaysOnTop = true})
-		local background = make("Frame", billboard, {Size = UDim2.fromScale(1, 1), BackgroundColor3 = accent, BorderSizePixel = 0, BackgroundTransparency = 0.08})
-		Style.Surface(background, Style.Panel, 6)
-		local title = text(background, "COSMETICS  •  100 COINS", UDim2.fromOffset(8, 9), UDim2.fromOffset(244, 23), 15, white)
+			Size = UDim2.fromOffset(260, 68), StudsOffsetWorldSpace = aboveModel,
+			MaxDistance = Catalog.BillboardDistance, AlwaysOnTop = true, LightInfluence = 0})
+		local title = text(billboard, "COSMETICS", UDim2.fromOffset(8, 2), UDim2.fromOffset(244, 23), 16, accent)
 		title.TextXAlignment = Enum.TextXAlignment.Center
-		local owned = text(background, Ui.OwnedText(player), UDim2.fromOffset(8, 35), UDim2.fromOffset(244, 24), 18, white)
+		title.Font = Enum.Font.GothamBlack
+		title.TextStrokeTransparency = 0.12
+		local owned = text(billboard, Ui.OwnedText(player), UDim2.fromOffset(8, 28), UDim2.fromOffset(244, 29), 20, white)
 		owned.TextXAlignment = Enum.TextXAlignment.Center
-		local hint = text(background, "Walk closer to roll", UDim2.fromOffset(8, 61), UDim2.fromOffset(244, 16), 10, white)
-		hint.TextXAlignment = Enum.TextXAlignment.Center
+		owned.Font = Enum.Font.GothamBlack
+		owned.TextStrokeTransparency = 0.12
+		make("UIGradient", owned, {Rotation = 90, Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+			ColorSequenceKeypoint.new(1, accent),
+		})})
 		stations[part] = {Gui = billboard, Label = owned}
 	end
 	for _, part in ipairs(workspace:GetDescendants()) do addStation(part) end
@@ -257,8 +288,8 @@ function RollUi.Init()
 		if station then station.Gui:Destroy() stations[part] = nil end
 	end)
 	local function refreshCollection()
-		collection.Text = Ui.OwnedText(player)
-		for _, station in pairs(stations) do station.Label.Text = collection.Text end
+		local ownedText = Ui.OwnedText(player)
+		for _, station in pairs(stations) do station.Label.Text = ownedText end
 	end
 	refreshCollection()
 	player.AttributeChanged:Connect(function(key)
@@ -305,7 +336,7 @@ function RollUi.Init()
 		if not activeZone then dismissed = false if not busy then show(false) end
 		elseif not dismissed then show(true) end
 		local coins = player:GetAttribute("Coins") or 0
-		balance.Text = string.format("YOUR COINS  •  %d", coins)
+		balance.Text = "YOUR COINS  •  " .. withCommas(coins)
 		local allowed = player:GetAttribute("CosmeticRollAllowed") == true
 		local loaded = player:GetAttribute("CollectionLoaded") == true
 		local cooldown = math.max(0, math.ceil(availableAt - os.clock()))

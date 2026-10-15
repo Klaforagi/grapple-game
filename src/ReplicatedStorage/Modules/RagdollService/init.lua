@@ -880,6 +880,7 @@ function Service.Set(humanoid, enabled, preserveMotion)
 	if enabled then humanoid.AutoRotate = false else humanoid.AutoRotate = rig.autoRotate end
 	humanoid.EvaluateStateMachine = not enabled and rig.stateMachine
 	humanoid.PlatformStand = enabled and grappleLocked or rig.platformStand == true
+	if not enabled then humanoid.Jump = false end
 	humanoid:SetAttribute("Ragdolled", enabled)
 	Service.RefreshJointFriction(humanoid)
 	Service.RefreshSelfCollisions(humanoid)
@@ -996,6 +997,24 @@ function Service.InitClient()
 	local watched = setmetatable({}, {__mode = "k"})
 	local activeRigs = {}
 	local pendingEntryMotion = {}
+	local recoveryJumpToken = 0
+	local function suppressRecoveryJump(humanoid)
+		if not localPlayer or humanoid.Parent ~= localPlayer.Character then return end
+		recoveryJumpToken += 1
+		local token = recoveryJumpToken
+		local jumpingEnabled = humanoid:GetStateEnabled(Enum.HumanoidStateType.Jumping)
+		local autoJump = humanoid.AutoJumpEnabled
+		humanoid.Jump = false
+		humanoid.AutoJumpEnabled = false
+		pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false) end)
+		task.delay(0.08, function()
+			if token ~= recoveryJumpToken or not humanoid.Parent
+				or humanoid:GetAttribute("Ragdolled") == true then return end
+			humanoid.Jump = false
+			humanoid.AutoJumpEnabled = autoJump
+			pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, jumpingEnabled) end)
+		end)
+	end
 	local function startAirborneMotion(humanoid)
 		if humanoid.Parent ~= localPlayer.Character or humanoid.Health <= 0
 			or humanoid:GetAttribute("GrapplePhysicsLocked") or humanoid:GetAttribute("GrappleLocalPhysicsLock")
@@ -1092,6 +1111,7 @@ function Service.InitClient()
 			end
 			local enabled = ragdolled or locked
 			if ragdolled == wasRagdolled and locked == wasLocked then return end
+			if wasRagdolled and not ragdolled then suppressRecoveryJump(humanoid) end
 			if ragdolled and not wasRagdolled and localPlayer and humanoid.Parent == localPlayer.Character then
 				pendingEntryMotion[humanoid] = os.clock() + 0.5
 			elseif not ragdolled or locked then

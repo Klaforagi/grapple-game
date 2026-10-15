@@ -96,6 +96,9 @@ M.Lines = {
 		"{Killer} gave {Victim} a crushing defeat.",
 		"{Killer} made {Victim} fit into tight spaces.",
 	},
+	EscapeKill = {
+		"{Killer} escaped {Victim}'s grapple the hard way.",
+	},
 }
 
 -- A death with nobody else involved. Shown in the feed, not added to a total.
@@ -296,6 +299,11 @@ function M.Resolve(victimId, humanoid, now)
 		local name = record and record.id == killerId and killerName or nil
 		return credit("Crusher", killerId, victimId, name, true)
 	end
+	if cause == "EscapeKill" then
+		local killerId = attributeNumber(humanoid, "DeathEscapeKiller")
+		if not killerId or killerId == victimId then return nil end
+		return credit("EscapeKill", killerId, victimId, nil, true)
+	end
 	return nil
 end
 
@@ -321,6 +329,7 @@ function M.Report(player, humanoid, now)
 		humanoid:SetAttribute("DeathFreezer", nil)
 		humanoid:SetAttribute("DeathPuller", nil)
 		humanoid:SetAttribute("DeathGrappler", nil)
+		humanoid:SetAttribute("DeathEscapeKiller", nil)
 	end)
 	if not result then return nil end
 	result.victimId = victimId

@@ -25,7 +25,7 @@ end
 
 local RANK_COLOR = {
 	Color3.fromRGB(255, 198, 92),
-	Color3.fromRGB(186, 198, 210),
+	Color3.fromRGB(224, 232, 242),
 	Color3.fromRGB(206, 150, 96),
 }
 
@@ -253,7 +253,7 @@ end
 
 local function rowColor(rank)
 	if rank == 1 then return Color3.fromRGB(88, 72, 48) end
-	if rank == 2 then return Color3.fromRGB(52, 54, 72) end
+	if rank == 2 then return Color3.fromRGB(88, 94, 112) end
 	if rank == 3 then return Color3.fromRGB(78, 58, 48) end
 	if rank % 2 == 0 then return Color3.fromRGB(40, 42, 62) end
 	return Color3.fromRGB(29, 32, 48)
