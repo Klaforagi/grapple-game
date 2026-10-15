@@ -1,27 +1,32 @@
 local Players = game:GetService("Players")
 local Storage = game:GetService("ReplicatedStorage")
 local Remotes = require(Storage.Modules:WaitForChild("GrappleRemotes"))
+local Style = require(Storage.Modules:WaitForChild("CosmeticStyle"))
 
 local gui = Instance.new("ScreenGui")
 gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "ServerRestartNotice", false, 100
 gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
 
-local banner = Instance.new("TextLabel")
+local banner = Instance.new("Frame")
 banner.AnchorPoint = Vector2.new(0.5, 0)
 banner.Position = UDim2.new(0.5, 0, 0, 20)
 banner.Size = UDim2.fromOffset(520, 60)
-banner.BackgroundColor3 = Color3.fromRGB(104, 50, 42)
-banner.BackgroundTransparency = 0.08
-banner.BorderSizePixel = 0
-banner.Font = Enum.Font.GothamBold
-banner.TextColor3 = Color3.fromRGB(255, 255, 255)
-banner.TextSize = 16
-banner.TextWrapped = true
 banner.Visible = false
 banner.Parent = gui
-Instance.new("UICorner", banner).CornerRadius = UDim.new(0, 10)
+Style.Surface(banner, Color3.fromRGB(150, 64, 72), 8)
 
-Remotes.ServerRestartNotice.OnClientEvent:Connect(function(message, restartUnix)
-	banner.Text = tostring(message)
+local message = Instance.new("TextLabel")
+message.BackgroundTransparency = 1
+message.Size = UDim2.fromScale(1, 1)
+message.Font = Enum.Font.GothamBold
+message.TextColor3 = Style.Text
+message.TextStrokeColor3 = Style.Ink
+message.TextStrokeTransparency = 0.45
+message.TextSize = 16
+message.TextWrapped = true
+message.Parent = banner
+
+Remotes.ServerRestartNotice.OnClientEvent:Connect(function(text)
+	message.Text = tostring(text)
 	banner.Visible = true
 end)

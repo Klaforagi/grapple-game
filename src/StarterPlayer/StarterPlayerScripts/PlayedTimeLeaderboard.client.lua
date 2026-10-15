@@ -6,9 +6,10 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local boardFolder = ReplicatedStorage:WaitForChild("PlayedTimeBoard")
 
-local GOLD = Color3.fromRGB(255, 198, 92)
-local INK = Color3.fromRGB(232, 240, 247)
-local MUTED = Color3.fromRGB(154, 170, 186)
+local ACCENT = Color3.fromRGB(92, 229, 184)
+local INK = Color3.fromRGB(242, 239, 255)
+local MUTED = Color3.fromRGB(178, 178, 205)
+local EDGE = Color3.fromRGB(13, 17, 27)
 local PAGE_SIZE = 100
 
 local function formatTime(seconds)
@@ -90,10 +91,11 @@ end
 
 local function buildRow(parent)
 	local row = make("Frame", parent, {
-		Name = "Row", BackgroundColor3 = Color3.fromRGB(20, 28, 40),
+		Name = "Row", BackgroundColor3 = Color3.fromRGB(29, 32, 48),
 		BorderSizePixel = 0, Size = UDim2.new(1, -8, 0, 96),
 	})
-	corner(row, 12)
+	corner(row, 8)
+	make("UIStroke", row, {Color = EDGE, Thickness = 2})
 	make("TextLabel", row, {
 		Name = "Rank", BackgroundTransparency = 1, Position = UDim2.new(0, 4, 0, 0),
 		Size = UDim2.new(0, 88, 1, 0), Font = Enum.Font.GothamBold, TextSize = 34,
@@ -101,7 +103,7 @@ local function buildRow(parent)
 		TextYAlignment = Enum.TextYAlignment.Center, Text = "#",
 	})
 	local avatar = make("ImageLabel", row, {
-		Name = "Avatar", BackgroundColor3 = Color3.fromRGB(8, 12, 18), BorderSizePixel = 0,
+		Name = "Avatar", BackgroundColor3 = Color3.fromRGB(13, 17, 27), BorderSizePixel = 0,
 		Position = UDim2.new(0, 96, 0.5, -34), Size = UDim2.fromOffset(68, 68),
 		Image = "", ScaleType = Enum.ScaleType.Fit,
 	})
@@ -121,7 +123,7 @@ local function buildRow(parent)
 	make("TextLabel", row, {
 		Name = "Time", BackgroundTransparency = 1, Position = UDim2.new(1, -160, 0, 0),
 		Size = UDim2.fromOffset(148, 96), Font = Enum.Font.GothamBold, TextSize = 32,
-		TextColor3 = GOLD, TextXAlignment = Enum.TextXAlignment.Right,
+		TextColor3 = ACCENT, TextXAlignment = Enum.TextXAlignment.Right,
 		TextYAlignment = Enum.TextYAlignment.Center, Text = "",
 	})
 	return row
@@ -154,16 +156,17 @@ local function createGui(part)
 		ZOffset = 0.04, ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	})
 	local root = make("Frame", gui, {
-		Name = "Board", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(16, 24, 36),
+		Name = "Board", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(70, 58, 99),
 		BorderSizePixel = 0, ClipsDescendants = true,
 	})
-	corner(root, 12)
-	make("UIStroke", root, {Color = GOLD, Thickness = 1.5, Transparency = 0.45})
+	corner(root, 8)
+	make("UIStroke", root, {Color = EDGE, Thickness = 3, Transparency = 0})
 	make("UIGradient", root, {
-		Rotation = 90,
+		Rotation = 28,
 		Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, Color3.fromRGB(28, 42, 62)),
-			ColorSequenceKeypoint.new(1, Color3.fromRGB(12, 18, 30)),
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(101, 91, 127)),
+			ColorSequenceKeypoint.new(0.45, Color3.fromRGB(70, 58, 99)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(53, 46, 77)),
 		}),
 	})
 	local header = make("Frame", root, {
@@ -173,7 +176,7 @@ local function createGui(part)
 	make("TextLabel", header, {
 		Name = "Title", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0.62, 0),
 		Font = Enum.Font.GothamBold, Text = "PLAYED TIME", TextScaled = true,
-		TextColor3 = Color3.fromRGB(246, 240, 224), TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = INK, TextStrokeColor3 = EDGE, TextStrokeTransparency = 0.45, TextXAlignment = Enum.TextXAlignment.Left,
 	})
 	make("TextLabel", header, {
 		Name = "Subtitle", BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0.64, 0),
@@ -181,15 +184,15 @@ local function createGui(part)
 		TextScaled = true, TextColor3 = MUTED, TextXAlignment = Enum.TextXAlignment.Left,
 	})
 	make("Frame", root, {
-		Name = "Rule", BackgroundColor3 = GOLD, BorderSizePixel = 0,
+		Name = "Rule", BackgroundColor3 = ACCENT, BorderSizePixel = 0,
 		Position = UDim2.new(0.04, 0, 0.15, 0), Size = UDim2.new(0.18, 0, 0, 2),
 	})
 	-- Ends above the pinned card. The card is not a child of this scroller.
 	local list = make("ScrollingFrame", root, {
-		Name = "List", BackgroundColor3 = Color3.fromRGB(8, 12, 20), BackgroundTransparency = 0.35,
+		Name = "List", BackgroundColor3 = Color3.fromRGB(29, 32, 48), BackgroundTransparency = 0.28,
 		BorderSizePixel = 0, Position = UDim2.new(0.04, 0, 0.17, 0), Size = UDim2.new(0.92, 0, 0.68, 0),
 		CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		ScrollBarThickness = 5, ScrollBarImageColor3 = GOLD, ScrollingDirection = Enum.ScrollingDirection.Y,
+		ScrollBarThickness = 5, ScrollBarImageColor3 = MUTED, ScrollingDirection = Enum.ScrollingDirection.Y,
 		ClipsDescendants = true,
 	})
 	corner(list, 10)
@@ -208,18 +211,18 @@ local function createGui(part)
 	})
 	local you = make("Frame", root, {
 		Name = "You", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0.04, 0, 0.99, 0),
-		Size = UDim2.new(0.92, 0, 0.11, 0), BackgroundColor3 = Color3.fromRGB(36, 78, 128),
+		Size = UDim2.new(0.92, 0, 0.11, 0), BackgroundColor3 = Color3.fromRGB(99, 78, 138),
 		BorderSizePixel = 0, ZIndex = 3,
 	})
-	corner(you, 10)
-	make("UIStroke", you, {Color = GOLD, Thickness = 1.4, Transparency = 0.1})
+	corner(you, 8)
+	make("UIStroke", you, {Color = EDGE, Thickness = 3, Transparency = 0})
 	local youRank = make("TextLabel", you, {
 		Name = "Rank", BackgroundTransparency = 1, Position = UDim2.new(0.04, 0, 0.16, 0),
 		Size = UDim2.new(0.16, 0, 0.68, 0), Font = Enum.Font.GothamBold, Text = "—",
 		TextScaled = true, TextColor3 = INK, TextXAlignment = Enum.TextXAlignment.Left,
 	})
 	local avatar = make("ImageLabel", you, {
-		Name = "Avatar", BackgroundColor3 = Color3.fromRGB(8, 12, 18), BorderSizePixel = 0,
+		Name = "Avatar", BackgroundColor3 = Color3.fromRGB(13, 17, 27), BorderSizePixel = 0,
 		Position = UDim2.new(0.22, 0, 0.14, 0), Size = UDim2.new(0.12, 0, 0.72, 0),
 		Image = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=48&h=48",
 		ScaleType = Enum.ScaleType.Fit,
@@ -234,7 +237,7 @@ local function createGui(part)
 	local youTime = make("TextLabel", you, {
 		Name = "Time", BackgroundTransparency = 1, Position = UDim2.new(0.7, 0, 0.14, 0),
 		Size = UDim2.new(0.26, 0, 0.72, 0), Font = Enum.Font.GothamBold, TextScaled = true,
-		TextColor3 = GOLD, TextXAlignment = Enum.TextXAlignment.Right, Text = "0s",
+		TextColor3 = ACCENT, TextXAlignment = Enum.TextXAlignment.Right, Text = "0s",
 	})
 	return {list = list, empty = empty, you = you, youRank = youRank, youName = youName, youTime = youTime, rows = {}}
 end
@@ -259,11 +262,11 @@ local function rankLabel(entries)
 end
 
 local function rowColor(rank)
-	if rank == 1 then return Color3.fromRGB(48, 40, 22) end
-	if rank == 2 then return Color3.fromRGB(34, 40, 48) end
-	if rank == 3 then return Color3.fromRGB(46, 34, 26) end
-	if rank % 2 == 0 then return Color3.fromRGB(24, 34, 48) end
-	return Color3.fromRGB(18, 26, 38)
+	if rank == 1 then return Color3.fromRGB(88, 72, 48) end
+	if rank == 2 then return Color3.fromRGB(52, 54, 72) end
+	if rank == 3 then return Color3.fromRGB(78, 58, 48) end
+	if rank % 2 == 0 then return Color3.fromRGB(40, 42, 62) end
+	return Color3.fromRGB(29, 32, 48)
 end
 
 local function render()

@@ -5,14 +5,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Assets = require(ReplicatedStorage:WaitForChild("Assets"))
 local Catalog = require(script.Parent:WaitForChild("ShopCatalog"))
+local Style = require(script.Parent:WaitForChild("CosmeticStyle"))
 
 local ROBUX = utf8.char(0xE002)
-local CARD = Color3.fromRGB(44, 48, 64)
-local INK = Color3.fromRGB(244, 246, 252)
-local MUTED = Color3.fromRGB(176, 186, 204)
-local BUY = Color3.fromRGB(0, 170, 85)
-local OWNED = Color3.fromRGB(90, 96, 112)
-local EDGE = Color3.fromRGB(86, 92, 116)
+local INK = Style.Text
+local MUTED = Style.Muted
+local BUY = Color3.fromRGB(62, 165, 110)
+local OWNED = Style.ButtonColor
 
 local M = {}
 
@@ -51,15 +50,21 @@ local function styleBuy(button, price, owned)
 	button:SetAttribute("Owned", owned == true)
 	if owned then
 		button.Text = "Owned"
-		button.BackgroundColor3 = OWNED
 		button.AutoButtonColor = false
 		button.Active = false
+		Style.Recolor(button, OWNED)
 	else
 		button.Text = priceText(price)
-		button.BackgroundColor3 = BUY
 		button.AutoButtonColor = true
 		button.Active = true
+		Style.Recolor(button, BUY)
 	end
+end
+
+local function strokeText(label)
+	label.TextStrokeColor3 = Style.Ink
+	label.TextStrokeTransparency = 0.45
+	return label
 end
 
 function M.Mount(screen, onClose)
@@ -67,25 +72,26 @@ function M.Mount(screen, onClose)
 	local window = make("TextButton", screen, {
 		Name = "ShopWindow", Text = "", AutoButtonColor = false, Active = true, Modal = true,
 		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(680, 520), BackgroundColor3 = Color3.fromRGB(22, 24, 32),
+		Size = UDim2.fromOffset(680, 520), BackgroundColor3 = Style.Panel,
 		BorderSizePixel = 0, Visible = false, ZIndex = 21, ClipsDescendants = true,
 	})
-	corner(window, 16)
-	make("UIStroke", window, {Color = Color3.fromRGB(255, 210, 120), Transparency = 0.55, Thickness = 1.5})
+	Style.Surface(window, Style.Panel, 8)
 	local scale = make("UIScale", window, {Scale = 1})
+	local header = make("Frame", window, {Name = "Header", Size = UDim2.new(1, 0, 0, 68), ZIndex = 22})
+	Style.Surface(header, Style.Header, 8)
 
-	make("TextLabel", window, {
-		BackgroundTransparency = 1, BorderSizePixel = 0, Text = "Shop",
-		Position = UDim2.fromOffset(20, 0), Size = UDim2.fromOffset(180, 58),
-		Font = Enum.Font.GothamBold, TextSize = 28, TextColor3 = INK,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	})
-	local balance = make("Frame", window, {
-		Name = "Balance", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -64, 0, 29),
+	strokeText(make("TextLabel", header, {
+		BackgroundTransparency = 1, BorderSizePixel = 0, Text = "SHOP",
+		Position = UDim2.fromOffset(22, 15), Size = UDim2.fromOffset(180, 38),
+		Font = Enum.Font.GothamBold, TextSize = 26, TextColor3 = INK,
+		TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 23,
+	}))
+	local balance = make("Frame", header, {
+		Name = "Balance", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -58, 0, 34),
 		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 36),
-		BackgroundColor3 = Color3.fromRGB(16, 18, 26), BorderSizePixel = 0,
+		BackgroundColor3 = Style.Slot, BorderSizePixel = 0, ZIndex = 23,
 	})
-	corner(balance, 18)
+	Style.Surface(balance, Style.Slot, 8)
 	make("UIPadding", balance, {PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 12)})
 	make("UIListLayout", balance, {
 		FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center,
@@ -101,52 +107,65 @@ function M.Mount(screen, onClose)
 		Name = "Icon", BackgroundTransparency = 1, Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
 		Size = UDim2.fromOffset(22, 22), LayoutOrder = 1,
 	})
-	local balanceText = make("TextLabel", balance, {
+	local balanceText = strokeText(make("TextLabel", balance, {
 		BackgroundTransparency = 1, BorderSizePixel = 0, Text = "0", LayoutOrder = 2,
 		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 36),
-		Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = INK,
-	})
+		Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = INK, ZIndex = 24,
+	}))
 	local function showBalance()
 		balanceText.Text = withCommas(player:GetAttribute("Coins") or 0)
 	end
 	player:GetAttributeChangedSignal("Coins"):Connect(showBalance)
 	showBalance()
-	local close = make("TextButton", window, {
-		Name = "Close", Text = "X", AutoButtonColor = true, BorderSizePixel = 0,
-		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0, 29),
-		Size = UDim2.fromOffset(34, 34), BackgroundColor3 = Color3.fromRGB(50, 54, 70),
-		Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = INK,
-	})
-	corner(close, 10)
+	local close = Style.Button(header, "X", UDim2.new(1, -14, 0, 34), UDim2.fromOffset(36, 36), Color3.fromRGB(195, 76, 87))
+	close.AnchorPoint = Vector2.new(1, 0.5)
+	close.Position = UDim2.new(1, -14, 0, 34)
+	close.Name = "Close"
+	close.ZIndex = 24
 	close.Activated:Connect(function()
 		if onClose then onClose() end
 	end)
-	make("Frame", window, {
-		Name = "Accent", Position = UDim2.fromOffset(0, 58), Size = UDim2.new(1, 0, 0, 2),
-		BackgroundColor3 = Color3.fromRGB(255, 196, 72), BorderSizePixel = 0,
-	})
 
 	local scroll = make("ScrollingFrame", window, {
-		Name = "Catalog", Position = UDim2.fromOffset(0, 60), Size = UDim2.new(1, 0, 1, -60),
-		BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 6,
-		ScrollBarImageColor3 = Color3.fromRGB(255, 196, 72),
+		Name = "Catalog", Position = UDim2.fromOffset(0, 76), Size = UDim2.new(1, 0, 1, -76),
+		BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 12,
+		ScrollBarImageColor3 = Style.Text, ScrollBarImageTransparency = 0,
 		CanvasSize = UDim2.fromOffset(0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
-		VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar,
+		VerticalScrollBarInset = Enum.ScrollBarInset.Always,
 	})
-	make("UIPadding", scroll, {PaddingTop = UDim.new(0, 14), PaddingBottom = UDim.new(0, 20)})
-	make("UIListLayout", scroll, {
+	make("UIPadding", scroll, {PaddingTop = UDim.new(0, 14), PaddingBottom = UDim.new(0, 8), PaddingRight = UDim.new(0, 4)})
+	local scrollLayout = make("UIListLayout", scroll, {
 		Padding = UDim.new(0, 12), SortOrder = Enum.SortOrder.LayoutOrder,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 	})
+	-- A trailing spacer keeps the canvas taller than the window, so the bar never disappears.
+	local scrollSpacer = make("Frame", scroll, {
+		Name = "ScrollSpacer", BackgroundTransparency = 1, LayoutOrder = 100000,
+		Size = UDim2.fromOffset(0, 24),
+	})
+	local fittingScroll = false
+	local function keepScrollBar()
+		if fittingScroll then return end
+		local view = scroll.AbsoluteWindowSize.Y
+		if view < 1 then return end
+		local content = scrollLayout.AbsoluteContentSize.Y - scrollSpacer.Size.Y.Offset
+		local needed = math.max(24, view - content + 24)
+		if math.abs(scrollSpacer.Size.Y.Offset - needed) < 2 then return end
+		fittingScroll = true
+		scrollSpacer.Size = UDim2.fromOffset(0, needed)
+		fittingScroll = false
+	end
+	scroll:GetPropertyChangedSignal("AbsoluteWindowSize"):Connect(keepScrollBar)
+	scrollLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(keepScrollBar)
 
 	local function section(text, order)
-		local header = make("TextLabel", scroll, {
-			BackgroundTransparency = 1, BorderSizePixel = 0, Text = text, LayoutOrder = order,
+		local title = strokeText(make("TextLabel", scroll, {
+			BackgroundTransparency = 1, BorderSizePixel = 0, Text = string.upper(text), LayoutOrder = order,
 			Size = UDim2.new(1, -32, 0, 26), Font = Enum.Font.GothamBold, TextSize = 18,
-			TextColor3 = Color3.fromRGB(255, 214, 130), TextXAlignment = Enum.TextXAlignment.Left,
-		})
-		return header
+			TextColor3 = Style.Accent, TextXAlignment = Enum.TextXAlignment.Left,
+		}))
+		return title
 	end
 
 	local entries = {}
@@ -162,11 +181,10 @@ function M.Mount(screen, onClose)
 	section("Gamepasses", 1)
 	for index, pass in ipairs(Catalog.Passes) do
 		local row = make("Frame", scroll, {
-			Name = pass.name, LayoutOrder = index + 1, BackgroundColor3 = CARD, BorderSizePixel = 0,
+			Name = pass.name, LayoutOrder = index + 1, BackgroundColor3 = Style.Slot, BorderSizePixel = 0,
 			Size = UDim2.new(1, -32, 0, 124),
 		})
-		corner(row, 14)
-		make("UIStroke", row, {Color = EDGE, Thickness = 1})
+		Style.Surface(row, Style.Slot, 6)
 		local art = make("Frame", row, {
 			Name = "Art", Position = UDim2.fromOffset(12, 12), Size = UDim2.fromOffset(100, 100),
 			BackgroundColor3 = pass.color, BorderSizePixel = 0, ClipsDescendants = true,
@@ -189,25 +207,21 @@ function M.Mount(screen, onClose)
 			Name = "Picture", BackgroundTransparency = 1, BorderSizePixel = 0, Image = pass.image or "",
 			Size = UDim2.fromScale(1, 1), ScaleType = Enum.ScaleType.Crop, ZIndex = 2,
 		})
-		make("TextLabel", row, {
+		strokeText(make("TextLabel", row, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = pass.name,
 			Position = UDim2.fromOffset(128, 16), Size = UDim2.new(1, -304, 0, 28),
 			Font = Enum.Font.GothamBold, TextSize = 22, TextColor3 = INK,
 			TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-		})
+		}))
 		make("TextLabel", row, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = pass.description, TextWrapped = true,
 			Position = UDim2.fromOffset(128, 48), Size = UDim2.new(1, -304, 0, 60),
-			Font = Enum.Font.GothamMedium, TextSize = 15, TextColor3 = MUTED,
+			Font = Enum.Font.GothamBold, TextSize = 18, TextColor3 = Style.Text,
 			TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+			TextStrokeTransparency = 1,
 		})
-		local buy = make("TextButton", row, {
-			Name = "Buy", AutoButtonColor = true, BorderSizePixel = 0,
-			AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -16, 0.5, 0),
-			Size = UDim2.fromOffset(148, 40), BackgroundColor3 = BUY,
-			Font = Enum.Font.GothamBold, TextSize = 18, TextColor3 = Color3.new(1, 1, 1),
-		})
-		corner(buy, 10)
+		local buy = Style.Button(row, "", UDim2.new(1, -164, 0.5, -20), UDim2.fromOffset(148, 40), BUY)
+		buy.Name = "Buy"
 		styleBuy(buy, pass.price, false)
 		track(pass.id, buy, pass.price)
 		buy.Activated:Connect(function()
@@ -228,10 +242,9 @@ function M.Mount(screen, onClose)
 	})
 	for index, pack in ipairs(Catalog.Coins) do
 		local card = make("Frame", coinRow, {
-			Name = tostring(pack.amount), LayoutOrder = index, BackgroundColor3 = CARD, BorderSizePixel = 0,
+			Name = tostring(pack.amount), LayoutOrder = index, BackgroundColor3 = Style.Slot, BorderSizePixel = 0,
 		})
-		corner(card, 14)
-		make("UIStroke", card, {Color = EDGE, Thickness = 1})
+		Style.Surface(card, Style.Slot, 6)
 		picture(card, {
 			Name = "Picture", BackgroundTransparency = 1, BorderSizePixel = 0,
 			Image = (type(pack.image) == "string" and pack.image ~= "") and pack.image or Assets.Coins,
@@ -239,25 +252,21 @@ function M.Mount(screen, onClose)
 			AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 14),
 			Size = UDim2.fromOffset(64, 64),
 		})
-		make("TextLabel", card, {
+		strokeText(make("TextLabel", card, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = withCommas(pack.amount),
 			Position = UDim2.fromOffset(8, 84), Size = UDim2.new(1, -16, 0, 26),
 			Font = Enum.Font.GothamBold, TextSize = 22, TextColor3 = INK,
 			TextXAlignment = Enum.TextXAlignment.Center,
-		})
+		}))
 		make("TextLabel", card, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = "Coins",
-			Position = UDim2.fromOffset(8, 108), Size = UDim2.new(1, -16, 0, 16),
-			Font = Enum.Font.GothamMedium, TextSize = 13, TextColor3 = MUTED,
-			TextXAlignment = Enum.TextXAlignment.Center,
+			Position = UDim2.fromOffset(8, 106), Size = UDim2.new(1, -16, 0, 22),
+			Font = Enum.Font.GothamBold, TextSize = 18, TextColor3 = Style.Text,
+			TextXAlignment = Enum.TextXAlignment.Center, TextStrokeTransparency = 1,
 		})
-		local buy = make("TextButton", card, {
-			Name = "Buy", AutoButtonColor = true, BorderSizePixel = 0,
-			Position = UDim2.fromOffset(10, 132), Size = UDim2.new(1, -20, 0, 34),
-			BackgroundColor3 = BUY, Font = Enum.Font.GothamBold, TextSize = 16,
-			TextColor3 = Color3.new(1, 1, 1), Text = priceText(pack.price),
-		})
-		corner(buy, 8)
+		local buy = Style.Button(card, priceText(pack.price), UDim2.fromOffset(10, 132), UDim2.new(1, -20, 0, 34), BUY)
+		buy.Name = "Buy"
+		buy.TextSize = 16
 		buy.Activated:Connect(function()
 			if type(pack.id) ~= "number" or pack.id <= 0 then return end
 			pcall(function() MarketplaceService:PromptProductPurchase(player, pack.id) end)

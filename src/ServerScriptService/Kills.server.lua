@@ -263,6 +263,36 @@ local function persistLater(userId, killId, name)
 	task.spawn(persist, userId, killId, name)
 end
 
+local function killReward(player)
+	local amount = 1
+	local configModule = ReplicatedStorage:FindFirstChild("GrappleConfig")
+	if configModule then
+		local ok, config = pcall(require, configModule)
+		if ok and type(config) == "table" and type(config.killCoinReward) == "number" then
+			amount = math.floor(config.killCoinReward)
+		end
+	end
+	if amount < 1 then return 0 end
+	local payout = player and player:GetAttribute("MapCoinPayout")
+	if type(payout) == "number" and payout >= 2 then amount *= math.floor(payout) end
+	return amount
+end
+
+local function payKill(userId)
+	local lookup = Players.GetPlayerByUserId
+	local player = type(lookup) == "function" and lookup(Players, userId) or nil
+	if not player then return end
+	local amount = killReward(player)
+	if amount < 1 then return end
+	local grant = ReplicatedStorage:FindFirstChild("GrantCoins")
+	if not grant or type(grant.Invoke) ~= "function" then return end
+	local ok, paid = pcall(function()
+		return grant:Invoke(userId, amount, "kill_" .. HttpService:GenerateGUID(false))
+	end)
+	local gain = Remotes.CoinGain
+	if ok and paid == true and gain then gain:FireClient(player, amount) end
+end
+
 local function award(userId)
 	if type(userId) ~= "number" then return end
 	if not store and not storeWarned then
@@ -304,7 +334,10 @@ local function onKill(result, victimPlayer)
 	if type(result) ~= "table" or type(result.killerId) ~= "number" then return end
 	local victimName = victimPlayer and remember(victimPlayer) or "Player"
 	local killerName = killerDisplay(result)
-	if result.count then award(result.killerId) end
+	if result.count then
+		award(result.killerId)
+		payKill(result.killerId)
+	end
 	if not result.show then return end
 	local victimId = victimPlayer and victimPlayer.UserId or result.victimId
 	if result.solo then

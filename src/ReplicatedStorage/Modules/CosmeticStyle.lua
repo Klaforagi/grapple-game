@@ -9,17 +9,41 @@ local make, round = Ui.Make, Ui.Round
 local ink, white = Style.Ink, Style.Text
 
 -- Dark outlines and diagonal highlights give the panels a chunky toy-like finish.
-function Style.Surface(parent, color, radius)
-	parent.BackgroundColor3 = Color3.new(1, 1, 1)
-	parent.BorderSizePixel = 0
-	round(parent, radius or 6)
-	make("UIGradient", parent, {Rotation = 28, Color = ColorSequence.new({
+function Style.Sequence(color)
+	return ColorSequence.new({
 		ColorSequenceKeypoint.new(0, color:Lerp(white, 0.18)),
 		ColorSequenceKeypoint.new(0.44, color:Lerp(white, 0.06)),
 		ColorSequenceKeypoint.new(0.45, color),
 		ColorSequenceKeypoint.new(1, color:Lerp(ink, 0.30)),
-	})})
+	})
+end
+
+function Style.Surface(parent, color, radius)
+	parent.BackgroundColor3 = Color3.new(1, 1, 1)
+	parent.BackgroundTransparency = 0
+	parent.BorderSizePixel = 0
+	round(parent, radius or 6)
+	make("UIGradient", parent, {Rotation = 28, Color = Style.Sequence(color)})
 	return make("UIStroke", parent, {Color = ink, Thickness = 3, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
+end
+
+function Style.Recolor(parent, color)
+	local surface = parent:FindFirstChild("Surface") or parent
+	local gradient = surface:FindFirstChildOfClass("UIGradient")
+	if gradient then gradient.Color = Style.Sequence(color) end
+end
+
+-- A full-size plate for a control that already draws its own text or icons.
+function Style.Backdrop(parent, color, radius)
+	parent.BackgroundTransparency = 1
+	parent.BorderSizePixel = 0
+	local background = make("Frame", parent, {
+		Name = "Surface", Size = UDim2.fromScale(1, 1), BorderSizePixel = 0,
+		ZIndex = parent.ZIndex, Active = false,
+	})
+	local stroke = Style.Surface(background, color or Style.ButtonColor, radius or 6)
+	stroke.Parent = parent
+	return background
 end
 
 function Style.Label(parent, value, position, size, fontSize, color)

@@ -4,7 +4,7 @@
 
 Create your station model anywhere under `Workspace` and name it **`CosmeticRollStation`**. Inside it, put one anchored `Part` named **`RollZone`** at the place where players should stand. The part can be invisible (`Transparency = 1`, `CanCollide = false`); touch events and `CanTouch` are not required. Keep the model's scenery anchored. With streaming enabled, set the model's `ModelStreamingMode` to `Atomic` so its complete shape arrives together.
 
-The UI opens within 10 studs of the zone's surface, including when standing inside it. The server permits a 14-stud distance to allow for replication delay. The collection billboard appears within 45 studs and sits above the model. These distances and names live in `src/ReplicatedStorage/Modules/CosmeticCatalog.lua`. Closing the panel keeps it closed until the player leaves and approaches again. Multiple station models are supported.
+The UI opens only while the player's root is inside the `RollZone`, or standing on it (up to 5 studs above the part, so a floor plate still counts). Standing beside the zone does not open it. The server allows 2 studs of padding for replication delay. The collection billboard appears within 45 studs and sits above the model. These values and names live in `src/ReplicatedStorage/Modules/CosmeticCatalog.lua`. Closing the panel keeps it closed until the player leaves the zone and steps back in. Multiple station models are supported.
 
 No GUI, prompt, script, or billboard needs to be placed inside your model. Rojo sync installs the code; the map model remains yours to create in Studio.
 

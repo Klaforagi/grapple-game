@@ -63,6 +63,17 @@ return function(sources)
 		assert(not catalog.ById[id].Starter)
 	end
 	assert(math.abs(sum - 1) < 1e-10, "odds do not sum to 100%")
+	local plate = {
+		Size = {X = 10, Y = 1, Z = 8},
+		IsA = function(_, class) return class == "BasePart" end,
+		CFrame = {PointToObjectSpace = function(_, position) return position end},
+	}
+	assert(catalog.Inside(plate, {X = 0, Y = 0, Z = 0}), "center of the zone did not count")
+	assert(catalog.Inside(plate, {X = 4, Y = 3, Z = 2}), "standing on the zone did not count")
+	assert(not catalog.Inside(plate, {X = 4, Y = 3, Z = 9}), "beside the zone counted as inside")
+	assert(not catalog.Inside(plate, {X = 8, Y = 0, Z = 0}), "near the zone counted as inside")
+	assert(catalog.Inside(plate, {X = 6, Y = 0, Z = 0}, catalog.ServerPadding), "server padding rejected the zone edge")
+	assert(not catalog.Inside(plate, {X = 0, Y = 8, Z = 0}), "high above the zone counted as standing on it")
 	assert(math.abs(odds.Gun_Rainbow - 0.005 / 3) < 1e-10)
 	-- Future populated tiers use the same independent highest-first checks.
 	local epic, rare = {Rarity = "Epic"}, {Rarity = "Rare"}

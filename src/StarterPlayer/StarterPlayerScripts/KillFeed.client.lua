@@ -29,8 +29,9 @@ local MOBILE_MIN_TEXT = 10
 local MOBILE_AVATAR = 14
 local MOBILE_MIN_AVATAR = 12
 local MOBILE_WORD_GAP = 3
-local TEXT_COLOR = Color3.fromRGB(232, 240, 247)
-local DARK_STROKE = Color3.fromRGB(27, 42, 53)
+local TEXT_COLOR = Color3.fromRGB(242, 239, 255)
+local DARK_STROKE = Color3.fromRGB(13, 17, 27)
+local CHIP = Color3.fromRGB(29, 32, 48)
 local SLIDE = TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local FADE_INFO = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local FADE_OUT = TweenInfo.new(FADE, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
@@ -103,6 +104,7 @@ end
 
 local function fade(row, disappearing, info)
 	local transparency = disappearing and 1 or 0
+	TweenService:Create(row, info, {BackgroundTransparency = disappearing and 1 or 0.12}):Play()
 	for _, child in ipairs(row:GetDescendants()) do
 		if child:IsA("TextLabel") then
 			TweenService:Create(child, info, {TextTransparency = transparency}):Play()
@@ -152,7 +154,7 @@ end
 local function outline(parent)
 	local stroke = Instance.new("UIStroke")
 	stroke.Color = DARK_STROKE
-	stroke.Thickness = 1
+	stroke.Thickness = 1.5
 	stroke.Transparency = 1
 	stroke.Parent = parent
 end
@@ -394,10 +396,18 @@ local function push(killerName, victimName, cause, lineIndex, killerId, victimId
 	row.Name = "Kill"
 	row.AnchorPoint = Vector2.new(1, 0)
 	row.AutomaticSize = MOBILE and Enum.AutomaticSize.None or Enum.AutomaticSize.X
-	row.Size = MOBILE and UDim2.fromOffset(maxWidth, rowHeightPx) or UDim2.fromOffset(0, ROW)
+	row.Size = MOBILE and UDim2.fromOffset(maxWidth + 16, rowHeightPx) or UDim2.fromOffset(0, ROW)
+	row.BackgroundColor3 = CHIP
 	row.BackgroundTransparency = 1
 	row.BorderSizePixel = 0
 	row.Active = false
+	local chipCorner = Instance.new("UICorner")
+	chipCorner.CornerRadius = UDim.new(0, 6)
+	chipCorner.Parent = row
+	local chipPad = Instance.new("UIPadding")
+	chipPad.PaddingLeft = UDim.new(0, 8)
+	chipPad.PaddingRight = UDim.new(0, 8)
+	chipPad.Parent = row
 	state(row).expectedHeight = MOBILE and rowHeightPx or ROW
 	local list = Instance.new("UIListLayout")
 	list.FillDirection = Enum.FillDirection.Horizontal

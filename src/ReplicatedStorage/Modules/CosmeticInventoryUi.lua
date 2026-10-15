@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local Catalog = require(script.Parent:WaitForChild("CosmeticCatalog"))
@@ -12,7 +13,7 @@ local Inventory = {}
 function Inventory.Create(parent, equipRemote, onClose)
 	local player = Players.LocalPlayer
 	local panel = make("Frame", parent, {Name = "GrappleInventory", AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(820, 524), Visible = false})
+		Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(820, 524), Visible = false, ZIndex = 20})
 	Style.Surface(panel, Style.Panel, 8)
 	local scale = make("UIScale", panel, {Scale = 1})
 	local header = make("Frame", panel, {Size = UDim2.new(1, 0, 0, 68)})
@@ -172,9 +173,14 @@ function Inventory.Create(parent, equipRemote, onClose)
 	end)
 	RunService.RenderStepped:Connect(function()
 		local camera = workspace.CurrentCamera
-		if camera and panel.Visible then
-			scale.Scale = math.min(1, (camera.ViewportSize.X - 28) / 820, (camera.ViewportSize.Y - 64) / 524)
-		end
+		if not camera or not panel.Visible then return end
+		local bounds = UserInputService.TouchEnabled and panel.Parent.AbsoluteSize or camera.ViewportSize
+		if bounds.X < 1 or bounds.Y < 1 then return end
+		local marginX = UserInputService.TouchEnabled and 48 or 28
+		local marginY = UserInputService.TouchEnabled and 48 or 64
+		local availX = math.max(1, bounds.X - marginX)
+		local availY = math.max(1, bounds.Y - marginY)
+		scale.Scale = math.min(1, availX / 820, availY / 524)
 	end)
 	return panel
 end

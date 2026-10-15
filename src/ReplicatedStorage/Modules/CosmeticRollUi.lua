@@ -8,6 +8,7 @@ local Ui = require(script.Parent:WaitForChild("CollectionUi"))
 local make, text, round = Ui.Make, Ui.Text, Ui.Round
 local Style = require(script.Parent:WaitForChild("CosmeticStyle"))
 local ScreenFocus = require(script.Parent:WaitForChild("CosmeticScreenFocus"))
+local PlaySound = require(script.Parent:WaitForChild("PlaySound"))
 local SoundService = game:GetService("SoundService")
 local Debris = game:GetService("Debris")
 local accent, ink, white = Style.Accent, Style.Ink, Style.Text
@@ -219,7 +220,9 @@ function RollUi.Init()
 		headline.Text = item.Name .. " " .. item.Kind
 		detail.Text = result.duplicate and string.format("%s  /  Added to your stack  /  x%d", item.Rarity, result.copies or Catalog.Copies(player, item.Kind, item.Name))
 			or item.Rarity .. "  /  NEW"
-		celebrate(rarity.Color)
+		if not result.duplicate then PlaySound(SoundService, "Reward") end
+		local rareOrBetter = item.Rarity == "Rare" or item.Rarity == "Epic" or item.Rarity == "Legendary"
+		if rareOrBetter or not result.duplicate then celebrate(rarity.Color) end
 		resumePreviewAt = os.clock() + 4
 		busy = false
 	end)
@@ -286,12 +289,12 @@ function RollUi.Init()
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-		local nearest, distance = nil, Catalog.OpenDistance
+		local nearest = nil
 		if root and humanoid and humanoid.Health > 0 then
 			for part in pairs(stations) do
-				if Catalog.IsStationPart(part) then
-					local current = Catalog.Distance(part, root.Position)
-					if current <= distance then nearest, distance = part, current end
+				if Catalog.IsStationPart(part) and Catalog.Inside(part, root.Position) then
+					nearest = part
+					break
 				end
 			end
 		end

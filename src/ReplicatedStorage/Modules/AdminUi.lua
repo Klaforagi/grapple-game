@@ -1,15 +1,15 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
+local Style = require(script.Parent:WaitForChild("CosmeticStyle"))
 
-local INK = Color3.fromRGB(244, 246, 252)
-local MUTED = Color3.fromRGB(176, 186, 204)
-local FIELD = Color3.fromRGB(20, 29, 38)
-local PANEL = Color3.fromRGB(39, 51, 65)
-local GREEN = Color3.fromRGB(0, 170, 85)
-local RED = Color3.fromRGB(176, 64, 64)
-local TAB = Color3.fromRGB(28, 36, 48)
-local TAB_ON = Color3.fromRGB(70, 90, 115)
+local INK = Style.Text
+local MUTED = Style.Muted
+local FIELD = Style.Slot
+local GREEN = Color3.fromRGB(62, 165, 110)
+local RED = Color3.fromRGB(195, 76, 87)
+local TAB = Style.ButtonColor
+local TAB_ON = Style.Header
 
 local M = {}
 
@@ -30,27 +30,40 @@ local function pad(parent, left)
 	})
 end
 
+local function outlineField(box)
+	box.BackgroundColor3 = FIELD
+	box.TextColor3 = INK
+	box.PlaceholderColor3 = MUTED
+	box.TextStrokeColor3 = Style.Ink
+	box.TextStrokeTransparency = 0.55
+	make("UIStroke", box, {Color = Style.Ink, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
+end
+
 local function field(parent, name, placeholder, order)
 	local box = make("TextBox", parent, {
 		Name = name, PlaceholderText = placeholder, Text = "", ClearTextOnFocus = false,
 		BackgroundColor3 = FIELD, BorderSizePixel = 0, TextColor3 = INK, PlaceholderColor3 = MUTED,
-		Font = Enum.Font.Gotham, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Left,
+		Font = Enum.Font.GothamBold, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Left,
 		Size = UDim2.new(1, 0, 0, 36), LayoutOrder = order, ClipsDescendants = true,
 	})
-	corner(box, 8)
+	corner(box, 6)
+	outlineField(box)
 	pad(box, 10)
 	return box
 end
 
 local function actionButton(parent, name, text, order, color)
-	local button = make("TextButton", parent, {
-		Name = name, Text = text, AutoButtonColor = true, BorderSizePixel = 0,
-		BackgroundColor3 = color or GREEN, TextColor3 = Color3.new(1, 1, 1),
-		Font = Enum.Font.GothamBold, TextSize = 16,
-		Size = UDim2.new(1, 0, 0, 36), LayoutOrder = order,
-	})
-	corner(button, 8)
+	local button = Style.Button(parent, text, UDim2.fromOffset(0, 0), UDim2.new(1, 0, 0, 36), color or GREEN)
+	button.Name = name
+	button.LayoutOrder = order
+	button.TextSize = 16
 	return button
+end
+
+local function paintTab(button, on)
+	Style.Recolor(button, on and TAB_ON or TAB)
+	local stroke = button:FindFirstChildOfClass("UIStroke")
+	if stroke then stroke.Color = on and Style.Accent or Style.Ink end
 end
 
 local function headshot(userId)
@@ -98,27 +111,26 @@ function M.Mount(screen, onOpen)
 	local requestRemote, resultRemote
 	local window = make("Frame", screen, {
 		Name = "AdminWindow", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(500, 560), BackgroundColor3 = PANEL, BorderSizePixel = 0,
+		Size = UDim2.fromOffset(500, 560), BackgroundColor3 = Style.Panel, BorderSizePixel = 0,
 		Visible = false, ZIndex = 18, ClipsDescendants = true,
 	})
-	corner(window, 12)
-	make("UIStroke", window, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.75})
+	Style.Surface(window, Style.Panel, 8)
 	local scale = make("UIScale", window, {Scale = 1})
-	local title = make("TextLabel", window, {
-		BackgroundTransparency = 1, BorderSizePixel = 0, Text = "Admin",
-		Position = UDim2.fromOffset(16, 8), Size = UDim2.fromOffset(220, 28),
-		Font = Enum.Font.GothamBold, TextSize = 20, TextColor3 = INK,
-		TextXAlignment = Enum.TextXAlignment.Left,
+	local header = make("Frame", window, {Name = "Header", Size = UDim2.new(1, 0, 0, 52), ZIndex = 19})
+	Style.Surface(header, Style.Header, 8)
+	local title = make("TextLabel", header, {
+		BackgroundTransparency = 1, BorderSizePixel = 0, Text = "ADMIN",
+		Position = UDim2.fromOffset(16, 10), Size = UDim2.fromOffset(220, 32),
+		Font = Enum.Font.GothamBold, TextSize = 22, TextColor3 = INK,
+		TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 20,
+		TextStrokeColor3 = Style.Ink, TextStrokeTransparency = 0.45,
 	})
-	local close = make("TextButton", window, {
-		Name = "Close", Text = "X", AutoButtonColor = true, BorderSizePixel = 0,
-		BackgroundColor3 = FIELD, TextColor3 = INK, Font = Enum.Font.GothamBold, TextSize = 16,
-		AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 8), Size = UDim2.fromOffset(32, 30),
-	})
-	corner(close, 8)
+	local close = Style.Button(header, "X", UDim2.new(1, -52, 0, 8), UDim2.fromOffset(38, 36), RED)
+	close.Name = "Close"
+	close.ZIndex = 20
 
 	local tabRow = make("Frame", window, {
-		Name = "Tabs", BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 46),
+		Name = "Tabs", BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 60),
 		Size = UDim2.new(1, -24, 0, 32),
 	})
 	make("UIListLayout", tabRow, {
@@ -127,13 +139,14 @@ function M.Mount(screen, onOpen)
 	})
 
 	local pages = make("Frame", window, {
-		Name = "Pages", BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 88),
-		Size = UDim2.new(1, -24, 1, -132),
+		Name = "Pages", BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 100),
+		Size = UDim2.new(1, -24, 1, -144),
 	})
 	local status = make("TextLabel", window, {
 		Name = "Status", BackgroundTransparency = 1, BorderSizePixel = 0, Text = "",
 		Position = UDim2.new(0, 12, 1, -36), Size = UDim2.new(1, -24, 0, 28),
-		Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = MUTED,
+		Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = MUTED,
+		TextStrokeColor3 = Style.Ink, TextStrokeTransparency = 0.55,
 		TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
 	})
 
@@ -160,7 +173,8 @@ function M.Mount(screen, onOpen)
 	local give = actionButton(coinsPage, "Give", "Give Coins", 3, GREEN)
 	local coinNote = make("TextLabel", coinsPage, {
 		BackgroundTransparency = 1, Text = "Adds to the coins they are holding. Lifetime coins and the leaderboard stay the same.",
-		Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = MUTED, TextWrapped = true,
+		Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = MUTED,
+		TextStrokeColor3 = Style.Ink, TextStrokeTransparency = 0.55, TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
 		Size = UDim2.new(1, 0, 0, 40), LayoutOrder = 4,
 	})
@@ -169,12 +183,14 @@ function M.Mount(screen, onOpen)
 	local lookupUser = field(lookupPage, "User", "User id or username", 1)
 	local loadPlayer = actionButton(lookupPage, "Load", "Load Player", 2, GREEN)
 	local resultScroll = make("ScrollingFrame", lookupPage, {
-		Name = "Result", BackgroundColor3 = FIELD, BorderSizePixel = 0,
+		Name = "Result", BackgroundColor3 = Style.Ink, BackgroundTransparency = 0.28, BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 300), LayoutOrder = 3, ScrollBarThickness = 4,
+		ScrollBarImageColor3 = MUTED,
 		CanvasSize = UDim2.fromOffset(0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		ScrollingDirection = Enum.ScrollingDirection.Y, Active = true,
 	})
-	corner(resultScroll, 8)
+	corner(resultScroll, 6)
+	make("UIStroke", resultScroll, {Color = Style.Ink, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
 	make("UIPadding", resultScroll, {
 		PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
 		PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
@@ -235,7 +251,8 @@ function M.Mount(screen, onOpen)
 	local unbanButton = actionButton(banPage, "Unban", "Unban", 4, TAB_ON)
 	make("TextLabel", banPage, {
 		BackgroundTransparency = 1, Text = "A banned player is kicked and cannot rejoin. Admins cannot be banned.",
-		Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = MUTED, TextWrapped = true,
+		Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = MUTED,
+		TextStrokeColor3 = Style.Ink, TextStrokeTransparency = 0.55, TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
 		Size = UDim2.new(1, 0, 0, 40), LayoutOrder = 5,
 	})
@@ -250,7 +267,8 @@ function M.Mount(screen, onOpen)
 	make("TextLabel", resetPage, {
 		BackgroundTransparency = 1,
 		Text = "Reset Coins clears held coins and lifetime coins. Reset All also clears kills, play time, and upgrade ranks.",
-		Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = MUTED, TextWrapped = true,
+		Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = MUTED,
+		TextStrokeColor3 = Style.Ink, TextStrokeTransparency = 0.55, TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
 		Size = UDim2.new(1, 0, 0, 48), LayoutOrder = 7,
 	})
@@ -267,17 +285,16 @@ function M.Mount(screen, onOpen)
 	local selectedTarget = "Gun"
 	local targetButtons = {}
 	for index, targetName in ipairs({"Gun", "Rope", "Bomb"}) do
-		local button = make("TextButton", targetRow, {
-			Name = targetName, Text = targetName, AutoButtonColor = true, BorderSizePixel = 0,
-			BackgroundColor3 = index == 1 and TAB_ON or TAB, TextColor3 = INK,
-			Font = Enum.Font.GothamBold, TextSize = 16, Size = UDim2.new(1 / 3, -4, 1, 0), LayoutOrder = index,
-		})
-		corner(button, 8)
+		local button = Style.Button(targetRow, targetName, UDim2.fromOffset(0, 0), UDim2.new(1 / 3, -4, 1, 0), index == 1 and TAB_ON or TAB)
+		button.Name = targetName
+		button.TextSize = 16
+		button.LayoutOrder = index
+		paintTab(button, index == 1)
 		targetButtons[targetName] = button
 		button.Activated:Connect(function()
 			selectedTarget = targetName
 			for other, otherButton in pairs(targetButtons) do
-				otherButton.BackgroundColor3 = other == targetName and TAB_ON or TAB
+				paintTab(otherButton, other == targetName)
 			end
 		end)
 	end
@@ -286,19 +303,22 @@ function M.Mount(screen, onOpen)
 	make("TextLabel", colorPage, {
 		BackgroundTransparency = 1,
 		Text = "Uses the gun, rope, and bomb palette names, including Rainbow. Bomb Teal is saved as Mint.",
-		Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = MUTED, TextWrapped = true,
+		Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = MUTED,
+		TextStrokeColor3 = Style.Ink, TextStrokeTransparency = 0.55, TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
 		Size = UDim2.new(1, 0, 0, 48), LayoutOrder = 5,
 	})
 
 	local serverPage = addPage("server")
 	local serverList = make("ScrollingFrame", serverPage, {
-		Name = "Players", BackgroundColor3 = FIELD, BorderSizePixel = 0,
+		Name = "Players", BackgroundColor3 = Style.Ink, BackgroundTransparency = 0.28, BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 148), LayoutOrder = 1, ScrollBarThickness = 4,
+		ScrollBarImageColor3 = MUTED,
 		CanvasSize = UDim2.fromOffset(0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 	})
-	corner(serverList, 8)
+	corner(serverList, 6)
+	make("UIStroke", serverList, {Color = Style.Ink, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
 	make("UIPadding", serverList, {
 		PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4),
 		PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4),
@@ -310,7 +330,8 @@ function M.Mount(screen, onOpen)
 		Font = Enum.Font.GothamBold, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Left,
 		Size = UDim2.new(1, 0, 0, 34), LayoutOrder = 2, ClipsDescendants = true,
 	})
-	corner(serverUserId, 8)
+	corner(serverUserId, 6)
+	outlineField(serverUserId)
 	pad(serverUserId, 10)
 	local serverUserLocked = ""
 	local function setServerUserId(text)
@@ -323,11 +344,12 @@ function M.Mount(screen, onOpen)
 	local serverStats = make("TextBox", serverPage, {
 		Name = "Stats", Text = "Click a player.", ClearTextOnFocus = false, TextEditable = true, TextWrapped = true,
 		BackgroundColor3 = FIELD, BorderSizePixel = 0, TextColor3 = INK,
-		Font = Enum.Font.Gotham, TextSize = 15,
+		Font = Enum.Font.GothamBold, TextSize = 15,
 		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
 		Size = UDim2.new(1, 0, 0, 92), LayoutOrder = 3, ClipsDescendants = true,
 	})
-	corner(serverStats, 8)
+	corner(serverStats, 6)
+	outlineField(serverStats)
 	pad(serverStats, 10)
 	local serverStatsLocked = serverStats.Text
 	local function setServerStats(text)
@@ -345,12 +367,10 @@ function M.Mount(screen, onOpen)
 		FillDirectionMaxCells = 2, SortOrder = Enum.SortOrder.LayoutOrder,
 	})
 	local function gridButton(name, text, order)
-		local button = make("TextButton", serverButtons, {
-			Name = name, Text = text, AutoButtonColor = true, BorderSizePixel = 0,
-			BackgroundColor3 = TAB_ON, TextColor3 = INK, Font = Enum.Font.GothamBold, TextSize = 14,
-			LayoutOrder = order,
-		})
-		corner(button, 8)
+		local button = Style.Button(serverButtons, text, UDim2.fromScale(0, 0), UDim2.fromScale(1, 1), TAB)
+		button.Name = name
+		button.TextSize = 14
+		button.LayoutOrder = order
 		return button
 	end
 	local bringButton = gridButton("Teleport", "Teleport", 1)
@@ -366,19 +386,17 @@ function M.Mount(screen, onOpen)
 			page.Visible = pageName == name
 		end
 		for tabName, button in pairs(tabs) do
-			button.BackgroundColor3 = tabName == name and TAB_ON or TAB
+			paintTab(button, tabName == name)
 		end
 		if name == "server" and refreshServer then refreshServer() end
 	end
 	for index, spec in ipairs({
 		{"coins", "Coins"}, {"lookup", "Lookup"}, {"ban", "Ban"}, {"reset", "Reset"}, {"colors", "Colors"}, {"server", "Server"},
 	}) do
-		local button = make("TextButton", tabRow, {
-			Name = spec[1], Text = spec[2], AutoButtonColor = true, BorderSizePixel = 0,
-			BackgroundColor3 = index == 1 and TAB_ON or TAB, TextColor3 = INK,
-			Font = Enum.Font.GothamBold, TextSize = 13, Size = UDim2.new(1 / 6, -5, 1, 0), LayoutOrder = index,
-		})
-		corner(button, 8)
+		local button = Style.Button(tabRow, spec[2], UDim2.fromOffset(0, 0), UDim2.new(1 / 6, -5, 1, 0), index == 1 and TAB_ON or TAB)
+		button.Name = spec[1]
+		button.TextSize = 13
+		button.LayoutOrder = index
 		tabs[spec[1]] = button
 		button.Activated:Connect(function() showPage(spec[1]) end)
 	end
@@ -437,13 +455,10 @@ function M.Mount(screen, onOpen)
 		local found = false
 		for index, entry in ipairs(rows) do
 			if entry.userId == selectedUserId then found = true end
-			local row = make("TextButton", serverList, {
-				Name = "PlayerRow", Text = "",
-				AutoButtonColor = true, BorderSizePixel = 0,
-				BackgroundColor3 = entry.userId == selectedUserId and TAB_ON or Color3.fromRGB(24, 32, 42),
-				Size = UDim2.new(1, -8, 0, 36), LayoutOrder = index,
-			})
-			corner(row, 8)
+			local row = Style.Button(serverList, "", UDim2.fromOffset(0, 0), UDim2.new(1, -8, 0, 36),
+				entry.userId == selectedUserId and TAB_ON or Style.Slot)
+			row.Name = "PlayerRow"
+			row.LayoutOrder = index
 			local face = make("ImageLabel", row, {
 				Name = "Avatar", BackgroundColor3 = Color3.fromRGB(40, 52, 66), BorderSizePixel = 0,
 				Image = headshot(entry.userId), ScaleType = Enum.ScaleType.Crop,
@@ -463,7 +478,9 @@ function M.Mount(screen, onOpen)
 				setServerStats("Loading...")
 				for _, other in ipairs(serverList:GetChildren()) do
 					if other:IsA("TextButton") then
-						other.BackgroundColor3 = other == row and TAB_ON or Color3.fromRGB(24, 32, 42)
+						Style.Recolor(other, other == row and TAB_ON or Style.Slot)
+						local stroke = other:FindFirstChildOfClass("UIStroke")
+						if stroke then stroke.Color = other == row and Style.Accent or Style.Ink end
 					end
 				end
 				if spectating and spectating.UserId ~= entry.userId then

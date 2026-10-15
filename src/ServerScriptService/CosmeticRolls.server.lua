@@ -36,8 +36,8 @@ remote.OnServerInvoke = function(player, zone, requestId)
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if typeof(zone) ~= "Instance" or not Catalog.IsStationPart(zone) or not root or not humanoid
-		or humanoid.Health <= 0 or Catalog.Distance(zone, root.Position) > Catalog.ServerDistance then
-		return {ok = false, message = "Walk up to the roll station first."}
+		or humanoid.Health <= 0 or not Catalog.Inside(zone, root.Position, Catalog.ServerPadding) then
+		return {ok = false, message = "Stand in the roll zone first."}
 	end
 	-- A client retry after a lost response returns the already paid-for result.
 	local cached = lastResult[player]

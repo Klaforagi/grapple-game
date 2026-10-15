@@ -5,7 +5,8 @@ local Catalog = {
 	Cost = 100,
 	SellPrices = {Common = 10, Uncommon = 25, Rare = 100, Epic = 200, Legendary = 500},
 	ModelName = "CosmeticRollStation", PartName = "RollZone",
-	OpenDistance = 10, ServerDistance = 14, BillboardDistance = 45,
+	-- The root sits above the feet, so a floor plate still counts as standing on the zone.
+	StandHeight = 5, ServerPadding = 2, BillboardDistance = 45,
 	Cooldown = 5,
 	Defaults = {Gun = "Black", Rope = "Gray", Bomb = "Cyan"},
 	Attributes = {Gun = "GrappleGunColor", Rope = "GrappleRopeColor", Bomb = "BombColor"},
@@ -118,12 +119,19 @@ function Catalog.IsStationPart(part)
 	return model ~= nil and model:IsA("Model") and part:IsDescendantOf(workspace)
 end
 
--- Distance from the oriented zone surface; works for large or rotated zones.
-function Catalog.Distance(part, position)
+-- True when the position is inside the oriented zone, or standing on top of it.
+-- Padding is only for the server, so a little replication lag still counts as in the zone.
+function Catalog.Inside(part, position, padding)
+	if (typeof(part) ~= "Instance" and type(part) ~= "table") or not part.IsA or not part:IsA("BasePart") then
+		return false
+	end
 	local point = part.CFrame:PointToObjectSpace(position)
-	local half = part.Size * 0.5
-	return Vector3.new(math.max(0, math.abs(point.X) - half.X),
-		math.max(0, math.abs(point.Y) - half.Y), math.max(0, math.abs(point.Z) - half.Z)).Magnitude
+	local pad = padding or 0
+	local halfX, halfY, halfZ = part.Size.X * 0.5, part.Size.Y * 0.5, part.Size.Z * 0.5
+	return math.abs(point.X) <= halfX + pad
+		and math.abs(point.Z) <= halfZ + pad
+		and point.Y >= -halfY - pad
+		and point.Y <= halfY + Catalog.StandHeight + pad
 end
 
 return Catalog

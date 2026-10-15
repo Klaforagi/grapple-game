@@ -32,38 +32,47 @@ function Ui.OwnedText(player, kind)
 end
 
 function Ui.PopulateCodex(window)
+	local Style = require(script.Parent:WaitForChild("CosmeticStyle"))
 	local player = Players.LocalPlayer
 	local _, odds = Catalog.Odds()
-	local ownedLabel = Ui.Text(window, Ui.OwnedText(player), UDim2.fromOffset(16, 42), UDim2.new(1, -32, 0, 22), 16, Color3.fromRGB(129, 233, 187))
-	local scroll = make("ScrollingFrame", window, {Name = "Items", Position = UDim2.fromOffset(12, 76),
-		Size = UDim2.new(1, -24, 1, -88), BackgroundTransparency = 1, BorderSizePixel = 0,
-		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 4,
-		ScrollingDirection = Enum.ScrollingDirection.Y})
+	local ownedLabel = Ui.Text(window, Ui.OwnedText(player), UDim2.fromOffset(16, 58), UDim2.new(1, -32, 0, 22), 16, Style.Accent)
+	ownedLabel.TextStrokeColor3, ownedLabel.TextStrokeTransparency = Style.Ink, 0.45
+	local scroll = make("ScrollingFrame", window, {Name = "Items", Position = UDim2.fromOffset(12, 86),
+		Size = UDim2.new(1, -24, 1, -98), BackgroundTransparency = 1, BorderSizePixel = 0,
+		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 6,
+		ScrollBarImageColor3 = Style.Text, ScrollingDirection = Enum.ScrollingDirection.Y,
+		VerticalScrollBarInset = Enum.ScrollBarInset.Always})
+	make("UIPadding", scroll, {
+		PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 4),
+		PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 8),
+	})
 	make("UIListLayout", scroll, {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder})
 	local rows, order = {}, 0
-	for _, kind in ipairs({"Starter Items", "Gun", "Rope", "Bomb"}) do
+	for _, kind in ipairs({"Gun", "Rope", "Bomb"}) do
 		order += 1
-		local header = Ui.Text(scroll, string.upper(kind), UDim2.new(), UDim2.new(1, -8, 0, 26), 14, Color3.fromRGB(212, 228, 250))
+		local header = Ui.Text(scroll, string.upper(kind), UDim2.new(), UDim2.new(1, 0, 0, 26), 14, Style.Text)
 		header.LayoutOrder = order
+		header.TextStrokeColor3, header.TextStrokeTransparency = Style.Ink, 0.45
+		local listed = {}
 		for _, item in ipairs(Catalog.Items) do
-			if kind == "Starter Items" then
-				if not item.Starter then continue end
-			elseif item.Starter or item.Kind ~= kind then
-				continue
-			end
+			if item.Kind ~= kind then continue end
+			if item.Starter then table.insert(listed, 1, item) else table.insert(listed, item) end
+		end
+		for _, item in ipairs(listed) do
 			order += 1
 			local rarity = Catalog.Rarity(item.Rarity)
-			local row = make("Frame", scroll, {Name = item.Id, Size = UDim2.new(1, -8, 0, 56), LayoutOrder = order,
-				BorderSizePixel = 0, BackgroundColor3 = Color3.fromRGB(29, 40, 54)})
-			Ui.Round(row, 8)
+			local row = make("Frame", scroll, {Name = item.Id, Size = UDim2.new(1, 0, 0, 56), LayoutOrder = order, BorderSizePixel = 0})
+			Style.Surface(row, Style.Slot, 6)
 			local swatch = make("Frame", row, {Position = UDim2.fromOffset(8, 10), Size = UDim2.fromOffset(32, 36), BorderSizePixel = 0})
 			Ui.Round(swatch, 8) Ui.Paint(swatch, item)
-			local displayName = item.Starter and (item.Kind .. " / " .. item.Name) or item.Name
-			local name = Ui.Text(row, displayName, UDim2.fromOffset(48, 5), UDim2.new(1, -116, 0, 23), 15, Color3.new(1, 1, 1))
+			local name = Ui.Text(row, item.Name, UDim2.fromOffset(48, 5), UDim2.new(1, -116, 0, 23), 15, Style.Text)
+			name.TextStrokeColor3, name.TextStrokeTransparency = Style.Ink, 0.45
 			local detail = item.Starter and "Common  /  Starter" or string.format("%s  /  %.4f%% per roll", item.Rarity, (odds[item.Id] or 0) * 100)
-			Ui.Text(row, detail, UDim2.fromOffset(48, 29), UDim2.new(1, -52, 0, 19), 11, rarity.Color)
+			local detailLabel = Ui.Text(row, detail, UDim2.fromOffset(48, 29), UDim2.new(1, -52, 0, 19), 11, rarity.Color)
+			detailLabel.TextStrokeColor3, detailLabel.TextStrokeTransparency = Style.Ink, 0.55
 			local status = Ui.Text(row, "", UDim2.new(1, -66, 0, 8), UDim2.fromOffset(58, 20), 11)
 			status.TextXAlignment = Enum.TextXAlignment.Right
+			status.TextStrokeColor3, status.TextStrokeTransparency = Style.Ink, 0.45
 			table.insert(rows, {Item = item, Name = name, Status = status})
 		end
 	end
@@ -73,7 +82,7 @@ function Ui.PopulateCodex(window)
 			local owned = Catalog.Owns(player, row.Item.Kind, row.Item.Name)
 			row.Name.TextTransparency = owned and 0 or 0.4
 			row.Status.Text = owned and "Owned" or "Locked"
-			row.Status.TextColor3 = owned and Color3.fromRGB(129, 233, 187) or Color3.fromRGB(154, 169, 192)
+			row.Status.TextColor3 = owned and Style.Accent or Style.Muted
 		end
 	end
 	refresh()

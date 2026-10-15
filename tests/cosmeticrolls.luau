@@ -23,7 +23,10 @@ return function(source, catalog)
 		return {ok = true, itemId = "Gun_White"}
 	end}
 	local storage = {Modules = {WaitForChild = function(_, name) return name end}, WaitForChild = function() return roll end}
-	local testCatalog = setmetatable({IsStationPart = function(zone) return zone.valid end, Distance = function() return distance end}, {__index = catalog})
+	local testCatalog = setmetatable({
+		IsStationPart = function(zone) return zone.valid end,
+		Inside = function() return distance <= 0 end,
+	}, {__index = catalog})
 	local services = {Players = players, ReplicatedStorage = storage,
 		PolicyService = {GetPolicyInfoForPlayerAsync = function() return {ArePaidRandomItemsRestricted = not permitted} end}}
 	local env = setmetatable({
@@ -40,7 +43,7 @@ return function(source, catalog)
 	assert(not remote.OnServerInvoke(player, zone, {}).ok)
 	assert(not remote.OnServerInvoke(player, nil, "request-a").ok)
 	assert(not remote.OnServerInvoke(player, {kind = "Instance", valid = false}, "request-a").ok)
-	distance = catalog.ServerDistance + 1
+	distance = 1
 	assert(not remote.OnServerInvoke(player, zone, "request-a").ok)
 	distance, health = 0, 0
 	assert(not remote.OnServerInvoke(player, zone, "request-a").ok)

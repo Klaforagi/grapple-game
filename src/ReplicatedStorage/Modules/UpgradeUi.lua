@@ -7,16 +7,14 @@ local UserInputService = game:GetService("UserInputService")
 local Assets = require(ReplicatedStorage:WaitForChild("Assets"))
 local Catalog = require(script.Parent:WaitForChild("UpgradeCatalog"))
 local PlaySound = require(script.Parent:WaitForChild("PlaySound"))
+local Style = require(script.Parent:WaitForChild("CosmeticStyle"))
 
 local WINDOW_X, WINDOW_Y = 640, 584
 local ROBUX = utf8.char(0xE002)
-local INK = Color3.fromRGB(244, 246, 252)
-local MUTED = Color3.fromRGB(176, 186, 204)
-local CARD = Color3.fromRGB(44, 48, 64)
-local BUY = Color3.fromRGB(0, 170, 85)
-local IDLE = Color3.fromRGB(90, 96, 112)
-local GOLD = Color3.fromRGB(255, 196, 72)
-local EDGE = Color3.fromRGB(86, 92, 116)
+local INK = Style.Text
+local MUTED = Style.Muted
+local BUY = Color3.fromRGB(62, 165, 110)
+local IDLE = Style.ButtonColor
 local ACCENTS = {
 	speed = Color3.fromRGB(255, 196, 72),
 	distance = Color3.fromRGB(96, 196, 255),
@@ -35,6 +33,12 @@ end
 
 local function corner(parent, radius)
 	make("UICorner", parent, {CornerRadius = UDim.new(0, radius)})
+end
+
+local function strokeText(label)
+	label.TextStrokeColor3 = Style.Ink
+	label.TextStrokeTransparency = 0.45
+	return label
 end
 
 local function withCommas(amount)
@@ -56,32 +60,27 @@ function M.Mount(screen, onClose)
 	local window = make("TextButton", screen, {
 		Name = "UpgradeWindow", Text = "", AutoButtonColor = false, Active = true, Modal = true,
 		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(WINDOW_X, WINDOW_Y), BackgroundColor3 = Color3.fromRGB(22, 24, 32),
+		Size = UDim2.fromOffset(WINDOW_X, WINDOW_Y), BackgroundColor3 = Style.Panel,
 		BorderSizePixel = 0, Visible = false, ZIndex = 25, ClipsDescendants = true,
 	})
-	corner(window, 16)
-	make("UIStroke", window, {Color = GOLD, Transparency = 0.45, Thickness = 1.5})
+	Style.Surface(window, Style.Panel, 8)
 	local scale = make("UIScale", window, {Scale = 1})
+	local header = make("Frame", window, {Name = "Header", Size = UDim2.new(1, 0, 0, 64), ZIndex = 26})
+	Style.Surface(header, Style.Header, 8)
 
-	make("TextLabel", window, {
-		BackgroundTransparency = 1, BorderSizePixel = 0, Text = "Upgrades",
-		Position = UDim2.fromOffset(22, 8), Size = UDim2.fromOffset(220, 32),
+	strokeText(make("TextLabel", header, {
+		BackgroundTransparency = 1, BorderSizePixel = 0, Text = "UPGRADES",
+		Position = UDim2.fromOffset(22, 14), Size = UDim2.fromOffset(280, 36),
 		Font = Enum.Font.GothamBold, TextSize = 26, TextColor3 = INK,
-		TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 26,
-	})
-	make("TextLabel", window, {
-		BackgroundTransparency = 1, BorderSizePixel = 0, Text = "Spend coins or Robux to strengthen your grapple gun",
-		Position = UDim2.fromOffset(22, 38), Size = UDim2.fromOffset(360, 18),
-		Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = MUTED,
-		TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 26,
-	})
+		TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 27,
+	}))
 
-	local balance = make("Frame", window, {
-		Name = "Balance", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -64, 0, 29),
+	local balance = make("Frame", header, {
+		Name = "Balance", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -58, 0, 32),
 		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 36),
-		BackgroundColor3 = Color3.fromRGB(16, 18, 26), BorderSizePixel = 0, ZIndex = 26,
+		BackgroundColor3 = Style.Slot, BorderSizePixel = 0, ZIndex = 27,
 	})
-	corner(balance, 18)
+	Style.Surface(balance, Style.Slot, 8)
 	make("UIPadding", balance, {PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 12)})
 	make("UIListLayout", balance, {
 		FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center,
@@ -91,30 +90,24 @@ function M.Mount(screen, onClose)
 		BackgroundTransparency = 1, Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
 		Size = UDim2.fromOffset(22, 22), LayoutOrder = 1, ZIndex = 27,
 	})
-	local balanceText = make("TextLabel", balance, {
+	local balanceText = strokeText(make("TextLabel", balance, {
 		BackgroundTransparency = 1, BorderSizePixel = 0, Text = "0", LayoutOrder = 2,
 		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 36),
-		Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = INK, ZIndex = 27,
-	})
-	local close = make("TextButton", window, {
-		Name = "Close", Text = "X", AutoButtonColor = true, BorderSizePixel = 0,
-		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0, 29),
-		Size = UDim2.fromOffset(34, 34), BackgroundColor3 = Color3.fromRGB(50, 54, 70),
-		Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = INK, ZIndex = 27,
-	})
-	corner(close, 10)
+		Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = INK, ZIndex = 28,
+	}))
+	local close = Style.Button(header, "X", UDim2.new(1, -14, 0, 32), UDim2.fromOffset(36, 36), Color3.fromRGB(195, 76, 87))
+	close.AnchorPoint = Vector2.new(1, 0.5)
+	close.Position = UDim2.new(1, -14, 0, 32)
+	close.Name = "Close"
+	close.ZIndex = 28
 	close.Activated:Connect(function()
 		if onClose then onClose() end
 	end)
-	make("Frame", window, {
-		Name = "Accent", Position = UDim2.fromOffset(0, 64), Size = UDim2.new(1, 0, 0, 2),
-		BackgroundColor3 = GOLD, BorderSizePixel = 0, ZIndex = 26,
-	})
 	local status = make("TextLabel", window, {
 		Name = "Status", BackgroundTransparency = 1, BorderSizePixel = 0, Text = "",
-		Position = UDim2.fromOffset(22, 70), Size = UDim2.new(1, -44, 0, 18),
-		Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = Color3.fromRGB(255, 150, 140),
-		TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 26,
+		Position = UDim2.fromOffset(22, 70), Size = UDim2.new(1, -44, 0, 20),
+		Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Color3.fromRGB(255, 170, 160),
+		TextXAlignment = Enum.TextXAlignment.Left, TextStrokeTransparency = 1, ZIndex = 26,
 	})
 
 	local list = make("Frame", window, {
@@ -135,16 +128,16 @@ function M.Mount(screen, onClose)
 		row.rankLabel.Text = string.format("Rank %d / %d", rank, Catalog.MaxRank)
 		row.current.Text = Catalog.Text(stat, rank)
 		for index, pip in ipairs(row.pips) do
-			pip.BackgroundColor3 = index <= rank and ACCENTS[stat.accent] or Color3.fromRGB(22, 24, 32)
+			pip.BackgroundColor3 = index <= rank and ACCENTS[stat.accent] or Style.Ink
 		end
 		local afford = loaded and cost ~= nil and coins >= cost and not row.pending
 		row.button.Active = loaded and cost ~= nil and not row.pending
 		row.button.AutoButtonColor = afford
-		row.button.BackgroundColor3 = afford and BUY or IDLE
+		Style.Recolor(row.button, afford and BUY or IDLE)
 		row.icon.Visible = cost ~= nil and not row.pending
 		row.robux.Active = loaded and cost ~= nil and not row.pending
 		row.robux.AutoButtonColor = loaded and cost ~= nil and not row.pending
-		row.robux.BackgroundColor3 = (loaded and cost ~= nil and not row.pending) and BUY or IDLE
+		Style.Recolor(row.robux, (loaded and cost ~= nil and not row.pending) and BUY or IDLE)
 		row.robux.Visible = cost ~= nil or not loaded
 		if not loaded then
 			row.buttonText.Text = "..."
@@ -176,33 +169,32 @@ function M.Mount(screen, onClose)
 
 	for index, stat in ipairs(Catalog.Stats) do
 		local card = make("Frame", list, {
-			Name = stat.id, LayoutOrder = index, BackgroundColor3 = CARD, BorderSizePixel = 0,
+			Name = stat.id, LayoutOrder = index, BackgroundColor3 = Style.Slot, BorderSizePixel = 0,
 			Size = UDim2.new(1, 0, 0, 112), ZIndex = 26,
 		})
-		corner(card, 14)
-		make("UIStroke", card, {Color = EDGE, Thickness = 1})
+		Style.Surface(card, Style.Slot, 6)
 		local accent = make("Frame", card, {
 			BackgroundColor3 = ACCENTS[stat.accent], BorderSizePixel = 0,
 			Position = UDim2.fromOffset(0, 14), Size = UDim2.fromOffset(4, 84), ZIndex = 27,
 		})
 		corner(accent, 2)
-		local title = make("TextLabel", card, {
+		local title = strokeText(make("TextLabel", card, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = stat.name,
 			Position = UDim2.fromOffset(18, 10), Size = UDim2.new(1, -168, 0, 24),
 			Font = Enum.Font.GothamBold, TextSize = 20, TextColor3 = INK,
 			TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 27,
-		})
+		}))
 		local rankLabel = make("TextLabel", card, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = "Rank 0 / 10",
-			Position = UDim2.fromOffset(250, 54), Size = UDim2.fromOffset(160, 16),
-			Font = Enum.Font.GothamMedium, TextSize = 13, TextColor3 = MUTED,
-			TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 27,
+			Position = UDim2.fromOffset(250, 54), Size = UDim2.fromOffset(160, 18),
+			Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Style.Text,
+			TextXAlignment = Enum.TextXAlignment.Left, TextStrokeTransparency = 1, ZIndex = 27,
 		})
 		make("TextLabel", card, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = stat.description,
-			Position = UDim2.fromOffset(18, 34), Size = UDim2.new(1, -176, 0, 18),
-			Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = MUTED,
-			TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 27,
+			Position = UDim2.fromOffset(18, 34), Size = UDim2.new(1, -176, 0, 20),
+			Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Style.Text,
+			TextXAlignment = Enum.TextXAlignment.Left, TextStrokeTransparency = 1, ZIndex = 27,
 		})
 		local pips = make("Frame", card, {
 			BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -216,7 +208,7 @@ function M.Mount(screen, onClose)
 		for pipIndex = 1, Catalog.MaxRank do
 			local pip = make("Frame", pips, {
 				LayoutOrder = pipIndex, BorderSizePixel = 0, Size = UDim2.fromOffset(16, 8),
-				BackgroundColor3 = Color3.fromRGB(22, 24, 32), ZIndex = 28,
+				BackgroundColor3 = Style.Ink, ZIndex = 28,
 			})
 			corner(pip, 3)
 			pipFrames[pipIndex] = pip
@@ -232,12 +224,14 @@ function M.Mount(screen, onClose)
 		local current = make("TextLabel", values, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", LayoutOrder = 1,
 			AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 24),
-			Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = INK, ZIndex = 28,
+			Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = INK,
+			TextStrokeTransparency = 1, ZIndex = 28,
 		})
 		local nextText = make("TextLabel", values, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", LayoutOrder = 2,
 			AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 24),
-			Font = Enum.Font.GothamMedium, TextSize = 15, TextColor3 = GOLD, ZIndex = 28,
+			Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Style.Accent,
+			TextStrokeTransparency = 1, ZIndex = 28,
 		})
 		local buys = make("Frame", card, {
 			Name = "Buys", BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -250,32 +244,36 @@ function M.Mount(screen, onClose)
 		})
 		local button = make("TextButton", buys, {
 			Name = "Buy", Text = "", AutoButtonColor = false, BorderSizePixel = 0,
-			Size = UDim2.fromOffset(128, 34), BackgroundColor3 = IDLE, LayoutOrder = 1, ZIndex = 27,
+			Size = UDim2.fromOffset(128, 34), BackgroundTransparency = 1, LayoutOrder = 1, ZIndex = 27,
 		})
-		corner(button, 8)
-		make("UIListLayout", button, {
+		Style.Backdrop(button, IDLE, 6)
+		local coinFace = make("Frame", button, {
+			Name = "Face", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 28, Active = false,
+		})
+		make("UIListLayout", coinFace, {
 			FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center,
 			VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 6),
 			SortOrder = Enum.SortOrder.LayoutOrder,
 		})
-		local icon = make("ImageLabel", button, {
+		local icon = make("ImageLabel", coinFace, {
 			BackgroundTransparency = 1, Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
 			Size = UDim2.fromOffset(16, 16), LayoutOrder = 1, ZIndex = 28,
 		})
-		local buttonText = make("TextLabel", button, {
+		local buttonText = make("TextLabel", coinFace, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", LayoutOrder = 2,
 			AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 34),
-			Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Color3.new(1, 1, 1), ZIndex = 28,
+			Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Style.Text,
+			TextStrokeTransparency = 1, ZIndex = 28,
 		})
 		local robux = make("TextButton", buys, {
 			Name = "BuyRobux", Text = "", AutoButtonColor = false, BorderSizePixel = 0,
-			Size = UDim2.fromOffset(128, 34), BackgroundColor3 = BUY, LayoutOrder = 2, ZIndex = 27,
+			Size = UDim2.fromOffset(128, 34), BackgroundTransparency = 1, LayoutOrder = 2, ZIndex = 27,
 		})
-		corner(robux, 8)
+		Style.Backdrop(robux, BUY, 6)
 		local robuxText = make("TextLabel", robux, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = ROBUX .. " " .. tostring(Catalog.RobuxPrice),
-			Size = UDim2.fromScale(1, 1), Font = Enum.Font.GothamBold, TextSize = 15,
-			TextColor3 = Color3.new(1, 1, 1), ZIndex = 28,
+			Size = UDim2.fromScale(1, 1), Font = Enum.Font.GothamBold, TextSize = 16,
+			TextColor3 = Style.Text, TextStrokeTransparency = 1, ZIndex = 28,
 		})
 		local row = {
 			stat = stat, pips = pipFrames, rankLabel = rankLabel, current = current,
@@ -345,13 +343,15 @@ function M.Mount(screen, onClose)
 	end)
 
 	local function fit()
+		local parent = window.Parent
 		local camera = workspace.CurrentCamera
-		if not camera then return end
-		local viewport = camera.ViewportSize
-		if viewport.X < 1 or viewport.Y < 1 then return end
-		local fitted = math.min((viewport.X - 24) / WINDOW_X, (viewport.Y - 24) / WINDOW_Y)
-		if UserInputService.TouchEnabled then fitted *= 0.85 end
-		scale.Scale = math.clamp(fitted, 0.4, 1)
+		if not parent or not camera then return end
+		local bounds = UserInputService.TouchEnabled and parent.AbsoluteSize or camera.ViewportSize
+		if bounds.X < 1 or bounds.Y < 1 then return end
+		local margin = UserInputService.TouchEnabled and 48 or 24
+		local availX = math.max(1, bounds.X - margin)
+		local availY = math.max(1, bounds.Y - margin)
+		scale.Scale = math.min(1, availX / WINDOW_X, availY / WINDOW_Y)
 	end
 
 	return {window = window, scale = scale, refresh = refresh, fit = fit}

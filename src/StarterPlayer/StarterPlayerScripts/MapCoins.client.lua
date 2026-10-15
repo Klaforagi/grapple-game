@@ -10,6 +10,7 @@ local Workspace = game:GetService("Workspace")
 local PlaySound = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("PlaySound"))
 local player = Players.LocalPlayer
 local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CollectMapCoin")
+local Remotes = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("GrappleRemotes"))
 
 local PAD = Vector3.new(2.5, 4, 2.5)
 local SPIN = math.pi * 2 / 6
@@ -57,8 +58,7 @@ local popping = 0
 local function showGain(amount)
 	local gui = player:FindFirstChild("PlayerGui")
 	local hud = gui and gui:FindFirstChild("GrappleHUD")
-	local stack = hud and hud:FindFirstChild("LeftStack")
-	local coins = stack and stack:FindFirstChild("Coins")
+	local coins = hud and hud:FindFirstChild("Coins")
 	local amountLabel = coins and coins:FindFirstChild("Amount")
 	if not coins or not amountLabel then return end
 	local popup = Instance.new("TextLabel")
@@ -70,11 +70,13 @@ local function showGain(amount)
 	popup.TextXAlignment = Enum.TextXAlignment.Left
 	popup.Text = "+" .. tostring(amount)
 	popup.AnchorPoint = Vector2.new(0, 0.5)
-	local originX = amountLabel.Position.X.Offset + math.max(amountLabel.TextBounds.X, 12) + 8
-	local originY = 28 - (popping % 4) * 16
-	popup.Position = UDim2.fromOffset(originX, originY + 10)
+	-- Parent is the HUD, not the coin chip. The chip's list would pin this to the left side.
+	local topLeft = coins.AbsolutePosition - hud.AbsolutePosition
+	local originX = topLeft.X + coins.AbsoluteSize.X + 8
+	local originY = topLeft.Y + math.max(coins.AbsoluteSize.Y * 0.5, 16) - (popping % 4) * 16
+	popup.Position = UDim2.fromOffset(originX, originY)
 	popup.Size = UDim2.fromOffset(72, 28)
-	popup.ZIndex = 6
+	popup.ZIndex = 8
 	local amountStroke = amountLabel:FindFirstChildOfClass("UIStroke")
 	local stroke = Instance.new("UIStroke")
 	stroke.Color = amountStroke and amountStroke.Color or Color3.fromRGB(255, 255, 255)
@@ -83,7 +85,7 @@ local function showGain(amount)
 	local scale = Instance.new("UIScale")
 	scale.Scale = 0.35
 	scale.Parent = popup
-	popup.Parent = coins
+	popup.Parent = hud
 	popping += 1
 	local grow = TweenService:Create(scale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1})
 	local rise = TweenService:Create(popup, TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
@@ -118,6 +120,10 @@ local function celebrate(amount)
 	PlaySound(SoundService, "Coin")
 	showGain(amount)
 end
+
+Remotes.CoinGain.OnClientEvent:Connect(function(amount)
+	if type(amount) == "number" and amount > 0 then celebrate(amount) end
+end)
 
 remote.OnClientEvent:Connect(function(model, amount)
 	if model then pending[model] = nil end

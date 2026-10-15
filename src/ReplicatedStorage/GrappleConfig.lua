@@ -61,6 +61,8 @@ return {
 	-- prompt until escapeRobuxProductId is a real 9-Robux developer product.
 	escapeShieldSeconds = 6,
 	escapeCoinCost = 30,
+	-- Coins paid to the killer. 1 unless they own the 2x Coins pass, which uses MapCoinPayout.
+	killCoinReward = 1,
 	escapeRobuxPrice = 9,
 	escapeRobuxProductId = 0,
 
@@ -134,7 +136,7 @@ return {
 	waterPlungeMinDepth = 6, -- Studs under the surface on the shortest plunge
 	waterPlungeMaxDepth = 16, -- Cap so a huge fall does not drill to the bottom
 	waterPlungeFullDistance = 120, -- Drop that reaches the depth cap
-	mapCoinCap = 15, -- Grass pickups in the world at once
+	mapCoinCap = 16, -- Grass pickups in the world at once
 	mapCoinRespawn = 180, -- Seconds after a pickup before its replacement appears
 	mapCoinReach = 48, -- How far a lagged runner can still be and still collect
 	mapCoinZoneCap = 4, -- Max coins in each XZ quadrant around 0, 0

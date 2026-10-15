@@ -1,7 +1,7 @@
 -- Server creates the protocol; clients never depend on Studio-authored remotes.
 local RunService = game:GetService("RunService")
 local storage = game:GetService("ReplicatedStorage")
-local names = {"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "ThrowBomb", "EquipRagdollTool", "SetGrappleColor", "SetPlayerSetting", "ServerRestartNotice", "FallLanded", "KillFeed", "EscapeTether"}
+local names = {"FireGrapple", "ChangeLength", "ToggleWallMode", "ToggleRagdoll", "ResetCharacter", "GrappledPlayer", "GrappledWall", "HasBeenGrappled", "GrappleVictimState", "ThrowBomb", "EquipRagdollTool", "SetGrappleColor", "SetPlayerSetting", "ServerRestartNotice", "FallLanded", "KillFeed", "EscapeTether", "CoinGain"}
 local folder
 table.insert(names, "SoccerAim")
 table.insert(names, "UsePush")

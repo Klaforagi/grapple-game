@@ -12,6 +12,7 @@ local Assets = require(storage:WaitForChild("Assets"))
 local ShopUi = require(script.Parent:WaitForChild("ShopUi"))
 local UpgradeUi = require(script.Parent:WaitForChild("UpgradeUi"))
 local AdminUi = require(script.Parent:WaitForChild("AdminUi"))
+local Style = require(script.Parent:WaitForChild("CosmeticStyle"))
 local Upgrades = require(script.Parent:WaitForChild("UpgradeCatalog"))
 local Remotes = require(script.Parent:WaitForChild("GrappleRemotes"))
 local ToolClient = require(script.Parent:WaitForChild("GrappleToolClient"))
@@ -58,20 +59,20 @@ function M.Init()
 	local function rounded(frame)
 		make("UICorner", frame, {CornerRadius = UDim.new(0, 12)})
 	end
+	local CLOSE_RED = Color3.fromRGB(195, 76, 87)
+	local GO_GREEN = Color3.fromRGB(62, 165, 110)
 	local function label(parent, text, position, size, color)
 		local instance = make("TextLabel", parent, {
 			Text = text, Position = position, Size = size, BackgroundTransparency = 1,
-			TextColor3 = color or Color3.fromRGB(232, 240, 247), TextSize = 15, Font = Enum.Font.GothamMedium,
+			TextColor3 = color or Style.Text, TextSize = 15, Font = Enum.Font.GothamBold,
 			TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+			TextStrokeColor3 = Style.Ink, TextStrokeTransparency = 0.45,
 		})
 		return instance
 	end
-	local function button(parent, text, position, size, callback)
-		local b = make("TextButton", parent, {
-			Text = text, Position = position, Size = size, BackgroundColor3 = Color3.fromRGB(39, 51, 65),
-			TextColor3 = Color3.fromRGB(234, 244, 250), TextSize = 13, Font = Enum.Font.GothamMedium, AutoButtonColor = true,
-		})
-		rounded(b)
+	local function button(parent, text, position, size, callback, color)
+		local b = Style.Button(parent, text, position, size, color or Style.ButtonColor)
+		b.TextSize = 13
 		if callback then b.Activated:Connect(callback) end
 		return b
 	end
@@ -134,9 +135,10 @@ function M.Init()
 	local reelScale = make("UIScale", reelControls, {Scale = 1})
 	local function styleReelLabel(textLabel)
 		textLabel.Font = Enum.Font.GothamBold
-		textLabel.TextColor3 = Color3.fromRGB(27, 42, 53)
+		textLabel.TextColor3 = Style.Text
+		textLabel.TextStrokeColor3 = Style.Ink
+		textLabel.TextStrokeTransparency = 0.35
 		textLabel.BackgroundTransparency = 1
-		make("UIStroke", textLabel, {Color = Color3.fromRGB(255, 255, 255), Thickness = 2})
 	end
 	local function toggleWallMode()
 		local equipped = tool()
@@ -149,11 +151,9 @@ function M.Init()
 	ropeLength.TextSize, ropeLength.TextXAlignment = 11, Enum.TextXAlignment.Center
 	styleReelLabel(ropeLength)
 	local shortButton = button(reelControls, "−", UDim2.fromOffset(0, 0), UDim2.fromOffset(34, 36))
-	shortButton.Font, shortButton.TextSize = Enum.Font.GothamBold, 22
-	make("UIStroke", shortButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
+	shortButton.Font, shortButton.TextSize = Enum.Font.GothamBlack, 22
 	local longButton = button(reelControls, "+", UDim2.fromOffset(44, 0), UDim2.fromOffset(34, 36))
-	longButton.Font, longButton.TextSize = Enum.Font.GothamBold, 22
-	make("UIStroke", longButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
+	longButton.Font, longButton.TextSize = Enum.Font.GothamBlack, 22
 	if UIS.KeyboardEnabled and not UIS.TouchEnabled then
 		for _, hint in ipairs({{"(Q)", -34}, {"(E)", 84}}) do
 			local text = label(reelControls, hint[1], UDim2.fromOffset(hint[2], 0), UDim2.fromOffset(28, 36))
@@ -173,57 +173,84 @@ function M.Init()
 	wallLabel.TextSize, wallLabel.TextXAlignment = 11, Enum.TextXAlignment.Center
 	styleReelLabel(wallLabel)
 	if UIS.KeyboardEnabled and not UIS.TouchEnabled then wallLabel.Text = "Wall Mode (X)" end
-	local wallButton = button(wallControls, "OFF", UDim2.fromOffset(0, 0), UDim2.fromOffset(78, 36), toggleWallMode)
-	wallButton.Font, wallButton.TextSize = Enum.Font.GothamBold, 14
-	make("UIStroke", wallButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
+	local wallButton = button(wallControls, "OFF", UDim2.fromOffset(0, 0), UDim2.fromOffset(78, 36), toggleWallMode, Color3.fromRGB(176, 64, 64))
+	wallButton.Font, wallButton.TextSize = Enum.Font.GothamBlack, 14
 	local inventoryOpen = false
-	-- SHOP through the coin total. On a phone this stack is scaled to stay above the hotbar.
+	-- Square buttons with the name underneath, outside the button.
+	local STACK_W, BUTTON, CAPTION_H, STRIDE = 112, 44, 16, 70
+	local buttonX = math.floor((STACK_W - BUTTON) / 2)
 	local leftStack = make("Frame", screen, {
-		Name = "LeftStack", AnchorPoint = Vector2.new(0, 0), Position = UDim2.new(0, 18, 0.5, -94),
-		Size = UDim2.fromOffset(168, 264), BackgroundTransparency = 1,
+		Name = "LeftStack", AnchorPoint = Vector2.new(0, 0), Position = UDim2.new(0, 12, 0.5, -94),
+		Size = UDim2.fromOffset(STACK_W, STRIDE * 3 + BUTTON + 2 + CAPTION_H), BackgroundTransparency = 1, ZIndex = 3,
 	})
 	local leftStackScale = make("UIScale", leftStack, {Scale = 1})
-	local inventoryButton = button(leftStack, "INV", UDim2.fromOffset(0, 104), UDim2.fromOffset(44, 44))
-	inventoryButton.Font, inventoryButton.TextSize = Enum.Font.GothamBold, 12
-	make("UIStroke", inventoryButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
-	local shopButton = button(leftStack, "SHOP", UDim2.fromOffset(0, 0), UDim2.fromOffset(44, 44))
+	local function stackButton(text, index, callback)
+		local y = index * STRIDE
+		local b = button(leftStack, "", UDim2.fromOffset(buttonX, y), UDim2.fromOffset(BUTTON, BUTTON), callback)
+		local caption = label(leftStack, text, UDim2.fromOffset(0, y + BUTTON + 1), UDim2.fromOffset(STACK_W, CAPTION_H))
+		caption.TextXAlignment = Enum.TextXAlignment.Center
+		caption.TextYAlignment = Enum.TextYAlignment.Top
+		caption.Font = Enum.Font.GothamBlack
+		caption.TextSize = 14
+		caption.TextTruncate = Enum.TextTruncate.None
+		caption.ZIndex = 3
+		return b
+	end
+	local shopButton = stackButton("SHOP", 0)
 	shopButton.Name = "ShopButton"
-	shopButton.Font = Enum.Font.GothamBold
-	shopButton.TextScaled = true
-	shopButton.ZIndex = 40
-	make("UIPadding", shopButton, {PaddingLeft = UDim.new(0, 3), PaddingRight = UDim.new(0, 3)})
-	make("UITextSizeConstraint", shopButton, {MinTextSize = 8, MaxTextSize = 12})
-	make("UIStroke", shopButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
-	local upgradeButton = button(leftStack, "UPG", UDim2.fromOffset(0, 52), UDim2.fromOffset(44, 44))
+	local upgradeButton = stackButton("UPGRADES", 1)
 	upgradeButton.Name = "UpgradeButton"
-	upgradeButton.Font = Enum.Font.GothamBold
-	upgradeButton.TextScaled = true
-	upgradeButton.ZIndex = 40
-	make("UIPadding", upgradeButton, {PaddingLeft = UDim.new(0, 3), PaddingRight = UDim.new(0, 3)})
-	make("UITextSizeConstraint", upgradeButton, {MinTextSize = 8, MaxTextSize = 12})
-	make("UIStroke", upgradeButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
-	local ragdollButton = button(leftStack, "RAG", UDim2.fromOffset(0, 156), UDim2.fromOffset(44, 44), ragdoll)
+	local inventoryButton = stackButton("INVENTORY", 2)
+	local ragdollButton = stackButton("RAGDOLL", 3, ragdoll)
 	ragdollButton.Name = "RagdollButton"
-	local coins = make("Frame", leftStack, {
-		Name = "Coins", Position = UDim2.fromOffset(0, 208),
-		Size = UDim2.fromOffset(168, 56), BackgroundTransparency = 1,
+	local coins = make("Frame", screen, {
+		Name = "Coins", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 8, 1, -8),
+		Size = UDim2.fromOffset(144, 40),
+		BorderSizePixel = 0, ClipsDescendants = false, ZIndex = 2,
 	})
-	make("ImageLabel", coins, {
-		Name = "Icon", Size = UDim2.fromOffset(56, 56), BackgroundTransparency = 1,
-		Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
+	local coinScale = make("UIScale", coins, {Scale = 1})
+	Style.Surface(coins, Style.Slot, 6)
+	make("UIPadding", coins, {
+		PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 8),
+		PaddingTop = UDim.new(0, 0), PaddingBottom = UDim.new(0, 0),
 	})
-	local coinAmount = label(coins, "0", UDim2.fromOffset(62, 0), UDim2.fromOffset(106, 56))
+	make("UIListLayout", coins, {
+		FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center,
+		Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder,
+	})
+	local coinIconSlot = make("Frame", coins, {
+		Name = "IconSlot", BackgroundTransparency = 1, BorderSizePixel = 0,
+		Size = UDim2.fromOffset(40, 40), LayoutOrder = 1, ZIndex = 3, ClipsDescendants = false,
+	})
+	make("ImageLabel", coinIconSlot, {
+		Name = "Icon", BackgroundTransparency = 1, Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
+		Position = UDim2.fromOffset(0, 2), Size = UDim2.fromOffset(40, 40), ZIndex = 3,
+	})
+	local coinAmount = label(coins, "0", UDim2.fromOffset(0, 0), UDim2.fromOffset(92, 40))
 	coinAmount.Name = "Amount"
+	coinAmount.LayoutOrder = 2
+	coinAmount.ZIndex = 3
 	styleReelLabel(coinAmount)
-	coinAmount.TextSize = 18
+	coinAmount.TextSize = 20
+	coinAmount.TextYAlignment = Enum.TextYAlignment.Center
+	-- Width follows the digit count, not the rendered glyph width, so 8 and 1
+	-- stay in the same frame until a digit is gained or lost.
+	local coinDigits = 0
 	local function updateCoins()
-		coinAmount.Text = tostring(player:GetAttribute("Coins") or 0)
+		local shown = tostring(math.max(0, math.floor(tonumber(player:GetAttribute("Coins")) or 0)))
+		coinAmount.Text = shown
+		local digits = math.max(1, #shown)
+		if digits == coinDigits then return end
+		coinDigits = digits
+		local textWidth = digits * 14 + 4
+		coinAmount.Size = UDim2.fromOffset(textWidth, 40)
+		coins.Size = UDim2.fromOffset(52 + textWidth, 40)
 	end
 	player:GetAttributeChangedSignal("Coins"):Connect(updateCoins)
 	updateCoins()
-	ragdollButton.Font, ragdollButton.TextSize = Enum.Font.GothamBold, 12
-	make("UIStroke", ragdollButton, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.5})
-	local ragdollBorder = make("UIStroke", ragdollButton, {
+	-- The colored rim lives on the inner plate. The button keeps its ink stroke,
+	-- so phones still draw a sweep around the edge instead of tinting the square.
+	local ragdollBorder = make("UIStroke", ragdollButton:FindFirstChild("Surface"), {
 		Name = "ManualRagdollBorder", ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 		Color = Color3.fromRGB(255, 255, 255), Thickness = 3, Enabled = false,
 	})
@@ -237,6 +264,7 @@ function M.Init()
 	if UIS.KeyboardEnabled and not UIS.TouchEnabled then
 		local hint = label(ragdollButton, "(R)", UDim2.new(1, 6, 0, 0), UDim2.fromOffset(28, 44))
 		hint.TextSize, hint.TextXAlignment = 13, Enum.TextXAlignment.Center
+		hint.TextYAlignment = Enum.TextYAlignment.Center
 		styleReelLabel(hint)
 	end
 	local inventory = require(script.Parent:WaitForChild("CollectionUi")).CreateInventory(screen, Remotes.SetGrappleColor, function() inventoryOpen = false end)
@@ -258,14 +286,12 @@ function M.Init()
 	local tetherInfo = {incoming = nil, outgoing = nil}
 	local escapeNote = ""
 	local escapePending = false
-	local escapeGreen = Color3.fromRGB(0, 170, 85)
 	-- Bottom-anchored at the old text's bottom edge, so escape buttons grow upward.
 	local tetherPanel = make("Frame", screen, {
 		Name = "TetherCountdown", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 0.75, 28),
-		Size = UDim2.fromOffset(380, 56), BackgroundColor3 = Color3.fromRGB(27, 42, 53),
-		BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
+		Size = UDim2.fromOffset(380, 56), BorderSizePixel = 0, Visible = false,
 	})
-	rounded(tetherPanel)
+	Style.Surface(tetherPanel, Style.Panel, 8)
 	local tetherScale = make("UIScale", tetherPanel, {Scale = 1})
 	local tetherText = label(tetherPanel, "", UDim2.fromOffset(12, 4), UDim2.new(1, -24, 1, -16), Color3.new(1, 1, 1))
 	styleReelLabel(tetherText)
@@ -288,29 +314,30 @@ function M.Init()
 	end
 	local coinEscape = button(escapeRow, "", UDim2.fromOffset(0, 0), UDim2.new(0.5, -4, 1, 0), function()
 		requestEscape("coins")
-	end)
-	coinEscape.BackgroundColor3 = escapeGreen
-	make("UIListLayout", coinEscape, {
+	end, GO_GREEN)
+	local coinFace = make("Frame", coinEscape, {
+		Name = "Face", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 3, Active = false,
+	})
+	make("UIListLayout", coinFace, {
 		FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 6),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	})
-	make("ImageLabel", coinEscape, {
+	make("ImageLabel", coinFace, {
 		BackgroundTransparency = 1, Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
-		Size = UDim2.fromOffset(16, 16), LayoutOrder = 1,
+		Size = UDim2.fromOffset(16, 16), LayoutOrder = 1, ZIndex = 3,
 	})
-	local coinEscapeText = make("TextLabel", coinEscape, {
+	local coinEscapeText = make("TextLabel", coinFace, {
 		BackgroundTransparency = 1, BorderSizePixel = 0, Text = tostring(Config.escapeCoinCost or 30),
-		Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Color3.new(1, 1, 1),
-		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 36), LayoutOrder = 2,
+		Font = Enum.Font.GothamBlack, TextSize = 15, TextColor3 = Style.Text,
+		TextStrokeColor3 = Style.Ink, TextStrokeTransparency = 0.45,
+		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 36), LayoutOrder = 2, ZIndex = 3,
 	})
 	local robuxEscape = button(escapeRow, utf8.char(0xE002) .. "  " .. tostring(Config.escapeRobuxPrice or 9), UDim2.new(0.5, 4, 0, 0), UDim2.new(0.5, -4, 1, 0), function()
 		requestEscape("robux")
-	end)
-	robuxEscape.BackgroundColor3 = escapeGreen
-	robuxEscape.Font = Enum.Font.GothamBold
+	end, GO_GREEN)
 	robuxEscape.TextSize = 15
-	robuxEscape.TextColor3 = Color3.new(1, 1, 1)
+	robuxEscape.TextColor3 = Style.Text
 	local function clearIncoming()
 		beingTethered = false
 		tetherInfo.incoming = nil
@@ -377,15 +404,15 @@ function M.Init()
 	end
 	settingsWindow = make("Frame", screen, {
 		Name = "SettingsWindow", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(330, 250), BackgroundColor3 = Color3.fromRGB(39, 51, 65), Visible = false,
+		Size = UDim2.fromOffset(330, 250), Visible = false,
 	})
-	rounded(settingsWindow)
-	make("UIStroke", settingsWindow, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.75})
+	Style.Surface(settingsWindow, Style.Panel, 8)
+	local settingsHeader = make("Frame", settingsWindow, {Name = "Header", Size = UDim2.new(1, 0, 0, 46)})
+	Style.Surface(settingsHeader, Style.Header, 8)
 	local settingsScale = make("UIScale", settingsWindow, {Scale = 1})
-	local settingsTitle = label(settingsWindow, "Settings", UDim2.fromOffset(16, 10), UDim2.fromOffset(250, 28))
-	settingsTitle.Font, settingsTitle.TextSize = Enum.Font.GothamBold, 20
-	local closeSettings = button(settingsWindow, "X", UDim2.fromOffset(286, 9), UDim2.fromOffset(32, 30))
-	closeSettings.Font = Enum.Font.GothamBold
+	local settingsTitle = label(settingsHeader, "SETTINGS", UDim2.fromOffset(16, 8), UDim2.fromOffset(230, 30))
+	settingsTitle.TextSize = 20
+	local closeSettings = button(settingsHeader, "X", UDim2.fromOffset(284, 6), UDim2.fromOffset(34, 34), nil, CLOSE_RED)
 	local function showSettings(visible)
 		settingsOpen = visible
 		settingsWindow.Visible = visible
@@ -421,11 +448,13 @@ function M.Init()
 	local function pill(parent, name, order)
 		local instance = make("TextButton", parent, {
 			Name = name, Text = "", AutoButtonColor = true, BorderSizePixel = 0,
-			BackgroundColor3 = Color3.fromRGB(0, 0, 0), BackgroundTransparency = 0,
-			Font = Enum.Font.BuilderSans, TextSize = 16, TextColor3 = Color3.fromRGB(255, 255, 255),
+			BackgroundColor3 = Style.Ink, BackgroundTransparency = 0,
+			Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Style.Text,
+			TextStrokeColor3 = Style.Ink, TextStrokeTransparency = 0.45,
 			LayoutOrder = order,
 		})
 		make("UICorner", instance, {CornerRadius = UDim.new(1, 0)})
+		make("UIStroke", instance, {Color = Style.Muted, Thickness = 1.5, Transparency = 0.35, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
 		return instance
 	end
 	local menuButton = pill(topPills, "MenuButton", 1)
@@ -447,18 +476,17 @@ function M.Init()
 	local musicMuted = false
 	local menuList = make("Frame", screen, {
 		Name = "MenuList", Visible = false, AutomaticSize = Enum.AutomaticSize.Y,
-		Size = UDim2.fromOffset(168, 0), BackgroundColor3 = Color3.fromRGB(0, 0, 0), BackgroundTransparency = 0.25,
-		BorderSizePixel = 0, ZIndex = 20,
+		Size = UDim2.fromOffset(168, 0), BorderSizePixel = 0, ZIndex = 20,
 	})
-	rounded(menuList)
-	make("UIStroke", menuList, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.75, Transparency = 0.85})
+	Style.Surface(menuList, Style.Panel, 8)
 	make("UIPadding", menuList, {PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4)})
 	make("UIListLayout", menuList, {SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Center})
 	local function styleMenuEntry(entry)
 		local hovered, selected = false, false
 		make("UICorner", entry, {CornerRadius = UDim.new(0, 8)})
 		local function updateHighlight()
-			entry.BackgroundTransparency = (hovered or selected) and 0.9 or 1
+			entry.BackgroundColor3 = Style.Header
+			entry.BackgroundTransparency = (hovered or selected) and 0.15 or 1
 		end
 		entry.MouseEnter:Connect(function() hovered = true; updateHighlight() end)
 		entry.MouseLeave:Connect(function() hovered = false; updateHighlight() end)
@@ -475,12 +503,12 @@ function M.Init()
 	})
 	styleMenuEntry(adminEntry)
 	local adminMark = label(adminEntry, "A", UDim2.fromOffset(10, 11), UDim2.fromOffset(22, 22))
-	adminMark.Font, adminMark.TextSize = Enum.Font.GothamBold, 16
+	adminMark.Font, adminMark.TextSize = Enum.Font.GothamBlack, 16
 	adminMark.TextXAlignment = Enum.TextXAlignment.Center
 	adminMark.ZIndex = 22
 	local adminEntryLabel = label(adminEntry, "Admin", UDim2.fromOffset(40, 0), UDim2.new(1, -48, 1, 0))
-	adminEntryLabel.Font, adminEntryLabel.TextSize = Enum.Font.BuilderSans, 18
-	adminEntryLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	adminEntryLabel.Font, adminEntryLabel.TextSize = Enum.Font.GothamBold, 18
+	adminEntryLabel.TextColor3 = Style.Text
 	adminEntryLabel.TextYAlignment = Enum.TextYAlignment.Center
 	adminEntryLabel.ZIndex = 22
 	local function syncAdminEntry()
@@ -502,8 +530,8 @@ function M.Init()
 		Size = UDim2.fromOffset(22, 22), ZIndex = 22,
 	})
 	local settingsEntryLabel = label(settingsEntry, "Settings", UDim2.fromOffset(40, 0), UDim2.new(1, -48, 1, 0))
-	settingsEntryLabel.Font, settingsEntryLabel.TextSize = Enum.Font.BuilderSans, 18
-	settingsEntryLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	settingsEntryLabel.Font, settingsEntryLabel.TextSize = Enum.Font.GothamBold, 18
+	settingsEntryLabel.TextColor3 = Style.Text
 	settingsEntryLabel.TextYAlignment = Enum.TextYAlignment.Center
 	settingsEntryLabel.ZIndex = 22
 	local codexEntry = make("TextButton", menuList, {
@@ -518,21 +546,21 @@ function M.Init()
 		Size = UDim2.fromOffset(22, 22), ZIndex = 22,
 	})
 	local codexEntryLabel = label(codexEntry, "Codex", UDim2.fromOffset(40, 0), UDim2.new(1, -48, 1, 0))
-	codexEntryLabel.Font, codexEntryLabel.TextSize = Enum.Font.BuilderSans, 18
-	codexEntryLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	codexEntryLabel.Font, codexEntryLabel.TextSize = Enum.Font.GothamBold, 18
+	codexEntryLabel.TextColor3 = Style.Text
 	codexEntryLabel.TextYAlignment = Enum.TextYAlignment.Center
 	codexEntryLabel.ZIndex = 22
 	codexWindow = make("Frame", screen, {
 		Name = "CodexWindow", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(340, 420), BackgroundColor3 = Color3.fromRGB(39, 51, 65), Visible = false,
+		Size = UDim2.fromOffset(340, 420), Visible = false,
 	})
-	rounded(codexWindow)
-	make("UIStroke", codexWindow, {Color = Color3.fromRGB(255, 255, 255), Thickness = 0.75})
+	Style.Surface(codexWindow, Style.Panel, 8)
+	local codexHeader = make("Frame", codexWindow, {Name = "Header", Size = UDim2.new(1, 0, 0, 50)})
+	Style.Surface(codexHeader, Style.Header, 8)
 	local codexScale = make("UIScale", codexWindow, {Scale = 1})
-	local codexTitle = label(codexWindow, "Codex", UDim2.fromOffset(16, 10), UDim2.fromOffset(220, 28))
-	codexTitle.Font, codexTitle.TextSize = Enum.Font.GothamBold, 20
-	local closeCodex = button(codexWindow, "X", UDim2.new(1, -44, 0, 9), UDim2.fromOffset(32, 30))
-	closeCodex.Font = Enum.Font.GothamBold
+	local codexTitle = label(codexHeader, "CODEX", UDim2.fromOffset(16, 10), UDim2.fromOffset(220, 30))
+	codexTitle.TextSize = 20
+	local closeCodex = button(codexHeader, "X", UDim2.new(1, -46, 0, 8), UDim2.fromOffset(34, 34), nil, CLOSE_RED)
 	require(script.Parent:WaitForChild("CollectionUi")).PopulateCodex(codexWindow)
 	local function showCodex(visible)
 		codexOpen = visible
@@ -602,30 +630,40 @@ function M.Init()
 	end)
 	shopWindow = shopUi.window
 	shopScale = shopUi.scale
-	local function fitShop()
+	local function fitWindow(scaleObject, windowW, windowH)
+		if not scaleObject then return end
 		local camera = workspace.CurrentCamera
-		if not camera or not shopScale then return end
-		local viewport = camera.ViewportSize
-		if viewport.X < 1 or viewport.Y < 1 then return end
-		local fitted = math.min((viewport.X - 24) / 680, (viewport.Y - 24) / 520)
-		if UIS.TouchEnabled then fitted *= 0.85 end
-		shopScale.Scale = math.clamp(fitted, 0.4, 1)
+		if not camera then return end
+		local bounds = UIS.TouchEnabled and screen.AbsoluteSize or camera.ViewportSize
+		if bounds.X < 1 or bounds.Y < 1 then return end
+		local margin = UIS.TouchEnabled and 48 or 24
+		local availX = math.max(1, bounds.X - margin)
+		local availY = math.max(1, bounds.Y - margin)
+		scaleObject.Scale = math.min(1, availX / windowW, availY / windowH)
+	end
+	local function fitShop()
+		fitWindow(shopScale, 680, 520)
 	end
 	local function fitLeftStack()
+		coins.Position = UDim2.new(0, 8, 1, -8)
 		local camera = workspace.CurrentCamera
 		if not camera then return end
 		if not UIS.TouchEnabled then
 			leftStackScale.Scale = 1
-			leftStack.Position = UDim2.new(0, 18, 0.5, -94)
+			coinScale.Scale = 1
+			leftStack.Position = UDim2.new(0, 12, 0.5, -94)
 			return
 		end
-		local viewport = camera.ViewportSize
-		local topMargin, bottomMargin, height = 8, 88, 264
-		local available = math.max(140, viewport.Y - topMargin - bottomMargin)
-		local scale = math.clamp(available / height, 0.55, 0.9)
+		-- Phones keep the same squares and coin chip, at a much smaller scale.
+		local scale = 0.6
 		leftStackScale.Scale = scale
-		local top = topMargin + math.max(0, (available - height * scale) / 2)
-		leftStack.Position = UDim2.fromOffset(10, top)
+		coinScale.Scale = scale
+		local viewport = camera.ViewportSize
+		local topMargin, bottomMargin = 8, 72
+		local height = leftStack.Size.Y.Offset * scale
+		local available = math.max(120, viewport.Y - topMargin - bottomMargin)
+		local top = topMargin + math.max(0, (available - height) / 2)
+		leftStack.Position = UDim2.fromOffset(8, top)
 	end
 	showShop = function(visible)
 		shopOpen = visible
@@ -726,9 +764,10 @@ function M.Init()
 	})
 	local timeLabel = label(timeControls, "Time of Day", UDim2.fromOffset(0, 0), UDim2.fromOffset(294, 16))
 	timeLabel.TextXAlignment, timeLabel.Font = Enum.TextXAlignment.Center, Enum.Font.GothamBold
-	local timeTrack = make("TextButton", timeControls, {Position = UDim2.fromOffset(7, 28), Size = UDim2.fromOffset(280, 10), BackgroundColor3 = Color3.fromRGB(20, 29, 38), BorderSizePixel = 0, Text = ""})
+	local timeTrack = make("TextButton", timeControls, {Position = UDim2.fromOffset(7, 28), Size = UDim2.fromOffset(280, 10), BackgroundColor3 = Style.Slot, BorderSizePixel = 0, Text = ""})
 	rounded(timeTrack)
-	local timeKnob = make("Frame", timeTrack, {AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = Color3.fromRGB(255, 255, 255), BorderSizePixel = 0})
+	make("UIStroke", timeTrack, {Color = Style.Ink, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
+	local timeKnob = make("Frame", timeTrack, {AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = Style.Accent, BorderSizePixel = 0, ZIndex = 2})
 	rounded(timeKnob)
 	local adjustingTime = false
 	local function setLocalTime(position, shouldSave)
@@ -745,13 +784,12 @@ function M.Init()
 	local shadowsLabel = label(settingsWindow, "Shadows", UDim2.fromOffset(20, 115), UDim2.fromOffset(220, 32))
 	shadowsLabel.Font = Enum.Font.GothamBold
 	local shadowsEnabled = Lighting.GlobalShadows
-	local shadowsCheckbox = button(settingsWindow, "", UDim2.fromOffset(274, 115), UDim2.fromOffset(32, 32))
-	make("UIStroke", shadowsCheckbox, {Color = Color3.fromRGB(255, 255, 255), Thickness = 1})
+	local shadowsCheckbox = button(settingsWindow, "", UDim2.fromOffset(274, 115), UDim2.fromOffset(32, 32), nil, Style.Slot)
 	local function applyShadows(enabled)
 		shadowsEnabled = enabled
 		Lighting.GlobalShadows = enabled
 		shadowsCheckbox.Text = enabled and "X" or ""
-		shadowsCheckbox.BackgroundColor3 = enabled and Color3.fromRGB(72, 165, 92) or Color3.fromRGB(20, 29, 38)
+		Style.Recolor(shadowsCheckbox, enabled and GO_GREEN or Style.Slot)
 	end
 	shadowsCheckbox.Activated:Connect(function()
 		applyShadows(not shadowsEnabled)
@@ -764,9 +802,10 @@ function M.Init()
 	})
 	local musicLabel = label(musicControls, "Music Volume", UDim2.fromOffset(0, 0), UDim2.fromOffset(294, 18))
 	musicLabel.TextXAlignment, musicLabel.Font = Enum.TextXAlignment.Center, Enum.Font.GothamBold
-	local musicTrack = make("TextButton", musicControls, {Position = UDim2.fromOffset(7, 32), Size = UDim2.fromOffset(280, 10), BackgroundColor3 = Color3.fromRGB(20, 29, 38), BorderSizePixel = 0, Text = ""})
+	local musicTrack = make("TextButton", musicControls, {Position = UDim2.fromOffset(7, 32), Size = UDim2.fromOffset(280, 10), BackgroundColor3 = Style.Slot, BorderSizePixel = 0, Text = ""})
 	rounded(musicTrack)
-	local musicKnob = make("Frame", musicTrack, {AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = Color3.fromRGB(255, 255, 255), BorderSizePixel = 0})
+	make("UIStroke", musicTrack, {Color = Style.Ink, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
+	local musicKnob = make("Frame", musicTrack, {AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = Style.Accent, BorderSizePixel = 0, ZIndex = 2})
 	rounded(musicKnob)
 	local adjustingMusic = false
 	local musicVolume = 1
@@ -923,11 +962,12 @@ function M.Init()
 		else
 			jumpFlop:Destroy()
 		end
-		ragdollBorder.Enabled = humanoid ~= nil and humanoid.Health > 0
+		local ragdollActive = humanoid ~= nil and humanoid.Health > 0
 			and humanoid:GetAttribute("Ragdolled") == true
 			and humanoid:GetAttribute("ManualRagdoll") == true
 			and not humanoid:GetAttribute("CapsuleLocked")
-		if ragdollBorder.Enabled then
+		ragdollBorder.Enabled = ragdollActive
+		if ragdollActive then
 			ragdollBorderGradient.Rotation = (ragdollBorderGradient.Rotation + dt * 150) % 360
 		end
 		accumulator += dt
@@ -963,7 +1003,7 @@ function M.Init()
 		inventory.Visible = player.Character ~= nil and inventoryOpen
 		local wallMode = equipped and equipped:GetAttribute("WallMode") == true
 		wallButton.Text = wallMode and "ON" or "OFF"
-		wallButton.BackgroundColor3 = wallMode and Color3.fromRGB(72, 165, 92) or Color3.fromRGB(178, 70, 70)
+		Style.Recolor(wallButton, wallMode and GO_GREEN or Color3.fromRGB(176, 64, 64))
 		if currentRope and not shorten and not lengthen then displayLength = currentRope.Length end
 		ropeLength.Text = currentRope and string.format("%.1f studs", displayLength) or ""
 	end)
