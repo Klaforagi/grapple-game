@@ -998,22 +998,68 @@ function Service.InitClient()
 	local activeRigs = {}
 	local pendingEntryMotion = {}
 	local recoveryJumpToken = 0
+	local recoveryJumpBlocked = setmetatable({}, {__mode = "k"})
+	-- A Space press can reach Roblox's jump controller just before the ragdoll
+	-- state replicates. Keep that press suppressed through recovery, then return
+	-- control once it has been released instead of leaving Jump latched on.
+	local jumpInputHeld = false
+	local gotInputService, inputService = pcall(game.GetService, game, "UserInputService")
+	local function isJumpInput(input)
+		return input and (input.KeyCode == Enum.KeyCode.Space or input.KeyCode == Enum.KeyCode.ButtonA)
+	end
+	if gotInputService and inputService and inputService.InputBegan and inputService.InputEnded then
+		inputService.InputBegan:Connect(function(input)
+			if isJumpInput(input) then
+				jumpInputHeld = true
+				local character = localPlayer and localPlayer.Character
+				local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+				local recovery = humanoid and recoveryJumpBlocked[humanoid]
+				if recovery then
+					humanoid.Jump = false
+					humanoid.AutoJumpEnabled = recovery.autoJump
+					pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, recovery.jumping) end)
+					recoveryJumpBlocked[humanoid] = nil
+				end
+			end
+		end)
+		inputService.InputEnded:Connect(function(input)
+			if isJumpInput(input) then jumpInputHeld = false end
+		end)
+	end
+	RunService.Heartbeat:Connect(function()
+		-- Roblox can retain Jump=true when the native controller received Space in
+		-- the same frame that ragdoll began. Do not let that stale state survive
+		-- recovery; the player's next new jump press clears this guard.
+		for humanoid in pairs(recoveryJumpBlocked) do
+			if not humanoid.Parent then
+				recoveryJumpBlocked[humanoid] = nil
+			else
+				humanoid.Jump = false
+				humanoid.AutoJumpEnabled = false
+				pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false) end)
+			end
+		end
+	end)
 	local function suppressRecoveryJump(humanoid)
 		if not localPlayer or humanoid.Parent ~= localPlayer.Character then return end
 		recoveryJumpToken += 1
 		local token = recoveryJumpToken
 		local jumpingEnabled = humanoid:GetStateEnabled(Enum.HumanoidStateType.Jumping)
 		local autoJump = humanoid.AutoJumpEnabled
+		recoveryJumpBlocked[humanoid] = {autoJump = autoJump, jumping = jumpingEnabled}
 		humanoid.Jump = false
 		humanoid.AutoJumpEnabled = false
 		pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false) end)
-		task.delay(0.08, function()
+		local function restoreWhenReleased()
 			if token ~= recoveryJumpToken or not humanoid.Parent
 				or humanoid:GetAttribute("Ragdolled") == true then return end
 			humanoid.Jump = false
-			humanoid.AutoJumpEnabled = autoJump
-			pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, jumpingEnabled) end)
-		end)
+			if jumpInputHeld then
+				task.delay(0.05, restoreWhenReleased)
+				return
+			end
+		end
+		task.delay(0.08, restoreWhenReleased)
 	end
 	local function startAirborneMotion(humanoid)
 		if humanoid.Parent ~= localPlayer.Character or humanoid.Health <= 0
@@ -1207,6 +1253,17 @@ local fallRagdollArmed = false
 
 function Service.NoteRagdollInput()
 	fallRagdollArmed = true
+	if RunService:IsServer() then return end
+	local player = Players.LocalPlayer
+	local humanoid = player and player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then return end
+	-- This runs before the remote reaches the server. Clear both the current
+	-- value and the native controller's same-frame rewrite when jump and
+	-- ragdoll are pressed together.
+	humanoid.Jump = false
+	task.defer(function()
+		if humanoid.Parent then humanoid.Jump = false end
+	end)
 end
 
 function Service.WatchLocalFalls()
