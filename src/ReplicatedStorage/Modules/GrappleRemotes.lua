@@ -7,6 +7,7 @@ table.insert(names, "SoccerAim")
 table.insert(names, "UsePush")
 table.insert(names, "Flop")
 table.insert(names, "ApplyFlop")
+table.insert(names, "ToggleTestPass")
 if RunService:IsServer() then
 	folder = storage:FindFirstChild("Remotes")
 	if not folder then

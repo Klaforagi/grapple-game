@@ -661,6 +661,7 @@ end)
 
 Remotes.ToggleWallMode.OnServerEvent:Connect(function(player)
 	if not getTool(player) then return end
+	if not (player.GetAttribute and player:GetAttribute("TestPass_WallMode") == true) then return end
 	-- Mode is chosen before the shot. Flight and an attached rope both count.
 	if Active[player] then return end
 	local now = os.clock()
@@ -1082,6 +1083,20 @@ handle:SetAttribute("RainbowPart", player:GetAttribute("BombColor") == "Rainbow"
 	if player.Character then
 		watchShield(player, player.Character)
 		watchInventory(player.Character)
+	end
+	if player.GetAttributeChangedSignal then
+		player:GetAttributeChangedSignal("TestPass_WallMode"):Connect(function()
+			if player:GetAttribute("TestPass_WallMode") ~= true then clearWallMode(player) end
+		end)
+		player:GetAttributeChangedSignal("TestPass_VIP"):Connect(function()
+			if player:GetAttribute("TestPass_VIP") == true then return end
+			for kind, name in pairs(Cosmetics.Defaults) do
+				local key = Cosmetics.Attributes[kind]
+				if player:GetAttribute(key) == "Gold" and not Cosmetics.Owns(player, kind, "Gold") then
+					setGrappleColor(player, kind, name)
+				end
+			end
+		end)
 	end
 	player.CharacterRemoving:Connect(function(character)
 		stripShields(character)

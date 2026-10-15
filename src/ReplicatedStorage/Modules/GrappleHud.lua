@@ -143,6 +143,7 @@ function M.Init()
 		textLabel.BackgroundTransparency = 1
 	end
 	local function toggleWallMode()
+		if player:GetAttribute("TestPass_WallMode") ~= true then return end
 		local equipped = tool()
 		if not equipped or beingTethered then return end
 		-- The choice is locked from the moment a shot leaves until it misses or drops.
@@ -187,9 +188,14 @@ function M.Init()
 		Size = UDim2.fromOffset(STACK_W, STACK_H), BackgroundTransparency = 1, ZIndex = 3,
 	})
 	local leftStackScale = make("UIScale", leftStack, {Scale = 1})
-	local function stackButton(text, index, callback)
+	local function stackButton(text, index, image, callback)
 		local y = index * STRIDE
 		local b = button(leftStack, "", UDim2.fromOffset(buttonX, y), UDim2.fromOffset(BUTTON, BUTTON), callback)
+		local icon = make("ImageLabel", b, {
+			Name = "Icon", BackgroundTransparency = 1, Image = image, ScaleType = Enum.ScaleType.Fit,
+			Size = UDim2.fromScale(1, 1), ZIndex = 4,
+		})
+		make("UICorner", icon, {CornerRadius = UDim.new(0, 6)})
 		local caption = label(leftStack, text, UDim2.fromOffset(0, y + BUTTON + 1), UDim2.fromOffset(STACK_W, CAPTION_H))
 		caption.TextXAlignment = Enum.TextXAlignment.Center
 		caption.TextYAlignment = Enum.TextYAlignment.Top
@@ -199,12 +205,12 @@ function M.Init()
 		caption.ZIndex = 3
 		return b
 	end
-	local shopButton = stackButton("SHOP", 0)
+	local shopButton = stackButton("SHOP", 0, Assets.Shop)
 	shopButton.Name = "ShopButton"
-	local upgradeButton = stackButton("UPGRADES", 1)
+	local upgradeButton = stackButton("UPGRADES", 1, Assets.Upgrades)
 	upgradeButton.Name = "UpgradeButton"
-	local inventoryButton = stackButton("INVENTORY", 2)
-	local ragdollButton = stackButton("RAGDOLL", 3, ragdoll)
+	local inventoryButton = stackButton("INVENTORY", 2, Assets.Inventory)
+	local ragdollButton = stackButton("RAGDOLL", 3, Assets.Ragdoll, ragdoll)
 	ragdollButton.Name = "RagdollButton"
 	local coins = make("Frame", screen, {
 		Name = "Coins", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 8, 1, -8),
@@ -406,7 +412,7 @@ function M.Init()
 	end
 	settingsWindow = make("Frame", screen, {
 		Name = "SettingsWindow", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(330, 250), Visible = false,
+		Size = UDim2.fromOffset(330, 300), Visible = false,
 	})
 	Style.Surface(settingsWindow, Style.Panel, 8)
 	local settingsHeader = make("Frame", settingsWindow, {Name = "Header", Size = UDim2.new(1, 0, 0, 46)})
@@ -950,31 +956,35 @@ function M.Init()
 	-- own time and shadow preference without changing the server's world.
 	local timeControls = make("Frame", settingsWindow, {
 		Name = "LocalTimeControls", Position = UDim2.fromOffset(18, 52),
-		Size = UDim2.fromOffset(294, 48), BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(294, 56), BackgroundTransparency = 1,
 	})
 	local timeLabel = label(timeControls, "Time of Day", UDim2.fromOffset(0, 0), UDim2.fromOffset(294, 16))
 	timeLabel.TextXAlignment, timeLabel.Font = Enum.TextXAlignment.Center, Enum.Font.GothamBold
-	local timeTrack = make("TextButton", timeControls, {Position = UDim2.fromOffset(7, 28), Size = UDim2.fromOffset(280, 10), BackgroundColor3 = Style.Slot, BorderSizePixel = 0, Text = ""})
-	rounded(timeTrack)
-	make("UIStroke", timeTrack, {Color = Style.Ink, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
-	local timeKnob = make("Frame", timeTrack, {AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = Style.Accent, BorderSizePixel = 0, ZIndex = 2})
-	rounded(timeKnob)
-	local adjustingTime = false
-	local function setLocalTime(position, shouldSave)
-		local fraction = math.clamp((position.X - timeTrack.AbsolutePosition.X) / math.max(1, timeTrack.AbsoluteSize.X), 0, 1)
-		Lighting.ClockTime = fraction * 24
-		timeKnob.Position = UDim2.fromScale(fraction, 0.5)
-		timeLabel.Text = string.format("Time of Day  %02d:%02d", math.floor(Lighting.ClockTime) % 24, math.floor((Lighting.ClockTime % 1) * 60))
-		if shouldSave then saveSetting("LocalClockTime", Lighting.ClockTime) end
+	local timeButtons = {}
+	local function applyLocalTime(clock, shouldSave)
+		Lighting.ClockTime = clock
+		for _, entry in ipairs(timeButtons) do
+			Style.Recolor(entry.button, math.abs(entry.clock - clock) < 0.02 and GO_GREEN or Style.ButtonColor)
+		end
+		if shouldSave then saveSetting("LocalClockTime", clock, true) end
 	end
-	timeTrack.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then adjustingTime = true setLocalTime(input.Position, true) end
-	end)
+	local presetWidth, presetGap = 92, 9
+	for index, preset in ipairs({
+		{text = "08:00", clock = 8},
+		{text = "17:30", clock = 17.5},
+		{text = "20:00", clock = 20},
+	}) do
+		local choice = button(timeControls, preset.text, UDim2.fromOffset((index - 1) * (presetWidth + presetGap), 20), UDim2.fromOffset(presetWidth, 36), function()
+			applyLocalTime(preset.clock, true)
+		end)
+		choice.Name = "Time" .. string.gsub(preset.text, ":", "")
+		timeButtons[index] = {button = choice, clock = preset.clock}
+	end
 
-	local shadowsLabel = label(settingsWindow, "Shadows", UDim2.fromOffset(20, 115), UDim2.fromOffset(220, 32))
+	local shadowsLabel = label(settingsWindow, "Shadows", UDim2.fromOffset(20, 118), UDim2.fromOffset(220, 32))
 	shadowsLabel.Font = Enum.Font.GothamBold
 	local shadowsEnabled = Lighting.GlobalShadows
-	local shadowsCheckbox = button(settingsWindow, "", UDim2.fromOffset(274, 115), UDim2.fromOffset(32, 32), nil, Style.Slot)
+	local shadowsCheckbox = button(settingsWindow, "", UDim2.fromOffset(274, 118), UDim2.fromOffset(32, 32), nil, Style.Slot)
 	local function applyShadows(enabled)
 		shadowsEnabled = enabled
 		Lighting.GlobalShadows = enabled
@@ -987,7 +997,7 @@ function M.Init()
 	end)
 
 	local musicControls = make("Frame", settingsWindow, {
-		Name = "MusicVolumeControls", Position = UDim2.fromOffset(18, 166),
+		Name = "MusicVolumeControls", Position = UDim2.fromOffset(18, 164),
 		Size = UDim2.fromOffset(294, 54), BackgroundTransparency = 1,
 	})
 	local musicLabel = label(musicControls, "Music Volume", UDim2.fromOffset(0, 0), UDim2.fromOffset(294, 18))
@@ -1024,16 +1034,45 @@ function M.Init()
 	musicTrack.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then adjustingMusic = true setMusicFromPosition(input.Position, true) end
 	end)
+
+	local effectsControls = make("Frame", settingsWindow, {
+		Name = "EffectsVolumeControls", Position = UDim2.fromOffset(18, 226),
+		Size = UDim2.fromOffset(294, 54), BackgroundTransparency = 1,
+	})
+	local effectsLabel = label(effectsControls, "Sound Effects", UDim2.fromOffset(0, 0), UDim2.fromOffset(294, 18))
+	effectsLabel.TextXAlignment, effectsLabel.Font = Enum.TextXAlignment.Center, Enum.Font.GothamBold
+	local effectsTrack = make("TextButton", effectsControls, {Position = UDim2.fromOffset(7, 32), Size = UDim2.fromOffset(280, 10), BackgroundColor3 = Style.Slot, BorderSizePixel = 0, Text = ""})
+	rounded(effectsTrack)
+	make("UIStroke", effectsTrack, {Color = Style.Ink, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
+	local effectsKnob = make("Frame", effectsTrack, {AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = Style.Accent, BorderSizePixel = 0, ZIndex = 2})
+	rounded(effectsKnob)
+	local adjustingEffects = false
+	local effectsVolume = 1
+	local EffectsVolume = require(script.Parent:WaitForChild("EffectsVolume"))
+	local function applyEffectsVolume(value)
+		effectsVolume = math.clamp(value, 0, 1)
+		effectsKnob.Position = UDim2.fromScale(effectsVolume, 0.5)
+		effectsLabel.Text = string.format("Sound Effects  %d%%", math.floor(effectsVolume * 100 + 0.5))
+		EffectsVolume.SetVolume(effectsVolume)
+	end
+	local function setEffectsFromPosition(position, shouldSave)
+		local fraction = math.clamp((position.X - effectsTrack.AbsolutePosition.X) / math.max(1, effectsTrack.AbsoluteSize.X), 0, 1)
+		applyEffectsVolume(fraction)
+		if shouldSave then saveSetting("EffectsVolume", effectsVolume) end
+	end
+	effectsTrack.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then adjustingEffects = true setEffectsFromPosition(input.Position, true) end
+	end)
 	UIS.InputChanged:Connect(function(input)
 		if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
-		if adjustingTime then setLocalTime(input.Position, true) end
 		if adjustingMusic then setMusicFromPosition(input.Position, true) end
+		if adjustingEffects then setEffectsFromPosition(input.Position, true) end
 	end)
 	UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if adjustingTime then saveSetting("LocalClockTime", Lighting.ClockTime, true) end
 			if adjustingMusic then saveSetting("MusicVolume", musicVolume, true) end
-			adjustingTime, adjustingMusic = false, false
+			if adjustingEffects then saveSetting("EffectsVolume", effectsVolume, true) end
+			adjustingMusic, adjustingEffects = false, false
 		end
 	end)
 
@@ -1041,17 +1080,20 @@ function M.Init()
 		local savedTime = player:GetAttribute("LocalClockTime")
 		local savedShadows = player:GetAttribute("ShadowsEnabled")
 		local savedMusic = player:GetAttribute("MusicVolume")
+		local savedEffects = player:GetAttribute("EffectsVolume")
 		if typeof(savedTime) == "number" then
 			Lighting.ClockTime = math.clamp(savedTime, 0, 24)
-			timeKnob.Position = UDim2.fromScale(Lighting.ClockTime / 24, 0.5)
 		end
-		timeLabel.Text = string.format("Time of Day  %02d:%02d", math.floor(Lighting.ClockTime) % 24, math.floor((Lighting.ClockTime % 1) * 60))
+		for _, entry in ipairs(timeButtons) do
+			Style.Recolor(entry.button, math.abs(entry.clock - Lighting.ClockTime) < 0.02 and GO_GREEN or Style.ButtonColor)
+		end
 		if typeof(savedShadows) ~= "boolean" then savedShadows = Lighting.GlobalShadows end
 		applyShadows(savedShadows)
 		applyMusicVolume(typeof(savedMusic) == "number" and savedMusic or 1)
 		applyMuted(player:GetAttribute("MusicMuted") == true)
+		applyEffectsVolume(typeof(savedEffects) == "number" and savedEffects or 1)
 	end
-	for _, key in ipairs({"LocalClockTime", "ShadowsEnabled", "MusicVolume", "MusicMuted"}) do
+	for _, key in ipairs({"LocalClockTime", "ShadowsEnabled", "MusicVolume", "MusicMuted", "EffectsVolume"}) do
 		player:GetAttributeChangedSignal(key):Connect(applySavedSettings)
 	end
 	applySavedSettings()
@@ -1190,7 +1232,7 @@ function M.Init()
 		if currentRope and not currentRope.Parent then grapple() end
 		local equipped = tool()
 		reelControls.Visible = currentRope ~= nil and equipped ~= nil
-		wallControls.Visible = equipped ~= nil
+		wallControls.Visible = equipped ~= nil and player:GetAttribute("TestPass_WallMode") == true
 		inventoryButton.Visible = player.Character ~= nil
 		ragdollButton.Visible = player.Character ~= nil
 		inventory.Visible = player.Character ~= nil and inventoryOpen

@@ -14,6 +14,7 @@ local settingDefaults = {
 	ShadowsEnabled = Lighting.GlobalShadows,
 	MusicVolume = 1,
 	MusicMuted = false,
+	EffectsVolume = 1,
 }
 
 local function validSetting(key, value)
@@ -21,7 +22,7 @@ local function validSetting(key, value)
 		return typeof(value) == "number" and value == value and value >= 0 and value <= 24
 	elseif key == "ShadowsEnabled" then
 		return typeof(value) == "boolean"
-	elseif key == "MusicVolume" then
+	elseif key == "MusicVolume" or key == "EffectsVolume" then
 		return typeof(value) == "number" and value == value and value >= 0 and value <= 1
 	elseif key == "MusicMuted" then
 		return typeof(value) == "boolean"

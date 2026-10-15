@@ -235,6 +235,7 @@ return function(t)
 		targetHumanoid.MaxHealth = 100
 		targetHumanoid.WalkSpeed, targetHumanoid.JumpPower, targetHumanoid.JumpHeight = 16, 50, 7
 		targetHumanoid:SetAttribute("GrappledBy", owner.UserId)
+		owner:SetAttribute("TestPass_Push", true)
 		t.remotes.UsePush.OnServerEvent:Emit(owner)
 		assert(targetHumanoid:GetAttribute("Ragdolled"), "Combat race test did not queue a real push")
 		prompt.Triggered:Emit(owner)

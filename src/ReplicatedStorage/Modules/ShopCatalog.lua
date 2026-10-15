@@ -2,7 +2,7 @@
 -- A 0 id still shows its price and does not open a purchase prompt.
 -- price is only the label on the button. The prompt charges whatever the dashboard says.
 -- image stays empty until art is ready. A coin pack with no image falls back to the coin icon.
-return {
+local Catalog = {
 	Passes = {
 		{
 			id = 0,
@@ -28,7 +28,7 @@ return {
 			color = Color3.fromRGB(164, 112, 232),
 			image = "rbxassetid://104262459603842",
 		},
-		-- key is the future ownership check. These passes do not gate the tools yet.
+		-- key is the future product name. Ownership uses Catalog.TestAttribute.
 		{
 			id = 0,
 			key = "Push",
@@ -55,3 +55,10 @@ return {
 		{id = 0, amount = 4000, price = 799, image = "rbxassetid://96102087038616"},
 	},
 }
+
+-- Attribute names cannot contain spaces. "2x Coins" becomes TestPass_2xCoins.
+function Catalog.TestAttribute(name)
+	return "TestPass_" .. string.gsub(tostring(name), " ", "")
+end
+
+return Catalog

@@ -97,11 +97,8 @@ function RollUi.Init()
 		Style.Surface(frame, Style.ButtonColor, 5)
 		local category = text(frame, string.upper(item.Kind), UDim2.fromOffset(8, 7), UDim2.fromOffset(116, 18), 10, Style.Muted)
 		category.TextXAlignment = Enum.TextXAlignment.Center
-		-- Composite the icon into one texture before moving it. Its strokes,
-		-- gradients, and overlapping shapes must scroll as one rendered unit.
-		local art = make("CanvasGroup", frame, {Name = "ItemIcon", Position = UDim2.fromOffset(5, 23),
-			Size = UDim2.fromOffset(122, 100), BackgroundTransparency = 1, BorderSizePixel = 0,
-			GroupColor3 = Color3.new(1, 1, 1), GroupTransparency = 0})
+		local art = make("Frame", frame, {Name = "ItemIcon", Position = UDim2.fromOffset(5, 23),
+			Size = UDim2.fromOffset(122, 100), BackgroundTransparency = 1, BorderSizePixel = 0})
 		icon(art, item)
 		local name = text(frame, item.Name, UDim2.fromOffset(4, 120), UDim2.fromOffset(124, 22), 15)
 		name.TextXAlignment = Enum.TextXAlignment.Center

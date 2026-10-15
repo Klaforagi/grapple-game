@@ -702,6 +702,7 @@ return function(sources)
 	-- Duplicate X paths must not toggle twice, and a stale GUI cooldown cannot jam firing.
 	gun.Parent = attacker.Character
 	now += 0.2
+	attacker:SetAttribute("TestPass_WallMode", true)
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
 	assert(gun:GetAttribute("WallMode") == true, "duplicate X handlers cancelled target mode")
@@ -1924,6 +1925,7 @@ manualHumanoid:AddTag("Ragdoll")
 	input.InputBegan:Emit({UserInputType = "MouseButton1"}, false)
 	pushTool.Activated:Emit()
 	assert(#remotes.UsePush.sent == 1, "Push activation did not send a request")
+	attacker:SetAttribute("TestPass_Push", true)
 	remotes.UsePush.OnServerEvent:Emit(attacker)
 	assert(world:FindFirstChild("PushHitbox").Size.X == config.pushWidth and world:FindFirstChild("PushHitbox").Size.Z == config.pushRange, "Push visual does not match box")
 	local pushDeadline = pushHumanoid:GetAttribute("BombRagdollUntil")

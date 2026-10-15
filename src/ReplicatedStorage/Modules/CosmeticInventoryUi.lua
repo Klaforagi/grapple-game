@@ -50,7 +50,7 @@ function Inventory.Create(parent, equipRemote, onClose)
 	local confirmItem, saleRequest, saleBusy = nil, nil, false
 	local tabs, cards = {}, {}
 	local function updateSelection()
-		sell.Visible = selected ~= nil and not selected.Starter and not selected.Admin
+		sell.Visible = selected ~= nil and not selected.Starter and not selected.Admin and not selected.Vip
 		if sell.Visible then
 			sell.Text = saleBusy and "SELLING..." or saleRequest and "RETRY" or confirmItem == selected.Id and "CONFIRM"
 				or string.format("SELL / %d COINS", Catalog.SellPrices[selected.Rarity])
@@ -68,7 +68,7 @@ function Inventory.Create(parent, equipRemote, onClose)
 		end
 		Style.Icon(art, selected)
 		name.Text, category.Text = selected.Name, string.upper(selected.Kind)
-		rarity.Text = selected.Admin and "ADMIN" or string.upper(selected.Rarity)
+		rarity.Text = selected.Vip and "VIP" or selected.Admin and "ADMIN" or string.upper(selected.Rarity)
 		rarity.TextColor3 = Catalog.Rarity(selected.Rarity).Color
 		local copies = Catalog.Copies(player, selected.Kind, selected.Name)
 		quantity.Text = copies == 1 and "Owned" or string.format("Owned x%d", copies)
@@ -85,6 +85,14 @@ function Inventory.Create(parent, equipRemote, onClose)
 		end
 		if (selectedKind == "All" or selectedKind == "Bomb") and Catalog.Owns(player, "Bomb", "Banana") then
 			table.insert(items, {Id = "Bomb_Banana", Kind = "Bomb", Name = "Banana", Rarity = "Common", Color = Palettes.Swatches.Bomb.Banana, Admin = true})
+		end
+		for _, itemKind in ipairs({"Gun", "Rope"}) do
+			if (selectedKind == "All" or selectedKind == itemKind) and Catalog.Owns(player, itemKind, "Gold") then
+				table.insert(items, {
+					Id = itemKind .. "_Gold", Kind = itemKind, Name = "Gold", Rarity = "Legendary", Vip = true,
+					Color = Palettes.Swatches[itemKind].Gold,
+				})
+			end
 		end
 		local found = false
 		for _, item in ipairs(items) do if selected and selected.Id == item.Id then selected = item found = true break end end
@@ -143,7 +151,7 @@ function Inventory.Create(parent, equipRemote, onClose)
 		updateSelection()
 	end)
 	sell.Activated:Connect(function()
-		if saleBusy or not selected or selected.Starter or selected.Admin then return end
+		if saleBusy or not selected or selected.Starter or selected.Admin or selected.Vip then return end
 		if confirmItem ~= selected.Id and not saleRequest then
 			confirmItem = selected.Id
 			updateSelection()
@@ -169,7 +177,7 @@ function Inventory.Create(parent, equipRemote, onClose)
 	end)
 	refresh()
 	player.AttributeChanged:Connect(function(key)
-		if string.sub(key, 1, 6) == "Owned_" or key == "Admin" or key == "CollectionLoaded" then confirmItem = nil refresh()
+		if string.sub(key, 1, 6) == "Owned_" or key == "Admin" or key == "CollectionLoaded" or key == "TestPass_VIP" then confirmItem = nil refresh()
 		elseif key == "GrappleGunColor" or key == "GrappleRopeColor" or key == "BombColor" then updateSelection() end
 	end)
 	local applyFit = CrispFit.attach(panel, scale)

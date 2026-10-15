@@ -20,9 +20,11 @@ function Ui.Text(parent, text, position, size, fontSize, color)
 end
 function Ui.Paint(parent, item)
 	parent.BackgroundColor3 = item.Color
-	if item.Name == "Rainbow" then
+	if item.Name == "Rainbow" or item.Name == "Gold" then
 		local points = {}
-		for i = 0, 12 do points[i + 1] = ColorSequenceKeypoint.new(i / 12, Palettes.RainbowAt(i / 12)) end
+		local sample = item.Name == "Gold" and Palettes.GoldAt or Palettes.RainbowAt
+		local steps = item.Name == "Gold" and 3 or 12
+		for i = 0, steps do points[i + 1] = ColorSequenceKeypoint.new(i / steps, sample(i / steps)) end
 		make("UIGradient", parent, {Color = ColorSequence.new(points), Rotation = 25})
 	end
 end

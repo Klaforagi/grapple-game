@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Assets = require(ReplicatedStorage:WaitForChild("Assets"))
 local Catalog = require(script.Parent:WaitForChild("ShopCatalog"))
+local Remotes = require(script.Parent:WaitForChild("GrappleRemotes"))
 local Style = require(script.Parent:WaitForChild("CosmeticStyle"))
 local CrispFit = require(script.Parent:WaitForChild("CrispFit"))
 
@@ -47,12 +48,12 @@ local function inkOn(color)
 	return Color3.new(1, 1, 1)
 end
 
-local function styleBuy(button, price, owned)
+local function styleBuy(button, price, owned, keepActive)
 	button:SetAttribute("Owned", owned == true)
 	if owned then
 		button.Text = "Owned"
-		button.AutoButtonColor = false
-		button.Active = false
+		button.AutoButtonColor = keepActive == true
+		button.Active = keepActive == true
 		Style.Recolor(button, OWNED)
 	else
 		button.Text = priceText(price)
@@ -172,8 +173,8 @@ function M.Mount(screen, onClose)
 	end
 
 	local entries = {}
-	local function track(id, button, price)
-		entries[#entries + 1] = {id = id, button = button, price = price}
+	local function track(id, button, price, name)
+		entries[#entries + 1] = {id = id, button = button, price = price, name = name}
 	end
 	local function markOwned(id)
 		for _, entry in ipairs(entries) do
@@ -225,11 +226,17 @@ function M.Mount(screen, onClose)
 		})
 		local buy = Style.Button(row, "", UDim2.new(1, -164, 0.5, -20), UDim2.fromOffset(148, 40), BUY)
 		buy.Name = "Buy"
-		styleBuy(buy, pass.price, false)
-		track(pass.id, buy, pass.price)
+		-- Temporary test toggle. Click again to turn the pass off.
+		-- To restore Robux prompts, stop calling ToggleTestPass and prompt pass.id instead.
+		local attribute = Catalog.TestAttribute(pass.name)
+		local function syncPass()
+			styleBuy(buy, pass.price, player:GetAttribute(attribute) == true, true)
+		end
+		syncPass()
+		track(pass.id, buy, pass.price, pass.name)
+		player:GetAttributeChangedSignal(attribute):Connect(syncPass)
 		buy.Activated:Connect(function()
-			if buy:GetAttribute("Owned") or type(pass.id) ~= "number" or pass.id <= 0 then return end
-			pcall(function() MarketplaceService:PromptGamePassPurchase(player, pass.id) end)
+			Remotes.ToggleTestPass:FireServer(pass.name)
 		end)
 	end
 

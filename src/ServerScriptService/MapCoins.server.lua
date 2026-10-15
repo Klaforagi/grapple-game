@@ -205,6 +205,8 @@ local function resolveDoubleId()
 end
 
 local function payout(player)
+	-- The shop toggle has to pay out while the catalog id is still 0.
+	if player and player.GetAttribute and player:GetAttribute("TestPass_2xCoins") == true then return 2 end
 	if resolveDoubleId() > 0 and ownsDouble[player.UserId] then return 2 end
 	return 1
 end
@@ -215,6 +217,12 @@ end
 
 local function refreshDouble(player)
 	if not player then return end
+	-- Temporary shop toggle. A real 2x Coins pass still uses MarketplaceService below.
+	if player.GetAttribute and player:GetAttribute("TestPass_2xCoins") == true then
+		ownsDouble[player.UserId] = true
+		publishPayout(player)
+		return
+	end
 	if resolveDoubleId() ~= 0 then
 		local marketplace = game:GetService("MarketplaceService")
 		local ok, owns = pcall(function()
@@ -446,6 +454,11 @@ collectRemote.OnServerEvent:Connect(function(player, model)
 end)
 
 local function watchPass(player)
+	if player.GetAttributeChangedSignal then
+		player:GetAttributeChangedSignal("TestPass_2xCoins"):Connect(function()
+			refreshDouble(player)
+		end)
+	end
 	if task and task.spawn then
 		task.spawn(refreshDouble, player)
 	else

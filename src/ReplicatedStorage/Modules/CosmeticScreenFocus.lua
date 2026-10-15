@@ -3,8 +3,11 @@
 local Focus = {}
 function Focus.new(playerGui, owner)
 	local active, saved, connections = false, {}, {}
+	local function isChat(gui)
+		return string.find(string.lower(gui.Name), "chat", 1, true) ~= nil
+	end
 	local function watch(gui)
-		if gui == owner or not gui:IsA("ScreenGui") or connections[gui] then return end
+		if gui == owner or isChat(gui) or not gui:IsA("ScreenGui") or connections[gui] then return end
 		connections[gui] = gui:GetPropertyChangedSignal("Enabled"):Connect(function()
 			if active and gui.Enabled then gui.Enabled = false end
 		end)

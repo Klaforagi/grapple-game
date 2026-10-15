@@ -107,7 +107,7 @@ function Style.Icon(parent, item)
 		local rim = make("UIStroke", orb, {Color = item.Color:Lerp(white, 0.5), Thickness = 1.8, Transparency = 0.2})
 		if item.Name == "Rainbow" then
 			rim.Color, rim.Transparency = Color3.new(1, 1, 1), 0
-			make("UIGradient", rim, {Rotation = 25, Color = ColorSequence.new({
+			make("UIGradient", rim, {Rotation = 0, Color = ColorSequence.new({
 				ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 45, 45)),
 				ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 145, 0)),
 				ColorSequenceKeypoint.new(0.4, Color3.fromRGB(255, 230, 0)),
@@ -132,7 +132,7 @@ function Style.Icon(parent, item)
 			loop.BackgroundTransparency = 1
 			local stroke = make("UIStroke", loop, {Thickness = 7, Color = rainbowLoops and Color3.new(1, 1, 1) or item.Color})
 			if rainbowLoops then
-				make("UIGradient", stroke, {Rotation = 45, Color = rainbowLoops[i + 1]})
+				make("UIGradient", stroke, {Rotation = 0, Color = rainbowLoops[i + 1]})
 			end
 		end
 	end

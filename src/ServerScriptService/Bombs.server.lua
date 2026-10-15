@@ -441,6 +441,7 @@ local function scanPush(state, now)
 end
 
 Remotes.UsePush.OnServerEvent:Connect(function(player)
+	if not (player.GetAttribute and player:GetAttribute("TestPass_Push") == true) then return end
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local root = character and character:FindFirstChild("HumanoidRootPart")

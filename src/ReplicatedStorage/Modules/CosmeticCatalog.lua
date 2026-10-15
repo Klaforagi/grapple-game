@@ -67,6 +67,10 @@ end
 
 function Catalog.Copies(player, kind, name)
 	if kind == "Bomb" and name == "Banana" then return player:GetAttribute("Admin") == true and 1 or 0 end
+	-- Gold stays out of the roll pools and the collection total. VIP equips it.
+	if name == "Gold" and (kind == "Gun" or kind == "Rope") then
+		return player:GetAttribute("TestPass_VIP") == true and 1 or 0
+	end
 	local item = Catalog.ById[tostring(kind) .. "_" .. tostring(name)]
 	if not item then return 0 end
 	return item.Starter and 1 or Catalog.Quantity(player:GetAttribute("Owned_" .. item.Id))
@@ -91,10 +95,14 @@ function Catalog.Rarity(name)
 end
 
 -- Independent highest-first checks. Empty tiers are skipped, never a dead roll.
-function Catalog.Roll(random)
+-- luck scales every non-common check. 2 is the 2x Luck pass. Common stays the fallback.
+function Catalog.Roll(random, luck)
+	local scale = type(luck) == "number" and luck > 1 and luck or 1
 	for _, rarity in ipairs(Catalog.Rarities) do
 		local pool = Catalog.Pools[rarity.Name]
-		if #pool > 0 and (rarity.Name == "Common" or random:NextNumber() < rarity.Chance) then
+		local chance = rarity.Chance
+		if scale ~= 1 and rarity.Name ~= "Common" then chance = math.min(1, chance * scale) end
+		if #pool > 0 and (rarity.Name == "Common" or random:NextNumber() < chance) then
 			return pool[random:NextInteger(1, #pool)]
 		end
 	end

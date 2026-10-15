@@ -506,7 +506,8 @@ rollCosmetic.OnInvoke = function(player)
 	if sessions[player] ~= state then return {ok = false, message = "Please rejoin to roll."} end
 	state.saving = true
 	if not state.pendingRoll then
-		state.pendingRoll = {id = HttpService:GenerateGUID(false), itemId = catalog.Roll(Random.new()).Id}
+		local luck = player.GetAttribute and player:GetAttribute("TestPass_2xLuck") == true and 2 or 1
+		state.pendingRoll = {id = HttpService:GenerateGUID(false), itemId = catalog.Roll(Random.new(), luck).Id}
 	end
 	local request = state.pendingRoll
 	local ok, data = pcall(function()
