@@ -6,6 +6,7 @@ local HttpService = game:GetService("HttpService")
 local Catalog = require(script.Parent:WaitForChild("CosmeticCatalog"))
 local Ui = require(script.Parent:WaitForChild("CollectionUi"))
 local Style = require(script.Parent:WaitForChild("CosmeticStyle"))
+local CrispFit = require(script.Parent:WaitForChild("CrispFit"))
 local Palettes = require(script.Parent.Parent:WaitForChild("ItemColors"))
 local make, label = Ui.Make, Style.Label
 local Inventory = {}
@@ -171,6 +172,7 @@ function Inventory.Create(parent, equipRemote, onClose)
 		if string.sub(key, 1, 6) == "Owned_" or key == "Admin" or key == "CollectionLoaded" then confirmItem = nil refresh()
 		elseif key == "GrappleGunColor" or key == "GrappleRopeColor" or key == "BombColor" then updateSelection() end
 	end)
+	local applyFit = CrispFit.attach(panel, scale)
 	RunService.RenderStepped:Connect(function()
 		local camera = workspace.CurrentCamera
 		if not camera or not panel.Visible then return end
@@ -180,7 +182,7 @@ function Inventory.Create(parent, equipRemote, onClose)
 		local marginY = UserInputService.TouchEnabled and 48 or 64
 		local availX = math.max(1, bounds.X - marginX)
 		local availY = math.max(1, bounds.Y - marginY)
-		scale.Scale = math.min(1, availX / 820, availY / 524)
+		applyFit(math.min(1, availX / 820, availY / 524))
 	end)
 	return panel
 end

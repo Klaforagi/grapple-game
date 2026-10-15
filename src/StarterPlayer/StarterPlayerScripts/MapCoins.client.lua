@@ -65,7 +65,8 @@ local function showGain(amount)
 	popup.Name = "CoinGain"
 	popup.BackgroundTransparency = 1
 	popup.Font = amountLabel.Font
-	popup.TextSize = amountLabel.TextSize
+	-- The chip draws its amount at the fitted pixel size. This popup stays at the authored 20.
+	popup.TextSize = 20
 	popup.TextColor3 = amountLabel.TextColor3
 	popup.TextXAlignment = Enum.TextXAlignment.Left
 	popup.Text = "+" .. tostring(amount)

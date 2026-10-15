@@ -7,6 +7,7 @@ local Catalog = require(script.Parent:WaitForChild("CosmeticCatalog"))
 local Ui = require(script.Parent:WaitForChild("CollectionUi"))
 local make, text, round = Ui.Make, Ui.Text, Ui.Round
 local Style = require(script.Parent:WaitForChild("CosmeticStyle"))
+local CrispFit = require(script.Parent:WaitForChild("CrispFit"))
 local ScreenFocus = require(script.Parent:WaitForChild("CosmeticScreenFocus"))
 local PlaySound = require(script.Parent:WaitForChild("PlaySound"))
 local SoundService = game:GetService("SoundService")
@@ -146,7 +147,11 @@ function RollUi.Init()
 	end
 	local function updateTicks()
 		-- Count centers crossing the pointer, even if a slow frame crosses two.
-		local passed = math.floor((320 - strip.Position.X.Offset - 66) / 146)
+		-- Crisp fit stores the strip in screen pixels, so convert back to the 146px card step.
+		local applied = scale:GetAttribute("CrispFactor")
+		local designX = strip.Position.X.Offset
+		if type(applied) == "number" and applied > 0 then designX = designX / applied end
+		local passed = math.floor((320 - designX - 66) / 146)
 		if shade.Visible then for _ = lastPassed + 1, passed do tick() end end
 		lastPassed = passed
 	end
@@ -263,9 +268,10 @@ function RollUi.Init()
 		if string.sub(key, 1, 6) == "Owned_" or key == "CollectionLoaded" then refreshCollection() end
 	end)
 	local elapsed = 0
+	local applyFit = CrispFit.attach(panel, scale)
 	RunService.RenderStepped:Connect(function(dt)
 		local camera = workspace.CurrentCamera
-		if camera then scale.Scale = math.max(0.01, math.min(1, (camera.ViewportSize.X - 24) / 680, (camera.ViewportSize.Y - 64) / 548)) end
+		if camera then applyFit(math.max(0.01, math.min(1, (camera.ViewportSize.X - 24) / 680, (camera.ViewportSize.Y - 64) / 548))) end
 		if spinning then updateTicks() end
 		if shade.Visible and not oddsPanel.Visible then
 			if not busy and not idle and os.clock() >= resumePreviewAt then

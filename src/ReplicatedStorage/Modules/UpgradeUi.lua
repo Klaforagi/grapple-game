@@ -8,6 +8,7 @@ local Assets = require(ReplicatedStorage:WaitForChild("Assets"))
 local Catalog = require(script.Parent:WaitForChild("UpgradeCatalog"))
 local PlaySound = require(script.Parent:WaitForChild("PlaySound"))
 local Style = require(script.Parent:WaitForChild("CosmeticStyle"))
+local CrispFit = require(script.Parent:WaitForChild("CrispFit"))
 
 local WINDOW_X, WINDOW_Y = 640, 584
 local ROBUX = utf8.char(0xE002)
@@ -342,6 +343,7 @@ function M.Mount(screen, onClose)
 		end)
 	end)
 
+	local applyFit = CrispFit.attach(window, scale)
 	local function fit()
 		local parent = window.Parent
 		local camera = workspace.CurrentCamera
@@ -351,7 +353,7 @@ function M.Mount(screen, onClose)
 		local margin = UserInputService.TouchEnabled and 48 or 24
 		local availX = math.max(1, bounds.X - margin)
 		local availY = math.max(1, bounds.Y - margin)
-		scale.Scale = math.min(1, availX / WINDOW_X, availY / WINDOW_Y)
+		applyFit(math.min(1, availX / WINDOW_X, availY / WINDOW_Y))
 	end
 
 	return {window = window, scale = scale, refresh = refresh, fit = fit}

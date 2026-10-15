@@ -51,6 +51,8 @@ $sources = @{
     rigRespawnTests = 'tests/rigrespawn.luau'
     killCredit = 'src/ReplicatedStorage/Modules/KillCredit.lua'
     killTests = 'tests/kills.luau'
+    hourly = 'src/ReplicatedStorage/Modules/HourlyRewards.lua'
+    hourlyTests = 'tests/hourly.luau'
 }
 $bundle = 'local sources = {}' + [Environment]::NewLine
 foreach ($key in $sources.Keys) {

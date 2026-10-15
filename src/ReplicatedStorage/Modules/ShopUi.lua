@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Assets = require(ReplicatedStorage:WaitForChild("Assets"))
 local Catalog = require(script.Parent:WaitForChild("ShopCatalog"))
 local Style = require(script.Parent:WaitForChild("CosmeticStyle"))
+local CrispFit = require(script.Parent:WaitForChild("CrispFit"))
 
 local ROBUX = utf8.char(0xE002)
 local INK = Style.Text
@@ -144,6 +145,8 @@ function M.Mount(screen, onClose)
 		Name = "ScrollSpacer", BackgroundTransparency = 1, LayoutOrder = 100000,
 		Size = UDim2.fromOffset(0, 24),
 	})
+	-- Its height is already in screen pixels from the scrollbar fit, so do not bake it again.
+	scrollSpacer:SetAttribute("CrispIgnore", true)
 	local fittingScroll = false
 	local function keepScrollBar()
 		if fittingScroll then return end
@@ -298,7 +301,8 @@ function M.Mount(screen, onClose)
 		end)
 	end
 
-	return {window = window, scale = scale, refresh = refresh}
+	local applyFit = CrispFit.attach(window, scale)
+	return {window = window, scale = scale, refresh = refresh, applyFit = applyFit}
 end
 
 return M

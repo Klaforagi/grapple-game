@@ -15,6 +15,8 @@ local AdminUi = require(script.Parent:WaitForChild("AdminUi"))
 local Style = require(script.Parent:WaitForChild("CosmeticStyle"))
 local Upgrades = require(script.Parent:WaitForChild("UpgradeCatalog"))
 local Remotes = require(script.Parent:WaitForChild("GrappleRemotes"))
+local Hourly = require(script.Parent:WaitForChild("HourlyRewards"))
+local CrispFit = require(script.Parent:WaitForChild("CrispFit"))
 local ToolClient = require(script.Parent:WaitForChild("GrappleToolClient"))
 local ToolSetup = require(script.Parent:WaitForChild("GrappleToolSetup"))
 local M = {}
@@ -178,10 +180,11 @@ function M.Init()
 	local inventoryOpen = false
 	-- Square buttons with the name underneath, outside the button.
 	local STACK_W, BUTTON, CAPTION_H, STRIDE = 112, 44, 16, 70
+	local STACK_H = STRIDE * 3 + BUTTON + 2 + CAPTION_H
 	local buttonX = math.floor((STACK_W - BUTTON) / 2)
 	local leftStack = make("Frame", screen, {
 		Name = "LeftStack", AnchorPoint = Vector2.new(0, 0), Position = UDim2.new(0, 12, 0.5, -94),
-		Size = UDim2.fromOffset(STACK_W, STRIDE * 3 + BUTTON + 2 + CAPTION_H), BackgroundTransparency = 1, ZIndex = 3,
+		Size = UDim2.fromOffset(STACK_W, STACK_H), BackgroundTransparency = 1, ZIndex = 3,
 	})
 	local leftStackScale = make("UIScale", leftStack, {Scale = 1})
 	local function stackButton(text, index, callback)
@@ -369,7 +372,6 @@ function M.Init()
 	local codexWindow
 	local shopOpen = false
 	local shopWindow
-	local shopScale
 	local upgradesOpen = false
 	local upgradesWindow
 	local adminUi
@@ -473,6 +475,25 @@ function M.Init()
 		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromOffset(24, 3), Rotation = -45, ZIndex = 2, Visible = false,
 	})
+	local hourlyButton = pill(topPills, "HourlyButton", 3)
+	hourlyButton.Size = UDim2.fromOffset(32, 32)
+	make("ImageLabel", hourlyButton, {
+		Name = "Icon", BackgroundTransparency = 1, Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
+		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(23, 23),
+	})
+	local hourlyBadge = make("Frame", hourlyButton, {
+		Name = "Alert", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 4, 0, -4),
+		Size = UDim2.fromOffset(16, 16), BackgroundColor3 = Color3.fromRGB(195, 76, 87),
+		BorderSizePixel = 0, ZIndex = 5, Visible = false, Active = false,
+	})
+	make("UICorner", hourlyBadge, {CornerRadius = UDim.new(1, 0)})
+	local hourlyBang = label(hourlyBadge, "!", UDim2.fromScale(0, 0), UDim2.fromScale(1, 1))
+	hourlyBang.TextXAlignment = Enum.TextXAlignment.Center
+	hourlyBang.TextYAlignment = Enum.TextYAlignment.Center
+	hourlyBang.Font = Enum.Font.GothamBlack
+	hourlyBang.TextSize = 12
+	hourlyBang.ZIndex = 6
+	hourlyBang.Active = false
 	local musicMuted = false
 	local menuList = make("Frame", screen, {
 		Name = "MenuList", Visible = false, AutomaticSize = Enum.AutomaticSize.Y,
@@ -582,15 +603,169 @@ function M.Init()
 		local size = menuButton.AbsoluteSize
 		menuList.Position = UDim2.fromOffset(pos.X - origin.X, pos.Y + size.Y - origin.Y + 4)
 	end
+	local showHourly
 	local function showMenu(visible)
 		menuOpen = visible
 		menuList.Visible = visible
-		if visible then placeMenuList() end
+		if visible then
+			placeMenuList()
+			if showHourly then showHourly(false) end
+		end
 	end
 	local function pointerInside(gui, x, y)
 		local pos, size = gui.AbsolutePosition, gui.AbsoluteSize
 		return x >= pos.X and x <= pos.X + size.X and y >= pos.Y and y <= pos.Y + size.Y
 	end
+	local hourlyOpen = false
+	local hourlyWindow = make("Frame", screen, {
+		Name = "HourlyWindow", AnchorPoint = Vector2.new(0, 0), Visible = false,
+		Size = UDim2.fromOffset(300, 332), BorderSizePixel = 0, ZIndex = 24,
+	})
+	Style.Surface(hourlyWindow, Style.Panel, 8)
+	local hourlyHeader = make("Frame", hourlyWindow, {Name = "Header", Size = UDim2.new(1, 0, 0, 46), ZIndex = 25})
+	Style.Surface(hourlyHeader, Style.Header, 8)
+	local hourlyTitle = label(hourlyHeader, "PLAYTIME REWARDS", UDim2.fromOffset(14, 8), UDim2.fromOffset(210, 30))
+	hourlyTitle.TextSize = 18
+	hourlyTitle.TextStrokeTransparency = 1
+	hourlyTitle.ZIndex = 26
+	local closeHourly = button(hourlyHeader, "X", UDim2.new(1, -44, 0, 6), UDim2.fromOffset(34, 34), nil, CLOSE_RED)
+	closeHourly.ZIndex = 26
+	local hourlyPlayed = label(hourlyWindow, "Played today: 0:00", UDim2.fromOffset(14, 54), UDim2.new(1, -28, 0, 20))
+	hourlyPlayed.TextSize = 14
+	hourlyPlayed.TextStrokeTransparency = 1
+	hourlyPlayed.ZIndex = 25
+	local hourlyRows = {}
+	local function clockText(seconds)
+		seconds = math.max(0, math.floor(seconds))
+		return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
+	end
+	for index, tier in ipairs(Hourly.Tiers) do
+		local y = 82 + (index - 1) * 48
+		local row = make("Frame", hourlyWindow, {
+			Name = "Tier" .. tier.minutes, Position = UDim2.fromOffset(12, y),
+			Size = UDim2.new(1, -24, 0, 42), BorderSizePixel = 0, ZIndex = 25,
+		})
+		Style.Surface(row, Style.Slot, 6)
+		local timeLabel = label(row, tier.minutes .. " MIN", UDim2.fromOffset(8, 4), UDim2.fromOffset(72, 34))
+		timeLabel.TextSize = 14
+		timeLabel.TextStrokeTransparency = 1
+		timeLabel.TextTruncate = Enum.TextTruncate.None
+		timeLabel.ZIndex = 26
+		local coinIcon = make("ImageLabel", row, {
+			BackgroundTransparency = 1, Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
+			AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 84, 0.5, 0),
+			Size = UDim2.fromOffset(16, 16), ZIndex = 26,
+		})
+		local coinLabel = label(row, "+" .. tier.coins, UDim2.fromOffset(106, 4), UDim2.fromOffset(44, 34))
+		coinLabel.TextSize = 14
+		coinLabel.TextColor3 = Style.Accent
+		coinLabel.TextStrokeTransparency = 1
+		coinLabel.TextTruncate = Enum.TextTruncate.None
+		coinLabel.ZIndex = 26
+		local stateLabel = label(row, "", UDim2.new(1, -78, 0, 4), UDim2.fromOffset(66, 34))
+		stateLabel.TextSize = 13
+		stateLabel.TextXAlignment = Enum.TextXAlignment.Right
+		stateLabel.TextStrokeTransparency = 1
+		stateLabel.ZIndex = 26
+		local claim = button(row, "CLAIM", UDim2.new(1, -74, 0.5, 0), UDim2.fromOffset(64, 26), nil, Color3.fromRGB(62, 165, 110))
+		claim.AnchorPoint = Vector2.new(0, 0.5)
+		claim.TextSize = 12
+		claim.Visible = false
+		claim.ZIndex = 27
+		claim.Activated:Connect(function()
+			Remotes.ClaimHourly:FireServer(index)
+		end)
+		hourlyRows[index] = {Row = row, Time = timeLabel, Amount = coinLabel, Icon = coinIcon, State = stateLabel, Claim = claim}
+	end
+	local function fitHourly()
+		local phone = UIS.TouchEnabled
+		local headerH = phone and 30 or 46
+		local rowH = phone and 28 or 42
+		local stride = phone and 32 or 48
+		local playedGap = phone and 4 or 8
+		local playedH = phone and 16 or 20
+		local top = headerH + playedGap + playedH + (phone and 6 or 8)
+		local text = phone and 13 or 14
+		local windowW = phone and 188 or 300
+		local iconX = phone and 58 or 84
+		local iconSize = phone and 14 or 16
+		hourlyWindow.Size = UDim2.fromOffset(windowW, top + #Hourly.Tiers * stride + (phone and 6 or 10))
+		hourlyHeader.Size = UDim2.new(1, 0, 0, headerH)
+		hourlyTitle.TextSize = phone and 13 or 18
+		hourlyTitle.Position = UDim2.fromOffset(phone and 8 or 14, phone and 4 or 8)
+		hourlyTitle.Size = UDim2.fromOffset(phone and 148 or 220, phone and 22 or 30)
+		closeHourly.Size = UDim2.fromOffset(phone and 22 or 34, phone and 22 or 34)
+		closeHourly.Position = UDim2.new(1, phone and -26 or -44, 0, phone and 4 or 6)
+		closeHourly.TextSize = phone and 11 or 13
+		hourlyPlayed.TextSize = text
+		hourlyPlayed.Position = UDim2.fromOffset(phone and 8 or 14, headerH + playedGap)
+		hourlyPlayed.Size = UDim2.new(1, phone and -16 or -28, 0, playedH)
+		for index, row in ipairs(hourlyRows) do
+			local y = top + (index - 1) * stride
+			row.Row.Position = UDim2.fromOffset(phone and 6 or 12, y)
+			row.Row.Size = UDim2.new(1, phone and -12 or -24, 0, rowH)
+			row.Time.TextSize = text
+			row.Time.Size = UDim2.fromOffset(phone and 52 or 72, rowH - 6)
+			row.Time.Position = UDim2.fromOffset(phone and 6 or 8, 3)
+			row.Icon.Size = UDim2.fromOffset(iconSize, iconSize)
+			row.Icon.Position = UDim2.new(0, iconX, 0.5, 0)
+			row.Amount.TextSize = text
+			row.Amount.Position = UDim2.fromOffset(iconX + iconSize + (phone and 4 or 6), 3)
+			row.Amount.Size = UDim2.fromOffset(phone and 36 or 44, rowH - 6)
+			row.State.TextSize = phone and 12 or 13
+			row.State.Position = UDim2.new(1, phone and -62 or -78, 0, 3)
+			row.State.Size = UDim2.fromOffset(phone and 54 or 66, rowH - 6)
+			row.Claim.Size = UDim2.fromOffset(phone and 52 or 64, phone and 20 or 26)
+			row.Claim.Position = UDim2.new(1, phone and -56 or -74, 0.5, 0)
+			row.Claim.TextSize = phone and 11 or 12
+		end
+	end
+	fitHourly()
+	local function refreshHourly()
+		local seconds = player:GetAttribute("HourlySeconds")
+		local claimed = player:GetAttribute("HourlyClaimed")
+		if type(seconds) ~= "number" then seconds = 0 end
+		if type(claimed) ~= "number" then claimed = 0 end
+		seconds = math.clamp(seconds, 0, Hourly.Cap())
+		hourlyPlayed.Text = "Played today: " .. clockText(seconds)
+		local waiting = false
+		for index, tier in ipairs(Hourly.Tiers) do
+			local row = hourlyRows[index]
+			local need = tier.minutes * 60
+			local ready = seconds >= need and not Hourly.Has(claimed, index)
+			if ready then waiting = true end
+			row.Claim.Visible = ready
+			row.State.Visible = not ready
+			if Hourly.Has(claimed, index) then
+				row.State.Text = "Claimed"
+				row.State.TextColor3 = Style.Accent
+			else
+				row.State.Text = clockText(need - seconds)
+				row.State.TextColor3 = Style.Muted
+			end
+		end
+		hourlyBadge.Visible = waiting
+	end
+	local function placeHourly()
+		local origin = screen.AbsolutePosition
+		local pos = hourlyButton.AbsolutePosition
+		local size = hourlyButton.AbsoluteSize
+		hourlyWindow.Position = UDim2.fromOffset(pos.X - origin.X, pos.Y + size.Y - origin.Y + 6)
+	end
+	showHourly = function(visible)
+		hourlyOpen = visible
+		hourlyWindow.Visible = visible
+		if not visible then return end
+		showMenu(false)
+		fitHourly()
+		refreshHourly()
+		placeHourly()
+	end
+	closeHourly.Activated:Connect(function() showHourly(false) end)
+	hourlyButton.Activated:Connect(function() showHourly(not hourlyOpen) end)
+	player:GetAttributeChangedSignal("HourlySeconds"):Connect(refreshHourly)
+	player:GetAttributeChangedSignal("HourlyClaimed"):Connect(refreshHourly)
+	refreshHourly()
 	menuButton.Activated:Connect(function() showMenu(not menuOpen) end)
 	settingsEntry.Activated:Connect(function()
 		showMenu(false)
@@ -616,22 +791,30 @@ function M.Init()
 		adminUi.show(not adminUi.window.Visible)
 	end)
 	UIS.InputBegan:Connect(function(input)
-		if not menuOpen then return end
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
-		if pointerInside(menuButton, input.Position.X, input.Position.Y) then return end
-		if pointerInside(menuList, input.Position.X, input.Position.Y) then return end
-		showMenu(false)
+		if menuOpen then
+			if pointerInside(menuButton, input.Position.X, input.Position.Y) then return end
+			if pointerInside(menuList, input.Position.X, input.Position.Y) then return end
+			showMenu(false)
+		end
+		if hourlyOpen then
+			if pointerInside(hourlyButton, input.Position.X, input.Position.Y) then return end
+			if pointerInside(hourlyWindow, input.Position.X, input.Position.Y) then return end
+			showHourly(false)
+		end
 	end)
-	GuiService.MenuOpened:Connect(function() showMenu(false) end)
+	GuiService.MenuOpened:Connect(function()
+		showMenu(false)
+		showHourly(false)
+	end)
 
 	local showShop
 	local shopUi = ShopUi.Mount(screen, function()
 		showShop(false)
 	end)
 	shopWindow = shopUi.window
-	shopScale = shopUi.scale
-	local function fitWindow(scaleObject, windowW, windowH)
-		if not scaleObject then return end
+	local function fitWindow(apply, windowW, windowH)
+		if not apply then return end
 		local camera = workspace.CurrentCamera
 		if not camera then return end
 		local bounds = UIS.TouchEnabled and screen.AbsoluteSize or camera.ViewportSize
@@ -639,28 +822,35 @@ function M.Init()
 		local margin = UIS.TouchEnabled and 48 or 24
 		local availX = math.max(1, bounds.X - margin)
 		local availY = math.max(1, bounds.Y - margin)
-		scaleObject.Scale = math.min(1, availX / windowW, availY / windowH)
+		apply(math.min(1, availX / windowW, availY / windowH))
 	end
 	local function fitShop()
-		fitWindow(shopScale, 680, 520)
+		fitWindow(shopUi.applyFit, 680, 520)
 	end
+	local applyLeft = CrispFit.attach(leftStack, leftStackScale)
+	local applyCoins = CrispFit.attach(coins, coinScale)
+	local applyReel = CrispFit.attach(reelControls, reelScale)
+	local applyWall = CrispFit.attach(wallControls, wallScale)
+	local applyTether = CrispFit.attach(tetherPanel, tetherScale)
+	local applySettings = CrispFit.attach(settingsWindow, settingsScale)
+	local applyCodex = CrispFit.attach(codexWindow, codexScale)
 	local function fitLeftStack()
 		coins.Position = UDim2.new(0, 8, 1, -8)
 		local camera = workspace.CurrentCamera
 		if not camera then return end
 		if not UIS.TouchEnabled then
-			leftStackScale.Scale = 1
-			coinScale.Scale = 1
+			applyLeft(1)
+			applyCoins(1)
 			leftStack.Position = UDim2.new(0, 12, 0.5, -94)
 			return
 		end
-		-- Phones keep the same squares and coin chip, at a much smaller scale.
+		-- Phones keep the same squares and coin chip, drawn at real pixel sizes.
 		local scale = 0.6
-		leftStackScale.Scale = scale
-		coinScale.Scale = scale
+		applyLeft(scale)
+		applyCoins(scale)
 		local viewport = camera.ViewportSize
 		local topMargin, bottomMargin = 8, 72
-		local height = leftStack.Size.Y.Offset * scale
+		local height = STACK_H * scale
 		local available = math.max(120, viewport.Y - topMargin - bottomMargin)
 		local top = topMargin + math.max(0, (available - height) / 2)
 		leftStack.Position = UDim2.fromOffset(8, top)
@@ -983,17 +1173,20 @@ function M.Init()
 		if camera then
 			local viewport = camera.ViewportSize
 			local scale = math.clamp(math.min(viewport.X / 800, viewport.Y / 450), 0.7, 1.2)
-			reelScale.Scale, wallScale.Scale = scale, scale
-			tetherScale.Scale = math.clamp(math.min(viewport.X / 480, viewport.Y / 800), 0.55, 1)
+			applyReel(scale)
+			applyWall(scale)
+			applyTether(math.clamp(math.min(viewport.X / 480, viewport.Y / 800), 0.55, 1))
 			local settingsUiScale = math.clamp(math.min(viewport.X / 800, viewport.Y / 600), 0.7, 1)
-			settingsScale.Scale = settingsUiScale
-			codexScale.Scale = settingsUiScale
+			applySettings(settingsUiScale)
+			applyCodex(settingsUiScale)
+			fitHourly()
 			fitShop()
 			fitLeftStack()
 			upgradeUi.fit()
 			if adminUi then adminUi.fit() end
 		end
 		if menuOpen then placeMenuList() end
+		if hourlyOpen then placeHourly() end
 		if currentRope and not currentRope.Parent then grapple() end
 		local equipped = tool()
 		reelControls.Visible = currentRope ~= nil and equipped ~= nil

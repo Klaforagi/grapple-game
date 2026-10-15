@@ -17,6 +17,7 @@ return function(sources)
 	assert(loadstring(sources.killsBoardTests))()(sources.killsServer, sources.killsBoardClient)
 	assert(loadstring(sources.coinsBoardTests))()(sources.coins, sources.coinsBoardClient)
 	assert(loadstring(sources.killTests))()(sources.killCredit)
+	assert(loadstring(sources.hourlyTests))()(sources.hourly)
 	local objects, delayed = {}, {}
 	local now = 10
 	local function signal()

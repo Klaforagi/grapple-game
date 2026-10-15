@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local Style = require(script.Parent:WaitForChild("CosmeticStyle"))
+local CrispFit = require(script.Parent:WaitForChild("CrispFit"))
 
 local INK = Style.Text
 local MUTED = Style.Muted
@@ -622,6 +623,7 @@ function M.Mount(screen, onOpen)
 			if onOpen then onOpen() end
 		end
 	end
+	local applyFit = CrispFit.attach(window, scale)
 	function api.fit()
 		local camera = workspace.CurrentCamera
 		if not camera then return end
@@ -629,7 +631,7 @@ function M.Mount(screen, onOpen)
 		if viewport.X < 1 or viewport.Y < 1 then return end
 		local fitted = math.min((viewport.X - 24) / 500, (viewport.Y - 24) / 560)
 		if UserInputService.TouchEnabled then fitted *= 0.85 end
-		scale.Scale = math.clamp(fitted, 0.45, 1)
+		applyFit(math.clamp(fitted, 0.45, 1))
 	end
 	api.window = window
 	api.scale = scale
