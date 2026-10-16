@@ -229,7 +229,7 @@ return function(sources)
 		Color3 = {fromRGB = function() return {} end, fromHSV = function() return {} end}, ColorSequence = {new = function() return {} end},
 		PhysicalProperties = {new = function(d, f) return {Density = d, Friction = f} end},
 		RaycastParams = {new = function() return {} end}, OverlapParams = {new = function() return {} end},
-		Enum = {HumanoidStateType = {Physics = "Physics", Ragdoll = "Ragdoll", GettingUp = "GettingUp", Freefall = "Freefall", Running = "Running", Swimming = "Swimming", Dead = "Dead"},
+		Enum = {HumanoidStateType = {Physics = "Physics", Ragdoll = "Ragdoll", GettingUp = "GettingUp", Freefall = "Freefall", Running = "Running", Swimming = "Swimming", Dead = "Dead", Jumping = "Jumping"},
 			RenderPriority = {Camera = {Value = 200}},
 			ForceLimitMode = {PerAxis = "PerAxis"}, ActuatorRelativeTo = {World = "World"},
 			PositionAlignmentMode = {OneAttachment = "OneAttachment"}, RaycastFilterType = {Exclude = "Exclude"},
@@ -814,6 +814,9 @@ return function(sources)
 	-- The attacker's client must also suppress the remote victim's state machine.
 	runService.IsServer = function() return false end
 	players.LocalPlayer = attacker
+	local ragdollInput = {InputBegan = signal(), JumpRequest = signal(), TouchEnabled = false}
+	services.UserInputService = ragdollInput
+	attackerHumanoid.AutoJumpEnabled = true
 	local clientRagdoll = execute(sources.ragdoll)
 	clientRagdoll.InitClient()
 	assert(not victimHumanoid.EvaluateStateMachine, "remote victim retained humanoid forces")
@@ -830,6 +833,8 @@ return function(sources)
 	for _, fps in ipairs({15, 30, 60, 144}) do
 		attackerRoot.Position = V.new(0, 2000, 0)
 		attackerHumanoid:SetAttribute("Ragdolled", true)
+		attackerHumanoid.Jump = true -- Space and R reached the controller together.
+		ragdollInput.InputBegan:Emit({KeyCode = env.Enum.KeyCode.Space})
 		local anchor = assert(world:FindFirstChild("RagdollCameraAnchor"))
 		anchor.Position = anchor.CFrame.Position -- Mirror Roblox's CFrame -> Position property update.
 		for frame = 1, fps * 4 do
@@ -855,7 +860,17 @@ return function(sources)
 		end
 		attackerHumanoid:SetAttribute("Ragdolled", false)
 		assert(world.CurrentCamera.CameraSubject == attackerHumanoid, "recovery did not restore normal camera")
+		assert(not attackerHumanoid:GetStateEnabled(env.Enum.HumanoidStateType.Jumping),
+			"simultaneous Space and R left jumping active on recovery")
 	end
+	now += 0.2
+	runService.Heartbeat:Emit(0.2)
+	assert(not attackerHumanoid:GetStateEnabled(env.Enum.HumanoidStateType.Jumping) and not attackerHumanoid.Jump,
+		"stale jump input resumed after ragdoll recovery")
+	ragdollInput.InputBegan:Emit({KeyCode = env.Enum.KeyCode.Space})
+	assert(attackerHumanoid:GetStateEnabled(env.Enum.HumanoidStateType.Jumping)
+		and attackerHumanoid.AutoJumpEnabled and attackerHumanoid.Jump,
+		"a fresh jump press did not restore jumping after rapid ragdolls")
 	attackerRoot.Position, attackerRoot.AssemblyLinearVelocity = originalRootPosition, originalRootVelocity
 	env.CFrame.new = previousCFrameNew
 	world.CurrentCamera = nil
@@ -1567,6 +1582,10 @@ return function(sources)
 	assert(attackerHumanoid:HasTag("Ragdoll"), "ready player could not ragdoll")
 	assert(attackerHumanoid:GetAttribute("ManualRagdoll"), "manual ragdoll was not marked for the HUD")
 	assert(gun.Parent == attacker.Character, "non-grappled ragdoll unequipped the grapple gun")
+	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
+	assert(attackerHumanoid:GetAttribute("ManualRagdoll") and attackerHumanoid:GetAttribute("Ragdolled"),
+		"manual ragdoll ended during its one-second activation cooldown")
+	now += 1.01
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(not attackerHumanoid:HasTag("Ragdoll"), "manual toggle off did not recover")
 	assert(not attackerHumanoid:GetAttribute("ManualRagdoll"), "toggle off retained the border")

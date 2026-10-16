@@ -116,10 +116,12 @@ Players.PlayerRemoving:Connect(function(player) pendingRespawns[player] = nil en
 for _, player in ipairs(Players:GetPlayers()) do playerAdded(player) end
 -- Defined with the fall helpers below. The toggle runs later, after that assignment.
 local bodyLanded
+local manualRagdollReadyAt = setmetatable({}, {__mode = "k"})
 Remotes.ToggleRagdoll.OnServerEvent:Connect(function(player)
 	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 or humanoid:GetAttribute("CapsuleLocked") then return end
 	if humanoid:GetAttribute("ManualRagdoll") then
+		if os.clock() < (manualRagdollReadyAt[humanoid] or 0) then return end
 		humanoid:SetAttribute("ManualRagdoll", nil)
 		-- If a knockdown still owns the body, retry when its lock expires.
 		humanoid:SetAttribute("RagdollRecoveryRequested", true)
@@ -132,7 +134,9 @@ Remotes.ToggleRagdoll.OnServerEvent:Connect(function(player)
 		humanoid:SetAttribute("RagdollRecoveryRequested", nil)
 		humanoid:SetAttribute("ManualRagdoll", true)
 		if not humanoid:GetAttribute("Ragdolled") then
-			humanoid:SetAttribute("RagdollActivatedAt", os.clock())
+			local now = os.clock()
+			humanoid:SetAttribute("RagdollActivatedAt", now)
+			manualRagdollReadyAt[humanoid] = now + 1
 		end
 		humanoid:AddTag("Ragdoll")
 		Ragdoll.Set(humanoid, true)

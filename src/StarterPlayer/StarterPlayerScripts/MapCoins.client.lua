@@ -78,10 +78,9 @@ local function showGain(amount)
 	popup.Position = UDim2.fromOffset(originX, originY)
 	popup.Size = UDim2.fromOffset(72, 28)
 	popup.ZIndex = 8
-	local amountStroke = amountLabel:FindFirstChildOfClass("UIStroke")
 	local stroke = Instance.new("UIStroke")
-	stroke.Color = amountStroke and amountStroke.Color or Color3.fromRGB(255, 255, 255)
-	stroke.Thickness = amountStroke and amountStroke.Thickness or 2
+	stroke.Color = Color3.fromRGB(0, 0, 0)
+	stroke.Thickness = 2
 	stroke.Parent = popup
 	local scale = Instance.new("UIScale")
 	scale.Scale = 0.35
@@ -89,11 +88,11 @@ local function showGain(amount)
 	popup.Parent = hud
 	popping += 1
 	local grow = TweenService:Create(scale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1})
-	local rise = TweenService:Create(popup, TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+	local rise = TweenService:Create(popup, TweenInfo.new(1.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		Position = UDim2.fromOffset(originX, originY - 26),
 		TextTransparency = 1,
 	})
-	local fadeStroke = TweenService:Create(stroke, TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+	local fadeStroke = TweenService:Create(stroke, TweenInfo.new(1.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		Transparency = 1,
 	})
 	grow:Play()

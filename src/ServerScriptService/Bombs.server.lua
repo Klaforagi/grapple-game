@@ -287,6 +287,16 @@ local function launch(humanoid, state, now)
 	-- Bombs launch on Heartbeat; pushes launch just before physics simulation.
 	humanoid:SetAttribute("PhysicsServerUntil", now + (state.pushDirection and 0.65 or SERVER_HOLD))
 	Ragdoll.RefreshOwnership(humanoid)
+	if not state.pushDirection then
+		local revision = humanoid:GetAttribute("BombBlastRevision")
+		task.delay(SERVER_HOLD + 0.02, function()
+			if humanoid.Parent == character and humanoid.Health > 0
+				and humanoid:GetAttribute("Ragdolled") == true
+				and humanoid:GetAttribute("BombBlastRevision") == revision then
+				Ragdoll.RefreshOwnership(humanoid)
+			end
+		end)
+	end
 	local assemblies = {}
 	local bodies = {}
 	local root = character:FindFirstChild("HumanoidRootPart")

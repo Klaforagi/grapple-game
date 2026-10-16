@@ -901,9 +901,11 @@ function Service.InitClient()
 	local cameraAnchor: Part?
 	local cameraRoot: BasePart?
 	local cameraHumanoid: Humanoid?
+	local cameraBlend
 	if localPlayer then
 		localPlayer.CharacterAdded:Connect(function(character)
 			cameraRoot, cameraHumanoid = nil, nil
+			cameraBlend = nil
 			local camera = workspace.CurrentCamera
 			if cameraAnchor and camera and camera.CameraSubject == cameraAnchor then
 				camera.CameraSubject = character:WaitForChild("Humanoid")
@@ -912,6 +914,10 @@ function Service.InitClient()
 	end
 
 	local cameraLift = 0
+	local function blendBombCamera(camera)
+		if not camera or typeof(camera.CFrame) ~= "CFrame" then return end
+		cameraBlend = {camera = camera, from = camera.CFrame.Position, elapsed = 0, duration = 0.35}
+	end
 	local animateBaselines = setmetatable({}, {__mode = "k"})
 	local function clearRagdollAnimation(humanoid: Humanoid)
 		local character = humanoid.Parent
@@ -962,6 +968,7 @@ function Service.InitClient()
 		if not camera then return end
 
 		if not enabled then
+			if humanoid:GetAttribute("BombBlastRevision") ~= nil then blendBombCamera(camera) end
 			cameraRoot, cameraHumanoid, cameraLift = nil, nil, 0
 			if cameraAnchor and camera.CameraSubject == cameraAnchor then camera.CameraSubject = humanoid end
 			return
@@ -969,6 +976,9 @@ function Service.InitClient()
 
 		local root = humanoid.Parent:FindFirstChild("HumanoidRootPart")
 		if not root or not root:IsA("BasePart") then return end
+		local bombEntry = humanoid:GetAttribute("BombRagdollUntil") ~= nil
+			or humanoid:GetAttribute("BombBlastRevision") ~= nil
+		if bombEntry then blendBombCamera(camera) end
 		if not cameraAnchor then
 			cameraAnchor = Instance.new("Part")
 			cameraAnchor.Name = "RagdollCameraAnchor"
@@ -988,7 +998,9 @@ function Service.InitClient()
 			local lift = focus.Position.Y - root.Position.Y
 			if lift == lift then cameraLift = math.clamp(lift, 0, 5) end
 		end
-		cameraAnchor.CFrame = CFrame.new(root.Position + Vector3.new(0, cameraLift, 0))
+		local initialFocus = camera.Focus
+		cameraAnchor.CFrame = bombEntry and typeof(initialFocus) == "CFrame" and CFrame.new(initialFocus.Position)
+			or CFrame.new(root.Position + Vector3.new(0, cameraLift, 0))
 		cameraRoot, cameraHumanoid = root, humanoid
 		camera.CameraSubject = cameraAnchor
 	end
@@ -997,39 +1009,33 @@ function Service.InitClient()
 	local watched = setmetatable({}, {__mode = "k"})
 	local activeRigs = {}
 	local pendingEntryMotion = {}
-	local recoveryJumpToken = 0
 	local recoveryJumpBlocked = setmetatable({}, {__mode = "k"})
-	-- A Space press can reach Roblox's jump controller just before the ragdoll
-	-- state replicates. Keep that press suppressed through recovery, then return
-	-- control once it has been released instead of leaving Jump latched on.
-	local jumpInputHeld = false
-	local gotInputService, inputService = pcall(game.GetService, game, "UserInputService")
-	local function isJumpInput(input)
-		return input and (input.KeyCode == Enum.KeyCode.Space or input.KeyCode == Enum.KeyCode.ButtonA)
+	local function resumeJumpOnNewInput()
+		local humanoid = localPlayer and localPlayer.Character and localPlayer.Character:FindFirstChildOfClass("Humanoid")
+		local recovery = humanoid and recoveryJumpBlocked[humanoid]
+		if not recovery or humanoid:GetAttribute("Ragdolled") == true then return end
+		humanoid.Jump = false
+		humanoid.AutoJumpEnabled = recovery.autoJump
+		pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, recovery.jumping) end)
+		recoveryJumpBlocked[humanoid] = nil
+		-- The native controller may have handled this input while Jumping was
+		-- still disabled. Make this fresh press jump on its first attempt.
+		if recovery.jumping then humanoid.Jump = true end
 	end
-	if gotInputService and inputService and inputService.InputBegan and inputService.InputEnded then
+	local ok, inputService = pcall(game.GetService, game, "UserInputService")
+	if ok then
 		inputService.InputBegan:Connect(function(input)
-			if isJumpInput(input) then
-				jumpInputHeld = true
-				local character = localPlayer and localPlayer.Character
-				local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-				local recovery = humanoid and recoveryJumpBlocked[humanoid]
-				if recovery then
-					humanoid.Jump = false
-					humanoid.AutoJumpEnabled = recovery.autoJump
-					pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, recovery.jumping) end)
-					recoveryJumpBlocked[humanoid] = nil
-				end
+			if input.KeyCode == Enum.KeyCode.Space or input.KeyCode == Enum.KeyCode.ButtonA then
+				resumeJumpOnNewInput()
 			end
 		end)
-		inputService.InputEnded:Connect(function(input)
-			if isJumpInput(input) then jumpInputHeld = false end
+		inputService.JumpRequest:Connect(function()
+			if inputService.TouchEnabled and inputService:GetLastInputType() == Enum.UserInputType.Touch then
+				resumeJumpOnNewInput()
+			end
 		end)
 	end
 	RunService.Heartbeat:Connect(function()
-		-- Roblox can retain Jump=true when the native controller received Space in
-		-- the same frame that ragdoll began. Do not let that stale state survive
-		-- recovery; the player's next new jump press clears this guard.
 		for humanoid in pairs(recoveryJumpBlocked) do
 			if not humanoid.Parent then
 				recoveryJumpBlocked[humanoid] = nil
@@ -1042,24 +1048,17 @@ function Service.InitClient()
 	end)
 	local function suppressRecoveryJump(humanoid)
 		if not localPlayer or humanoid.Parent ~= localPlayer.Character then return end
-		recoveryJumpToken += 1
-		local token = recoveryJumpToken
-		local jumpingEnabled = humanoid:GetStateEnabled(Enum.HumanoidStateType.Jumping)
-		local autoJump = humanoid.AutoJumpEnabled
-		recoveryJumpBlocked[humanoid] = {autoJump = autoJump, jumping = jumpingEnabled}
+		local recovery = recoveryJumpBlocked[humanoid]
+		if not recovery then
+			recovery = {
+				autoJump = humanoid.AutoJumpEnabled,
+				jumping = humanoid:GetStateEnabled(Enum.HumanoidStateType.Jumping),
+			}
+			recoveryJumpBlocked[humanoid] = recovery
+		end
 		humanoid.Jump = false
 		humanoid.AutoJumpEnabled = false
 		pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false) end)
-		local function restoreWhenReleased()
-			if token ~= recoveryJumpToken or not humanoid.Parent
-				or humanoid:GetAttribute("Ragdolled") == true then return end
-			humanoid.Jump = false
-			if jumpInputHeld then
-				task.delay(0.05, restoreWhenReleased)
-				return
-			end
-		end
-		task.delay(0.08, restoreWhenReleased)
 	end
 	local function startAirborneMotion(humanoid)
 		if humanoid.Parent ~= localPlayer.Character or humanoid.Health <= 0
@@ -1208,6 +1207,27 @@ function Service.InitClient()
 			end
 		end
 		cameraAnchor.CFrame = CFrame.new(desired - remaining)
+	end)
+	-- The default camera has already followed its new subject at this point.
+	-- Ease only the position difference left by a bomb subject switch, while
+	-- preserving the player's current camera rotation and input.
+	RunService:BindToRenderStep("GrappleBombCameraHandoff", Enum.RenderPriority.Camera.Value + 1, function(dt)
+		local blend = cameraBlend
+		if not blend then return end
+		local camera = workspace.CurrentCamera
+		if camera ~= blend.camera or typeof(camera.CFrame) ~= "CFrame" then
+			cameraBlend = nil
+			return
+		end
+		local target = camera.CFrame
+		if not blend.offset then blend.offset = blend.from - target.Position end
+		blend.elapsed += math.max(0, dt)
+		local progress = math.clamp(blend.elapsed / blend.duration, 0, 1)
+		local weight = (1 - progress) * (1 - progress)
+		local displacement = blend.offset * weight
+		camera.CFrame = target + displacement
+		if typeof(camera.Focus) == "CFrame" then camera.Focus = camera.Focus + displacement end
+		if progress >= 1 then cameraBlend = nil end
 	end)
 	-- Transform is local. Stop the jump/fall pose before the animator writes it
 	-- back over the loose limbs, including during the bounce.
