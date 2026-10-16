@@ -86,14 +86,6 @@ function Inventory.Create(parent, equipRemote, onClose)
 		if (selectedKind == "All" or selectedKind == "Bomb") and Catalog.Owns(player, "Bomb", "Banana") then
 			table.insert(items, {Id = "Bomb_Banana", Kind = "Bomb", Name = "Banana", Rarity = "Common", Color = Palettes.Swatches.Bomb.Banana, Admin = true})
 		end
-		for _, itemKind in ipairs({"Gun", "Rope"}) do
-			if (selectedKind == "All" or selectedKind == itemKind) and Catalog.Owns(player, itemKind, "Gold") then
-				table.insert(items, {
-					Id = itemKind .. "_Gold", Kind = itemKind, Name = "Gold", Rarity = "Legendary", Vip = true,
-					Color = Palettes.Swatches[itemKind].Gold,
-				})
-			end
-		end
 		local found = false
 		for _, item in ipairs(items) do if selected and selected.Id == item.Id then selected = item found = true break end end
 		if saleRequest then selected = Catalog.ById[saleRequest.itemId]

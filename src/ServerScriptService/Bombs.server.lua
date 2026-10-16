@@ -510,6 +510,9 @@ Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 	lastThrow[player] = now
 	local colorName = player:GetAttribute("BombColor")
 	local bomb = sphere("ThrownBomb", 1.2, bombPaint(colorName))
+	if colorName == "Mint" then
+		bomb:SetAttribute("ExplosionColor", Palettes.Swatches.Bomb.Mint)
+	end
 	if colorName == "Banana" then
 		local banana = bananaPart("ThrownBomb")
 		if banana then bomb:Destroy() bomb = banana end

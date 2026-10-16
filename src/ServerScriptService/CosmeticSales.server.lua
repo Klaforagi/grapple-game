@@ -11,7 +11,7 @@ remote.OnServerInvoke = function(player, itemId, requestId)
 		return {ok = false, message = "Invalid sale request."}
 	end
 	local item = Catalog.ById[itemId]
-	if not item or item.Starter then return {ok = false, message = "That item cannot be sold."} end
+	if not item or item.Starter or item.Vip then return {ok = false, message = "That item cannot be sold."} end
 	local cached = lastResult[player]
 	if cached and cached.id == requestId and cached.itemId == itemId then return cached.result end
 	local unresolved = pending[player]

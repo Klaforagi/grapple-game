@@ -8,7 +8,7 @@ local Catalog = {
 	-- The root sits above the feet, so a floor plate still counts as standing on the zone.
 	StandHeight = 5, ServerPadding = 2, BillboardDistance = 60,
 	Cooldown = 5,
-	Defaults = {Gun = "Black", Rope = "Gray", Bomb = "Cyan"},
+	Defaults = {Gun = "Gray", Rope = "Gray", Bomb = "Cyan"},
 	Attributes = {Gun = "GrappleGunColor", Rope = "GrappleRopeColor", Bomb = "BombColor"},
 	Rarities = {
 		{Name = "Legendary", Chance = 0.005, Color = Color3.fromRGB(255, 185, 49)},
@@ -20,9 +20,12 @@ local Catalog = {
 	Items = {}, ById = {}, Pools = {},
 }
 local overrides = {
-	Gun = {Rainbow = "Legendary", Mint = "Uncommon", Lime = "Uncommon", Pink = "Uncommon"},
-	Rope = {Rainbow = "Legendary", Mint = "Uncommon", Lime = "Uncommon", Pink = "Uncommon"},
-	Bomb = {Rainbow = "Legendary", Mint = "Uncommon", Pink = "Uncommon"},
+	Gun = {Rainbow = "Legendary", Black = "Uncommon", White = "Uncommon", Cyan = "Uncommon",
+		Mint = "Uncommon", Lime = "Uncommon", Pink = "Uncommon"},
+	Rope = {Rainbow = "Legendary", Black = "Uncommon", White = "Uncommon", Cyan = "Uncommon",
+		Mint = "Uncommon", Lime = "Uncommon", Pink = "Uncommon"},
+	Bomb = {Rainbow = "Legendary", Black = "Uncommon", White = "Uncommon",
+		Mint = "Uncommon", Pink = "Uncommon"},
 }
 local ranks = {}
 for rank, rarity in ipairs(Catalog.Rarities) do
@@ -50,6 +53,12 @@ for _, kind in ipairs({"Gun", "Rope", "Bomb"}) do
 		Catalog.ById[item.Id] = item
 		if not item.Starter then table.insert(Catalog.Pools[item.Rarity], item) end
 	end
+	local gold = {
+		Id = kind .. "_Gold", Kind = kind, Name = "Gold", Rarity = "Legendary", Vip = true,
+		Color = Palettes.Swatches[kind].Gold,
+	}
+	table.insert(Catalog.Items, gold)
+	Catalog.ById[gold.Id] = gold
 end
 table.sort(Catalog.Items, function(a, b)
 	if a.Rarity ~= b.Rarity then return ranks[a.Rarity] > ranks[b.Rarity] end
@@ -80,8 +89,8 @@ end
 
 function Catalog.Copies(player, kind, name)
 	if kind == "Bomb" and name == "Banana" then return player:GetAttribute("Admin") == true and 1 or 0 end
-	-- Gold stays out of the roll pools and the collection total. VIP equips it.
-	if name == "Gold" and (kind == "Gun" or kind == "Rope") then
+	-- Gold counts toward the collection, but only VIP ownership unlocks it.
+	if name == "Gold" and Catalog.ById[tostring(kind) .. "_Gold"] then
 		return player:GetAttribute("TestPass_VIP") == true and 1 or 0
 	end
 	local item = Catalog.ById[tostring(kind) .. "_" .. tostring(name)]

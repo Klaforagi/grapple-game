@@ -8,7 +8,7 @@ return {
 
 
 	toolName = "Grapple Gun", -- Make sure this is the exact same name as the tool
-	toolIcon = "rbxassetid://91010954183348", -- Roblox Backpack/hotbar icon
+	toolIcon = "rbxassetid://123492124131940", -- Fallback Tool icon; the visible hotbar tints the image.
 	
 	debugMode = false, -- Visible hitbox, and print statements for debugging
 	--[[
@@ -96,7 +96,7 @@ return {
 	capsuleRescueShieldSeconds = 1,
 
 	bombToolName = "Bomb",
-	bombToolIcon = "rbxassetid://17724514739", -- Roblox Backpack/hotbar icon
+	bombToolIcon = "rbxassetid://90880415826748", -- Fallback Tool icon; the visible hotbar tints the image.
 	pushToolName = "Push",
 	pushToolIcon = "rbxassetid://7925887190", -- Roblox Backpack/hotbar icon
 	pushRange = 6.5, -- Studs forward; walls block the push

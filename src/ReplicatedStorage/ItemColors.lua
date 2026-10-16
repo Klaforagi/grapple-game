@@ -12,7 +12,7 @@ local palettes = {Gun = originalPalette(), Rope = originalPalette(), Bomb = {
 	Green = Color3.fromRGB(0, 255, 60), Blue = Color3.fromRGB(38, 0, 255), Purple = Color3.fromRGB(72, 0, 255),
 	Pink = Color3.fromRGB(240, 70, 255), White = Color3.fromRGB(255, 255, 255), Black = Color3.fromRGB(0, 0, 0),
 	Cyan = Color3.fromRGB(0, 174, 255), Mint = Color3.fromRGB(34, 245, 94),
-	Banana = Color3.fromRGB(255, 255, 0),
+	Banana = Color3.fromRGB(255, 255, 0), Gold = Color3.fromRGB(232, 164, 38),
 }}
 -- Backward-compatible lookup for saved selections from before Mint was added.
 palettes.Bomb.Teal = palettes.Bomb.Mint
@@ -37,7 +37,8 @@ end
 for name, color in pairs(palettes.Swatches.Gun) do
 	if palettes.Swatches.Bomb[name] then palettes.Swatches.Bomb[name] = color end
 end
-palettes.Swatches.Bomb.Mint = palettes.Swatches.Bomb.Teal
+-- Use a softer jade swatch for the icon; the in-game bomb stays neon.
+palettes.Swatches.Bomb.Mint = Color3.fromRGB(32, 205, 137)
 palettes.Order = {"Black", "White", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Cyan", "Mint", "Gray", "Lime", "Brown", "Gold"}
 -- Four close golds. Gun and rope shift through these the way rainbow shifts hues.
 palettes.GoldStops = {

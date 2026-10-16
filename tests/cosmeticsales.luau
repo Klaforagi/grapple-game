@@ -20,7 +20,7 @@ return function(source, catalog)
 	local fn = assert(loadstring(source)) setfenv(fn, env) fn()
 	assert(not remote.OnServerInvoke(player, {}, "id").ok)
 	assert(not remote.OnServerInvoke(player, "Gun_Rainbow", {}).ok)
-	assert(not remote.OnServerInvoke(player, "Gun_Black", "id").ok)
+	assert(not remote.OnServerInvoke(player, "Gun_Gray", "id").ok)
 	assert(not remote.OnServerInvoke(player, "Bomb_Banana", "id").ok)
 	assert(not remote.OnServerInvoke(player, "Unknown", "id").ok and calls == 0)
 	concurrent = true

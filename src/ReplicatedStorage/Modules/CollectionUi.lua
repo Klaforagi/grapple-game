@@ -1,5 +1,4 @@
 local Catalog = require(script.Parent:WaitForChild("CosmeticCatalog"))
-local Palettes = require(script.Parent.Parent:WaitForChild("ItemColors"))
 local Players = game:GetService("Players")
 local Ui = {}
 
@@ -17,16 +16,6 @@ function Ui.Text(parent, text, position, size, fontSize, color)
 	return make("TextLabel", parent, {BackgroundTransparency = 1, Text = text,
 		Position = position, Size = size, Font = Enum.Font.GothamBold, TextSize = fontSize or 16,
 		TextColor3 = color or Color3.fromRGB(41, 57, 82), TextXAlignment = Enum.TextXAlignment.Left})
-end
-function Ui.Paint(parent, item)
-	parent.BackgroundColor3 = item.Color
-	if item.Name == "Rainbow" or item.Name == "Gold" then
-		local points = {}
-		local sample = item.Name == "Gold" and Palettes.GoldAt or Palettes.RainbowAt
-		local steps = item.Name == "Gold" and 3 or 12
-		for i = 0, steps do points[i + 1] = ColorSequenceKeypoint.new(i / steps, sample(i / steps)) end
-		make("UIGradient", parent, {Color = ColorSequence.new(points), Rotation = 25})
-	end
 end
 function Ui.OwnedText(player, kind)
 	local owned, total = Catalog.Count(player, kind)
@@ -68,12 +57,14 @@ function Ui.PopulateCodex(window)
 			local rarity = Catalog.Rarity(item.Rarity)
 			local row = make("Frame", scroll, {Name = item.Id, Size = UDim2.new(1, 0, 0, 56), LayoutOrder = order, BorderSizePixel = 0})
 			Style.Surface(row, Style.Slot, 6)
-			local swatch = make("Frame", row, {Position = UDim2.fromOffset(8, 10), Size = UDim2.fromOffset(32, 36), BorderSizePixel = 0})
-			Ui.Round(swatch, 8) Ui.Paint(swatch, item)
-			local name = Ui.Text(row, item.Name, UDim2.fromOffset(48, 5), UDim2.new(1, -116, 0, 23), 15, Style.Text)
+			local art = make("Frame", row, {Position = UDim2.fromOffset(8, 7), Size = UDim2.fromOffset(42, 42), BackgroundTransparency = 1, BorderSizePixel = 0})
+			Style.Icon(art, item)
+			local name = Ui.Text(row, item.Name, UDim2.fromOffset(56, 5), UDim2.new(1, -124, 0, 23), 15, Style.Text)
 			name.TextStrokeColor3, name.TextStrokeTransparency = Style.Ink, 0.45
-			local detail = item.Starter and "Common  /  Starter" or string.format("%s  /  %.4f%% per roll", item.Rarity, (odds[item.Id] or 0) * 100)
-			local detailLabel = Ui.Text(row, detail, UDim2.fromOffset(48, 29), UDim2.new(1, -52, 0, 19), 11, rarity.Color)
+			local detail = item.Vip and (item.Rarity .. "  /  VIP")
+				or item.Starter and (item.Rarity .. "  /  Starter")
+				or string.format("%s  /  %.4f%% per roll", item.Rarity, (odds[item.Id] or 0) * 100)
+			local detailLabel = Ui.Text(row, detail, UDim2.fromOffset(56, 29), UDim2.new(1, -60, 0, 19), 11, rarity.Color)
 			detailLabel.TextStrokeColor3, detailLabel.TextStrokeTransparency = Style.Ink, 0.55
 			local status = Ui.Text(row, "", UDim2.new(1, -66, 0, 8), UDim2.fromOffset(58, 20), 11)
 			status.TextXAlignment = Enum.TextXAlignment.Right
@@ -90,7 +81,7 @@ function Ui.PopulateCodex(window)
 		for _, row in ipairs(rows) do
 			local owned = Catalog.Owns(player, row.Item.Kind, row.Item.Name)
 			row.Name.TextTransparency = owned and 0 or 0.4
-			if not row.Item.Starter then
+			if not row.Item.Starter and not row.Item.Vip then
 				row.Detail.Text = string.format("%s  /  %.4f%% per roll", row.Item.Rarity, (currentOdds[row.Item.Id] or 0) * 100)
 			end
 			row.Status.Text = owned and "Owned" or "Missing"
@@ -99,7 +90,7 @@ function Ui.PopulateCodex(window)
 	end
 	refresh()
 	player.AttributeChanged:Connect(function(key)
-		if string.sub(key, 1, 6) == "Owned_" or key == "CollectionLoaded" or key == "TestPass_2xLuck" then refresh() end
+		if string.sub(key, 1, 6) == "Owned_" or key == "CollectionLoaded" or key == "TestPass_2xLuck" or key == "TestPass_VIP" then refresh() end
 	end)
 end
 

@@ -7,7 +7,7 @@ function Transaction.Apply(previous, request, catalog)
 	local held = math.max(0, math.floor(tonumber(record.coins) or 0))
 	if held < catalog.Cost then return nil end
 	local item = catalog.ById[request.itemId]
-	if not item or item.Starter then return nil end
+	if not item or item.Starter or item.Vip then return nil end
 	record.cosmetics = type(record.cosmetics) == "table" and record.cosmetics or {}
 	catalog.NormalizeCosmetics(record.cosmetics)
 	local copies = catalog.Quantity(record.cosmetics[item.Id]) + 1
@@ -24,7 +24,7 @@ function Transaction.Sell(previous, request, catalog)
 		return previous.lastCosmeticSale.itemId == request.itemId and previous or nil
 	end
 	local item = catalog.ById[request.itemId]
-	if not item or item.Starter then return nil end
+	if not item or item.Starter or item.Vip then return nil end
 	local owned = previous.cosmetics
 	catalog.NormalizeCosmetics(owned)
 	local copies = type(owned) == "table" and catalog.Quantity(owned[item.Id]) or 0

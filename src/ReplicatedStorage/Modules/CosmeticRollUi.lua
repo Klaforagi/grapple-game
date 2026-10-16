@@ -92,8 +92,8 @@ function RollUi.Init()
 			order += 1
 			local rowFrame = make("Frame", oddsScroll, {Size = UDim2.new(1, -12, 0, 34), BackgroundColor3 = Style.ButtonColor, BackgroundTransparency = 0.55, BorderSizePixel = 0, LayoutOrder = order})
 			round(rowFrame, 4)
-			local swatch = make("Frame", rowFrame, {Position = UDim2.fromOffset(8, 7), Size = UDim2.fromOffset(20, 20), BorderSizePixel = 0})
-			round(swatch, 4) Ui.Paint(swatch, item)
+			local swatch = make("Frame", rowFrame, {Position = UDim2.fromOffset(7, 4), Size = UDim2.fromOffset(26, 26), BackgroundTransparency = 1, BorderSizePixel = 0})
+			icon(swatch, item)
 			text(rowFrame, item.Kind .. " / " .. item.Name, UDim2.fromOffset(38, 0), UDim2.new(1, -150, 1, 0), 13)
 			local chance = text(rowFrame, string.format("%.4f%%", odds[item.Id] * 100), UDim2.new(1, -100, 0, 0), UDim2.fromOffset(90, 34), 13)
 			chance.TextXAlignment = Enum.TextXAlignment.Right
@@ -137,7 +137,7 @@ function RollUi.Init()
 	local idleCards, previewBag = {}, {}
 	local function nextPreviewItem()
 		if #previewBag == 0 then
-			for _, item in ipairs(Catalog.Items) do if not item.Starter then table.insert(previewBag, item) end end
+			for _, item in ipairs(Catalog.Items) do if not item.Starter and not item.Vip then table.insert(previewBag, item) end end
 			for i = #previewBag, 2, -1 do
 				local j = random:NextInteger(1, i)
 				previewBag[i], previewBag[j] = previewBag[j], previewBag[i]
@@ -293,7 +293,7 @@ function RollUi.Init()
 	end
 	refreshCollection()
 	player.AttributeChanged:Connect(function(key)
-		if string.sub(key, 1, 6) == "Owned_" or key == "CollectionLoaded" then refreshCollection() end
+		if string.sub(key, 1, 6) == "Owned_" or key == "CollectionLoaded" or key == "TestPass_VIP" then refreshCollection() end
 	end)
 	local elapsed = 0
 	local applyFit = CrispFit.attach(panel, scale)

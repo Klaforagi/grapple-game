@@ -15,24 +15,36 @@ return function(sources)
 	local player = {attributes = {}}
 	function player:GetAttribute(key) return self.attributes[key] end
 	local count, total = catalog.Count(player)
-	assert(count == 3 and total == 42, "starter/collection count changed: " .. total)
-	for kind, expectedTotal in pairs({All = 42, Gun = 15, Rope = 15, Bomb = 12}) do
+	assert(count == 3 and total == 45, "starter/collection count changed: " .. total)
+	for kind, expectedTotal in pairs({All = 45, Gun = 16, Rope = 16, Bomb = 13}) do
 		local owned, available = catalog.Count(player, kind)
 		assert(owned == (kind == "All" and 3 or 1) and available == expectedTotal, "incorrect tab count for " .. kind)
 	end
-	assert(catalog.Owns(player, "Gun", "Black") and catalog.Owns(player, "Rope", "Gray") and catalog.Owns(player, "Bomb", "Cyan"))
+	assert(catalog.Owns(player, "Gun", "Gray") and catalog.Owns(player, "Rope", "Gray") and catalog.Owns(player, "Bomb", "Cyan"))
+	for _, kind in ipairs({"Gun", "Rope", "Bomb"}) do
+		assert(catalog.ById[kind .. "_Black"].Rarity == "Uncommon")
+		assert(catalog.ById[kind .. "_White"].Rarity == "Uncommon")
+		assert(catalog.ById[kind .. "_Rainbow"].Rarity == "Legendary")
+		assert(catalog.ById[kind .. "_Gold"].Rarity == "Legendary" and catalog.ById[kind .. "_Gold"].Vip)
+	end
+	assert(catalog.ById.Gun_Cyan.Rarity == "Uncommon" and catalog.ById.Rope_Cyan.Rarity == "Uncommon")
+	assert(catalog.ById.Bomb_Cyan.Rarity == "Common" and catalog.ById.Bomb_Cyan.Starter)
+	assert(catalog.ById.Bomb_Mint.Color == palettes.Swatches.Bomb.Mint and catalog.ById.Bomb_Mint.Color ~= palettes.Bomb.Mint,
+		"mint bomb icon should use the softer jade swatch")
+	assert(catalog.ById.Gun_Gray.Starter and catalog.ById.Gun_Gray.Rarity == "Common")
+	assert(not catalog.ById.Gun_Black.Starter and not catalog.Owns(player, "Gun", "Black"))
 	assert(not catalog.Owns(player, "Gun", "Rainbow") and not catalog.Owns(player, "Gun", "Gold"))
 	assert(not catalog.Owns(player, "Bomb", "Banana"))
 	player.attributes["TestPass_VIP"] = true
-	assert(catalog.Owns(player, "Gun", "Gold") and catalog.Owns(player, "Rope", "Gold") and not catalog.Owns(player, "Bomb", "Gold"))
-	assert(catalog.Count(player) == 3, "VIP gold changed the collection total")
+	assert(catalog.Owns(player, "Gun", "Gold") and catalog.Owns(player, "Rope", "Gold") and catalog.Owns(player, "Bomb", "Gold"))
+	assert(catalog.Count(player) == 6, "VIP gold was not counted as owned")
 	player.attributes["TestPass_VIP"] = nil
-	assert(not catalog.Owns(player, "Gun", "Gold") and not catalog.Owns(player, "Rope", "Gold"))
+	assert(not catalog.Owns(player, "Gun", "Gold") and not catalog.Owns(player, "Rope", "Gold") and not catalog.Owns(player, "Bomb", "Gold"))
 	player.attributes.Admin = true
 	assert(catalog.Owns(player, "Bomb", "Banana"))
 	assert(catalog.Count(player) == 3, "admin item changed collection denominator")
 	local bombOwned, bombTotal = catalog.Count(player, "Bomb")
-	assert(bombOwned == 1 and bombTotal == 12, "admin item changed bomb collection count")
+	assert(bombOwned == 1 and bombTotal == 13, "admin item changed bomb collection count")
 	player.attributes.Owned_Gun_Rainbow = true
 	assert(catalog.Copies(player, "Gun", "Rainbow") == 1, "legacy boolean did not migrate")
 	player.attributes.Owned_Gun_Rainbow = 7
@@ -114,8 +126,10 @@ return function(sources)
 	end
 	assert(transaction.Apply({coins = 99, cosmetics = {Gun_Rainbow = true}}, {id = "poor", itemId = "Gun_Rainbow"}, catalog) == nil,
 		"duplicate allowed a roll without full price")
-	assert(transaction.Apply({coins = 100}, {id = "invalid", itemId = "Gun_Black"}, catalog) == nil)
+	assert(transaction.Apply({coins = 100}, {id = "invalid", itemId = "Gun_Gray"}, catalog) == nil)
+	assert(transaction.Apply({coins = 100}, {id = "vip", itemId = "Gun_Gold"}, catalog) == nil)
 	assert(transaction.Apply({coins = 100}, {id = "invalid", itemId = "Bomb_Banana"}, catalog) == nil)
+	assert(transaction.Sell({coins = 0, cosmetics = {Bomb_Gold = 1}}, {id = "vipSale", itemId = "Bomb_Gold"}, catalog) == nil)
 	for kind, name in pairs(catalog.Defaults) do
 		local id = kind .. "_" .. name
 		assert(transaction.Sell({coins = 0, cosmetics = {[id] = 4}}, {id = "starter", itemId = id}, catalog) == nil, "sold a starter")

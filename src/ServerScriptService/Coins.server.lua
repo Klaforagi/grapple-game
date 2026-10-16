@@ -548,7 +548,7 @@ sellCosmetic.OnInvoke = function(player, itemId, requestId)
 	local catalog = require(ReplicatedStorage.Modules:WaitForChild("CosmeticCatalog"))
 	local transaction = require(ReplicatedStorage.Modules:WaitForChild("CosmeticTransaction"))
 	local item = catalog.ById[itemId]
-	if not item or item.Starter or type(requestId) ~= "string" or #requestId == 0 or #requestId > 64 then
+	if not item or item.Starter or item.Vip or type(requestId) ~= "string" or #requestId == 0 or #requestId > 64 then
 		return {ok = false, message = "That item cannot be sold."}
 	end
 	while state.saving do task.wait() end
@@ -626,7 +626,7 @@ local function adminGrantCosmetic(userId, itemId)
 	if type(userId) ~= "number" or type(itemId) ~= "string" then return false end
 	local catalog = require(ReplicatedStorage.Modules:WaitForChild("CosmeticCatalog"))
 	local item = catalog.ById[itemId]
-	if not item or item.Starter then return false end
+	if not item or item.Starter or item.Vip then return false end
 	local player = Players:GetPlayerByUserId(userId)
 	local state = player and sessions[player]
 	if state and not state.loaded then

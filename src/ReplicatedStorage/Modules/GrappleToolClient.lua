@@ -71,6 +71,14 @@ function M.Init(tool)
 		-- TouchTapInWorld currently supplies one Vector2. Some older input
 		-- paths supply a list, so retain support for both forms.
 		local position = typeof(touchPositions) == "Vector2" and touchPositions or touchPositions[#touchPositions]
+		local playerGui = player:FindFirstChildOfClass("PlayerGui")
+		local hud = playerGui and playerGui:FindFirstChild("GrappleHUD")
+		local reel = hud and hud:FindFirstChild("ReelControls")
+		if position and reel and reel.Visible then
+			local origin, size = reel.AbsolutePosition, reel.AbsoluteSize
+			if position.X >= origin.X and position.X <= origin.X + size.X
+				and position.Y >= origin.Y and position.Y <= origin.Y + size.Y then return end
+		end
 		if position then M.Fire(tool, position) end
 	end)
 	for _, attribute in ipairs({"InCooldown", "InUse", "HasGrappled"}) do

@@ -13,6 +13,7 @@ local ShopUi = require(script.Parent:WaitForChild("ShopUi"))
 local UpgradeUi = require(script.Parent:WaitForChild("UpgradeUi"))
 local AdminUi = require(script.Parent:WaitForChild("AdminUi"))
 local Style = require(script.Parent:WaitForChild("CosmeticStyle"))
+local CosmeticHotbar = require(script.Parent:WaitForChild("CosmeticHotbar"))
 local Upgrades = require(script.Parent:WaitForChild("UpgradeCatalog"))
 local Remotes = require(script.Parent:WaitForChild("GrappleRemotes"))
 local Hourly = require(script.Parent:WaitForChild("HourlyRewards"))
@@ -139,8 +140,14 @@ function M.Init()
 	-- A compact reel replaces the former full-screen grapple panel.
 	-- Its normalized position keeps it at 75% across and 95% down on any screen.
 	local reelControls = make("Frame", screen, {
-		Name = "ReelControls", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.75, 0, 0.95, 0),
-		Size = UDim2.fromOffset(78, 36), BackgroundTransparency = 1, Visible = false,
+		Name = "ReelControls", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.75, 0, 0.95, 12),
+		Size = UDim2.fromOffset(110, 72), BackgroundTransparency = 1, Active = true, Visible = false,
+	})
+	-- The invisible touch target covers both buttons and the gap.
+	-- Empty taps on this plate must not reach TouchTapInWorld and release a grapple.
+	make("TextButton", reelControls, {
+		Name = "ReelTouchGuard", Text = "", AutoButtonColor = false, Active = true,
+		Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 2,
 	})
 	local reelScale = make("UIScale", reelControls, {Scale = 1})
 	local function styleReelLabel(textLabel)
@@ -158,22 +165,25 @@ function M.Init()
 		if equipped:GetAttribute("InUse") == true or equipped:GetAttribute("HasGrappled") == true then return end
 		Remotes.ToggleWallMode:FireServer()
 	end
-	local ropeLength = label(reelControls, "", UDim2.fromOffset(-36, -22), UDim2.fromOffset(150, 18))
+	local ropeLength = label(reelControls, "", UDim2.fromOffset(-20, 2), UDim2.fromOffset(150, 18))
 	ropeLength.TextSize, ropeLength.TextXAlignment = 11, Enum.TextXAlignment.Center
+	ropeLength.ZIndex = 3
 	styleReelLabel(ropeLength)
-	local shortButton = button(reelControls, "−", UDim2.fromOffset(0, 0), UDim2.fromOffset(34, 36))
-	shortButton.Font, shortButton.TextSize = Enum.Font.GothamBlack, 22
-	local longButton = button(reelControls, "+", UDim2.fromOffset(44, 0), UDim2.fromOffset(34, 36))
-	longButton.Font, longButton.TextSize = Enum.Font.GothamBlack, 22
+	local shortButton = button(reelControls, "−", UDim2.fromOffset(16, 24), UDim2.fromOffset(34, 36))
+	shortButton.Font, shortButton.TextSize, shortButton.ZIndex = Enum.Font.GothamBlack, 22, 3
+	local longButton = button(reelControls, "+", UDim2.fromOffset(60, 24), UDim2.fromOffset(34, 36))
+	longButton.Font, longButton.TextSize, longButton.ZIndex = Enum.Font.GothamBlack, 22, 3
 	if UIS.KeyboardEnabled and not UIS.TouchEnabled then
-		for _, hint in ipairs({{"(Q)", -34}, {"(E)", 84}}) do
-			local text = label(reelControls, hint[1], UDim2.fromOffset(hint[2], 0), UDim2.fromOffset(28, 36))
+		for _, hint in ipairs({{"(Q)", -18}, {"(E)", 100}}) do
+			local text = label(reelControls, hint[1], UDim2.fromOffset(hint[2], 24), UDim2.fromOffset(28, 36))
 			text.TextSize, text.TextXAlignment = 13, Enum.TextXAlignment.Center
+			text.ZIndex = 3
 			styleReelLabel(text)
 		end
 	end
-	local reelHint = label(reelControls, "Hold to adjust length", UDim2.fromOffset(-36, 39), UDim2.fromOffset(150, 18))
+	local reelHint = label(reelControls, "Hold to adjust length", UDim2.fromOffset(-20, 63), UDim2.fromOffset(150, 18))
 	reelHint.TextSize, reelHint.TextXAlignment = 11, Enum.TextXAlignment.Center
+	reelHint.ZIndex = 3
 	styleReelLabel(reelHint)
 	local wallControls = make("Frame", screen, {
 		Name = "WallModeControls", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.94, 0, 0.5, 0),
@@ -396,19 +406,19 @@ function M.Init()
 	local function hideAdmin()
 		if adminUi then adminUi.hide() end
 	end
-	-- The native hotbar is core UI, so it draws above these windows and still takes taps.
+	-- The custom slots can tint each cosmetic image, including the rope badge.
 	-- One owner coordinates hotbar visibility across windows, including the station.
 	local function overlayOpen()
 		return shopOpen or upgradesOpen or inventoryOpen or codexOpen or player:GetAttribute("CosmeticRollOpen") == true
 	end
+	local syncCosmeticHotbar = CosmeticHotbar.Mount(screen, player, overlayOpen)
 	local function syncHotbar()
-		local enabled = not overlayOpen()
+		syncCosmeticHotbar()
 		local function apply()
-			return pcall(StarterGui.SetCoreGuiEnabled, StarterGui, Enum.CoreGuiType.Backpack, enabled)
+			return pcall(StarterGui.SetCoreGuiEnabled, StarterGui, Enum.CoreGuiType.Backpack, false)
 		end
 		if apply() then return end
 		task.defer(function()
-			if (not overlayOpen()) ~= enabled then return end
 			apply()
 		end)
 	end

@@ -328,7 +328,7 @@ local function setColor(admin, query, target, colorName)
 	if not userId then return reply(admin, false, "color", nameOrError) end
 	local catalog = require(ReplicatedStorage.Modules:WaitForChild("CosmeticCatalog"))
 	local item = catalog.ById[target .. "_" .. normalized]
-	if not item or item.Starter then return reply(admin, false, "color", "That cosmetic cannot be granted.") end
+	if not item or item.Starter or item.Vip then return reply(admin, false, "color", "That cosmetic cannot be granted.") end
 	if invoke("AdminCosmetics", "grant", userId, item.Id) ~= true then
 		return reply(admin, false, "color", "Could not add that cosmetic to their inventory.")
 	end
