@@ -50,7 +50,7 @@ function RollUi.Init()
 	text(header, "GUN  /  ROPE  /  BOMB", UDim2.fromOffset(26, 55), UDim2.fromOffset(340, 22), 13, Style.Muted)
 	local luckStatus = text(header, "", UDim2.fromOffset(380, 55), UDim2.fromOffset(180, 22), 13, Style.Muted)
 	luckStatus.TextXAlignment = Enum.TextXAlignment.Right
-	local close = Style.Button(panel, "X", UDim2.new(1, -58, 0, 12), UDim2.fromOffset(42, 36), Color3.fromRGB(195, 76, 87))
+	local close = Style.Button(panel, "X", UDim2.new(1, -58, 0, 12), UDim2.fromOffset(42, 36), Style.Danger)
 	local balance = text(panel, "", UDim2.fromOffset(24, 106), UDim2.fromOffset(300, 26), 16, Color3.fromRGB(255, 209, 115))
 	local oddsButton = Style.Button(panel, "Items & odds", UDim2.fromOffset(458, 104), UDim2.fromOffset(198, 32), Style.ButtonColor)
 	oddsButton.TextSize = 14
@@ -67,7 +67,7 @@ function RollUi.Init()
 	headline.TextXAlignment = Enum.TextXAlignment.Center
 	local detail = text(panel, "", UDim2.fromOffset(24, 414), UDim2.fromOffset(632, 36), 15, Style.Muted)
 	detail.TextXAlignment, detail.TextWrapped = Enum.TextXAlignment.Center, true
-	local rollButton = Style.Button(panel, "ROLL  /  100 COINS", UDim2.fromOffset(150, 466), UDim2.fromOffset(380, 52), Color3.fromRGB(62, 165, 110))
+	local rollButton = Style.Button(panel, "ROLL  /  100 COINS", UDim2.fromOffset(150, 466), UDim2.fromOffset(380, 52), Style.Action)
 	rollButton.TextSize = 23
 	local footer = text(panel, "", UDim2.fromOffset(24, 525), UDim2.fromOffset(632, 18), 12, Style.Muted)
 	footer.TextXAlignment = Enum.TextXAlignment.Center
@@ -104,7 +104,7 @@ function RollUi.Init()
 		local multiplier = Catalog.LuckMultiplier(player)
 		local active = multiplier > 1
 		luckStatus.Text = active and "2x Luck active" or "2x Luck not active"
-		luckStatus.TextColor3 = active and Style.Accent or Color3.fromRGB(195, 76, 87)
+		luckStatus.TextColor3 = Style.HeaderText or (active and Style.Accent or Style.Danger)
 		local currentTiers, currentOdds = Catalog.Odds(multiplier)
 		for _, rarity in ipairs(Catalog.Rarities) do
 			local label = tierLabels[rarity.Name]

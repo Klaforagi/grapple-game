@@ -10,6 +10,7 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local KillCredit = require(ReplicatedStorage.Modules:WaitForChild("KillCredit"))
+local Theme = require(ReplicatedStorage.Modules:WaitForChild("UiTheme")).Current
 local Palettes = require(ReplicatedStorage:WaitForChild("ItemColors"))
 local Remotes = require(ReplicatedStorage.Modules:WaitForChild("GrappleRemotes"))
 
@@ -29,9 +30,9 @@ local MOBILE_MIN_TEXT = 10
 local MOBILE_AVATAR = 14
 local MOBILE_MIN_AVATAR = 12
 local MOBILE_WORD_GAP = 3
-local TEXT_COLOR = Color3.fromRGB(242, 239, 255)
-local DARK_STROKE = Color3.fromRGB(13, 17, 27)
-local CHIP = Color3.fromRGB(29, 32, 48)
+local TEXT_COLOR = Theme.Text
+local DARK_STROKE = Theme.Ink
+local CHIP = Theme.Slot
 local SLIDE = TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local FADE_INFO = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local FADE_OUT = TweenInfo.new(FADE, Enum.EasingStyle.Quad, Enum.EasingDirection.In)

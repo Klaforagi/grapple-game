@@ -12,8 +12,8 @@ local CrispFit = require(script.Parent:WaitForChild("CrispFit"))
 local ROBUX = utf8.char(0xE002)
 local INK = Style.Text
 local MUTED = Style.Muted
-local BUY = Color3.fromRGB(62, 165, 110)
-local OWNED = Style.ButtonColor
+local BUY = Style.Action
+local OWNED = Style.Disabled or Style.ButtonColor
 
 local M = {}
 
@@ -48,7 +48,7 @@ local function inkOn(color)
 	return Color3.new(1, 1, 1)
 end
 
-local function styleBuy(button, price, owned, keepActive)
+local function styleBuy(button, price, owned, keepActive, buyColor)
 	button:SetAttribute("Owned", owned == true)
 	if owned then
 		button.Text = "Owned"
@@ -59,7 +59,7 @@ local function styleBuy(button, price, owned, keepActive)
 		button.Text = priceText(price)
 		button.AutoButtonColor = true
 		button.Active = true
-		Style.Recolor(button, BUY)
+		Style.Recolor(button, buyColor or BUY)
 	end
 end
 
@@ -91,9 +91,9 @@ function M.Mount(screen, onClose)
 	local balance = make("Frame", header, {
 		Name = "Balance", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -58, 0, 34),
 		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 36),
-		BackgroundColor3 = Style.Slot, BorderSizePixel = 0, ZIndex = 23,
+		BackgroundColor3 = Style.CoinBackground or Style.Slot, BorderSizePixel = 0, ZIndex = 23,
 	})
-	Style.Surface(balance, Style.Slot, 8)
+	Style.Surface(balance, Style.CoinBackground or Style.Slot, 8)
 	make("UIPadding", balance, {PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 12)})
 	make("UIListLayout", balance, {
 		FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center,
@@ -112,14 +112,14 @@ function M.Mount(screen, onClose)
 	local balanceText = strokeText(make("TextLabel", balance, {
 		BackgroundTransparency = 1, BorderSizePixel = 0, Text = "0", LayoutOrder = 2,
 		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 36),
-		Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = INK, ZIndex = 24,
+		Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Style.CoinText or INK, ZIndex = 24,
 	}))
 	local function showBalance()
 		balanceText.Text = withCommas(player:GetAttribute("Coins") or 0)
 	end
 	player:GetAttributeChangedSignal("Coins"):Connect(showBalance)
 	showBalance()
-	local close = Style.Button(header, "X", UDim2.new(1, -14, 0, 34), UDim2.fromOffset(36, 36), Color3.fromRGB(195, 76, 87))
+	local close = Style.Button(header, "X", UDim2.new(1, -14, 0, 34), UDim2.fromOffset(36, 36), Style.Danger)
 	close.AnchorPoint = Vector2.new(1, 0.5)
 	close.Position = UDim2.new(1, -14, 0, 34)
 	close.Name = "Close"
@@ -184,16 +184,19 @@ function M.Mount(screen, onClose)
 
 	section("Gamepasses", 1)
 	for index, pass in ipairs(Catalog.Passes) do
+		local cardColor = Style.AlternateCard and index % 2 == 0 and Style.AlternateCard or Style.Slot
+		local buyColor = cardColor == Style.AlternateCard and Style.AlternateAction or BUY
 		local row = make("Frame", scroll, {
-			Name = pass.name, LayoutOrder = index + 1, BackgroundColor3 = Style.Slot, BorderSizePixel = 0,
+			Name = pass.name, LayoutOrder = index + 1, BackgroundColor3 = cardColor, BorderSizePixel = 0,
 			Size = UDim2.new(1, -32, 0, 124),
 		})
-		Style.Surface(row, Style.Slot, 6)
+		Style.Surface(row, cardColor, 6)
 		local art = make("Frame", row, {
 			Name = "Art", Position = UDim2.fromOffset(12, 12), Size = UDim2.fromOffset(100, 100),
 			BackgroundColor3 = pass.color, BorderSizePixel = 0, ClipsDescendants = true,
 		})
 		corner(art, 12)
+		make("UIStroke", art, {Color = Style.Ink, Thickness = 3, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
 		-- The name only fills the tile until a picture exists. Art replaces it.
 		if type(pass.image) ~= "string" or pass.image == "" then
 			local standIn = make("TextLabel", art, {
@@ -224,13 +227,13 @@ function M.Mount(screen, onClose)
 			TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
 			TextStrokeTransparency = 1,
 		})
-		local buy = Style.Button(row, "", UDim2.new(1, -164, 0.5, -20), UDim2.fromOffset(148, 40), BUY)
+		local buy = Style.Button(row, "", UDim2.new(1, -164, 0.5, -20), UDim2.fromOffset(148, 40), buyColor)
 		buy.Name = "Buy"
 		-- Temporary test toggle. Click again to turn the pass off.
 		-- To restore Robux prompts, stop calling ToggleTestPass and prompt pass.id instead.
 		local attribute = Catalog.TestAttribute(pass.name)
 		local function syncPass()
-			styleBuy(buy, pass.price, player:GetAttribute(attribute) == true, true)
+			styleBuy(buy, pass.price, player:GetAttribute(attribute) == true, true, buyColor)
 		end
 		syncPass()
 		track(pass.id, buy, pass.price, pass.name)
@@ -251,10 +254,12 @@ function M.Mount(screen, onClose)
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	})
 	for index, pack in ipairs(Catalog.Coins) do
+		local cardColor = Style.AlternateCard and index % 2 == 0 and Style.AlternateCard or Style.Slot
+		local buyColor = cardColor == Style.AlternateCard and Style.AlternateAction or BUY
 		local card = make("Frame", coinRow, {
-			Name = tostring(pack.amount), LayoutOrder = index, BackgroundColor3 = Style.Slot, BorderSizePixel = 0,
+			Name = tostring(pack.amount), LayoutOrder = index, BackgroundColor3 = cardColor, BorderSizePixel = 0,
 		})
-		Style.Surface(card, Style.Slot, 6)
+		Style.Surface(card, cardColor, 6)
 		picture(card, {
 			Name = "Picture", BackgroundTransparency = 1, BorderSizePixel = 0,
 			Image = (type(pack.image) == "string" and pack.image ~= "") and pack.image or Assets.Coins,
@@ -274,7 +279,7 @@ function M.Mount(screen, onClose)
 			Font = Enum.Font.GothamBold, TextSize = 18, TextColor3 = Style.Text,
 			TextXAlignment = Enum.TextXAlignment.Center, TextStrokeTransparency = 1,
 		})
-		local buy = Style.Button(card, priceText(pack.price), UDim2.fromOffset(10, 132), UDim2.new(1, -20, 0, 34), BUY)
+		local buy = Style.Button(card, priceText(pack.price), UDim2.fromOffset(10, 132), UDim2.new(1, -20, 0, 34), buyColor)
 		buy.Name = "Buy"
 		buy.TextSize = 16
 		buy.Activated:Connect(function()

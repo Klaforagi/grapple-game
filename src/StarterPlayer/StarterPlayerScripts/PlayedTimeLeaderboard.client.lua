@@ -1,15 +1,17 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Theme = require(ReplicatedStorage.Modules:WaitForChild("UiTheme")).Current
 local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local boardFolder = ReplicatedStorage:WaitForChild("PlayedTimeBoard")
 
-local ACCENT = Color3.fromRGB(92, 229, 184)
-local INK = Color3.fromRGB(242, 239, 255)
-local MUTED = Color3.fromRGB(178, 178, 205)
-local EDGE = Color3.fromRGB(13, 17, 27)
+local ACCENT = Theme.Accent
+local VALUE = Theme.LeaderboardValue or ACCENT
+local INK = Theme.Text
+local MUTED = Theme.Muted
+local EDGE = Theme.Ink
 local PAGE_SIZE = 100
 
 local function formatTime(seconds)
@@ -91,7 +93,7 @@ end
 
 local function buildRow(parent)
 	local row = make("Frame", parent, {
-		Name = "Row", BackgroundColor3 = Color3.fromRGB(29, 32, 48),
+		Name = "Row", BackgroundColor3 = Theme.Slot,
 		BorderSizePixel = 0, Size = UDim2.new(1, -8, 0, 96),
 	})
 	corner(row, 8)
@@ -103,7 +105,7 @@ local function buildRow(parent)
 		TextYAlignment = Enum.TextYAlignment.Center, Text = "#",
 	})
 	local avatar = make("ImageLabel", row, {
-		Name = "Avatar", BackgroundColor3 = Color3.fromRGB(13, 17, 27), BorderSizePixel = 0,
+		Name = "Avatar", BackgroundColor3 = Theme.Ink, BorderSizePixel = 0,
 		Position = UDim2.new(0, 96, 0.5, -34), Size = UDim2.fromOffset(68, 68),
 		Image = "", ScaleType = Enum.ScaleType.Fit,
 	})
@@ -123,7 +125,7 @@ local function buildRow(parent)
 	make("TextLabel", row, {
 		Name = "Time", BackgroundTransparency = 1, Position = UDim2.new(1, -160, 0, 0),
 		Size = UDim2.fromOffset(148, 96), Font = Enum.Font.GothamBold, TextSize = 32,
-		TextColor3 = ACCENT, TextXAlignment = Enum.TextXAlignment.Right,
+		TextColor3 = VALUE, TextXAlignment = Enum.TextXAlignment.Right,
 		TextYAlignment = Enum.TextYAlignment.Center, Text = "",
 	})
 	return row
@@ -156,7 +158,7 @@ local function createGui(part)
 		ZOffset = 0.04, ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	})
 	local root = make("Frame", gui, {
-		Name = "Board", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(70, 58, 99),
+		Name = "Board", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Theme.Panel,
 		BorderSizePixel = 0, ClipsDescendants = true,
 	})
 	corner(root, 8)
@@ -164,9 +166,9 @@ local function createGui(part)
 	make("UIGradient", root, {
 		Rotation = 28,
 		Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, Color3.fromRGB(101, 91, 127)),
-			ColorSequenceKeypoint.new(0.45, Color3.fromRGB(70, 58, 99)),
-			ColorSequenceKeypoint.new(1, Color3.fromRGB(53, 46, 77)),
+			ColorSequenceKeypoint.new(0, Theme.BoardLight),
+			ColorSequenceKeypoint.new(0.45, Theme.Panel),
+			ColorSequenceKeypoint.new(1, Theme.BoardDark),
 		}),
 	})
 	local header = make("Frame", root, {
@@ -189,7 +191,7 @@ local function createGui(part)
 	})
 	-- Ends above the pinned card. The card is not a child of this scroller.
 	local list = make("ScrollingFrame", root, {
-		Name = "List", BackgroundColor3 = Color3.fromRGB(29, 32, 48), BackgroundTransparency = 0.28,
+		Name = "List", BackgroundColor3 = Theme.Slot, BackgroundTransparency = 0.28,
 		BorderSizePixel = 0, Position = UDim2.new(0.04, 0, 0.17, 0), Size = UDim2.new(0.92, 0, 0.68, 0),
 		CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		ScrollBarThickness = 5, ScrollBarImageColor3 = MUTED, ScrollingDirection = Enum.ScrollingDirection.Y,
@@ -211,7 +213,7 @@ local function createGui(part)
 	})
 	local you = make("Frame", root, {
 		Name = "You", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0.04, 0, 0.99, 0),
-		Size = UDim2.new(0.92, 0, 0.11, 0), BackgroundColor3 = Color3.fromRGB(99, 78, 138),
+		Size = UDim2.new(0.92, 0, 0.11, 0), BackgroundColor3 = Theme.Header,
 		BorderSizePixel = 0, ZIndex = 3,
 	})
 	corner(you, 8)
@@ -222,7 +224,7 @@ local function createGui(part)
 		TextScaled = true, TextColor3 = INK, TextXAlignment = Enum.TextXAlignment.Left,
 	})
 	local avatar = make("ImageLabel", you, {
-		Name = "Avatar", BackgroundColor3 = Color3.fromRGB(13, 17, 27), BorderSizePixel = 0,
+		Name = "Avatar", BackgroundColor3 = Theme.Ink, BorderSizePixel = 0,
 		Position = UDim2.new(0.22, 0, 0.14, 0), Size = UDim2.new(0.12, 0, 0.72, 0),
 		Image = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=48&h=48",
 		ScaleType = Enum.ScaleType.Fit,
@@ -237,7 +239,7 @@ local function createGui(part)
 	local youTime = make("TextLabel", you, {
 		Name = "Time", BackgroundTransparency = 1, Position = UDim2.new(0.7, 0, 0.14, 0),
 		Size = UDim2.new(0.26, 0, 0.72, 0), Font = Enum.Font.GothamBold, TextScaled = true,
-		TextColor3 = ACCENT, TextXAlignment = Enum.TextXAlignment.Right, Text = "0s",
+		TextColor3 = VALUE, TextXAlignment = Enum.TextXAlignment.Right, Text = "0s",
 	})
 	return {list = list, empty = empty, you = you, youRank = youRank, youName = youName, youTime = youTime, rows = {}}
 end
@@ -265,8 +267,8 @@ local function rowColor(rank)
 	if rank == 1 then return Color3.fromRGB(88, 72, 48) end
 	if rank == 2 then return Color3.fromRGB(88, 94, 112) end
 	if rank == 3 then return Color3.fromRGB(78, 58, 48) end
-	if rank % 2 == 0 then return Color3.fromRGB(40, 42, 62) end
-	return Color3.fromRGB(29, 32, 48)
+	if rank % 2 == 0 then return Theme.AlternateRow end
+	return Theme.Slot
 end
 
 local function render()

@@ -10,6 +10,8 @@ local CrispFit = require(script.Parent:WaitForChild("CrispFit"))
 local Palettes = require(script.Parent.Parent:WaitForChild("ItemColors"))
 local make, label = Ui.Make, Style.Label
 local Inventory = {}
+local rarityOrder = {}
+for index, rarity in ipairs(Catalog.Rarities) do rarityOrder[rarity.Name] = index end
 
 function Inventory.Create(parent, equipRemote, onClose)
 	local player = Players.LocalPlayer
@@ -20,9 +22,9 @@ function Inventory.Create(parent, equipRemote, onClose)
 	local header = make("Frame", panel, {Size = UDim2.new(1, 0, 0, 68)})
 	Style.Surface(header, Style.Header, 8)
 	label(header, "INVENTORY", UDim2.fromOffset(22, 15), UDim2.fromOffset(350, 38), 26)
-	local counter = label(header, "", UDim2.fromOffset(510, 18), UDim2.fromOffset(232, 32), 16, Style.Accent)
+	local counter = label(header, "", UDim2.fromOffset(510, 18), UDim2.fromOffset(232, 32), 16, Style.HeaderText or Style.Accent)
 	counter.TextXAlignment = Enum.TextXAlignment.Right
-	local close = Style.Button(header, "X", UDim2.fromOffset(758, 12), UDim2.fromOffset(46, 44), Color3.fromRGB(195, 76, 87))
+	local close = Style.Button(header, "X", UDim2.fromOffset(758, 12), UDim2.fromOffset(46, 44), Style.Danger)
 	close.Activated:Connect(onClose)
 	local scroll = make("ScrollingFrame", panel, {Position = UDim2.fromOffset(18, 132), Size = UDim2.fromOffset(518, 372),
 		BackgroundColor3 = Style.Ink, BackgroundTransparency = 0.28, BorderSizePixel = 0, ScrollBarThickness = 5,
@@ -42,8 +44,8 @@ function Inventory.Create(parent, equipRemote, onClose)
 	rarity.TextXAlignment = Enum.TextXAlignment.Center
 	local quantity = label(preview, "", UDim2.fromOffset(10, 249), UDim2.fromOffset(228, 20), 13, Style.Muted)
 	quantity.TextXAlignment = Enum.TextXAlignment.Center
-	local equip = Style.Button(panel, "EQUIP", UDim2.fromOffset(554, 384), UDim2.fromOffset(248, 44), Color3.fromRGB(62, 165, 110))
-	local sell = Style.Button(panel, "SELL", UDim2.fromOffset(554, 440), UDim2.fromOffset(248, 44), Color3.fromRGB(194, 126, 48))
+	local equip = Style.Button(panel, "EQUIP", UDim2.fromOffset(554, 384), UDim2.fromOffset(248, 44), Style.Action)
+	local sell = Style.Button(panel, "SELL", UDim2.fromOffset(554, 440), UDim2.fromOffset(248, 44), Style.Sell)
 	local saleNote = label(panel, "", UDim2.fromOffset(554, 489), UDim2.fromOffset(248, 30), 11, Style.Muted)
 	saleNote.TextWrapped, saleNote.TextXAlignment = true, Enum.TextXAlignment.Center
 	local selected, selectedKind = nil, "All"
@@ -57,7 +59,7 @@ function Inventory.Create(parent, equipRemote, onClose)
 			sell.AutoButtonColor = not saleBusy
 		end
 		for id, entry in pairs(cards) do
-			entry.Stroke.Color = selected and selected.Id == id and Style.Text or Style.Ink
+			entry.Stroke.Color = selected and selected.Id == id and (Style.Selected or Style.Text) or Style.Ink
 			entry.Stroke.Thickness = selected and selected.Id == id and 3 or 2
 		end
 		for _, child in ipairs(art:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
@@ -86,6 +88,12 @@ function Inventory.Create(parent, equipRemote, onClose)
 		if (selectedKind == "All" or selectedKind == "Bomb") and Catalog.Owns(player, "Bomb", "Banana") then
 			table.insert(items, {Id = "Bomb_Banana", Kind = "Bomb", Name = "Banana", Rarity = "Common", Color = Palettes.Swatches.Bomb.Banana, Admin = true})
 		end
+		table.sort(items, function(a, b)
+			local first, second = rarityOrder[a.Rarity] or math.huge, rarityOrder[b.Rarity] or math.huge
+			if first ~= second then return first < second end
+			if a.Name ~= b.Name then return a.Name < b.Name end
+			return a.Kind < b.Kind
+		end)
 		local found = false
 		for _, item in ipairs(items) do if selected and selected.Id == item.Id then selected = item found = true break end end
 		if saleRequest then selected = Catalog.ById[saleRequest.itemId]
@@ -94,7 +102,13 @@ function Inventory.Create(parent, equipRemote, onClose)
 			local item = items[index]
 			local card = make(item and "TextButton" or "Frame", scroll, {Name = item and item.Id or "EmptySlot", LayoutOrder = index})
 			if item then card.Text = "" end
-			local stroke = Style.Surface(card, Style.Slot, 4)
+			local cardColor = Style.ItemCard or Style.Slot
+			if not item and Style.AlternateCard then
+				cardColor = Style.Panel
+			elseif item and not Style.ItemCard and Style.AlternateCard and index % 2 == 0 then
+				cardColor = Style.AlternateCard
+			end
+			local stroke = Style.Surface(card, cardColor, 4)
 			if not item then continue end
 			local categoryLabel = label(card, string.upper(item.Kind), UDim2.fromOffset(5, 4), UDim2.fromOffset(78, 12), 9, Style.Muted)
 			categoryLabel.TextXAlignment = Enum.TextXAlignment.Center
@@ -130,6 +144,7 @@ function Inventory.Create(parent, equipRemote, onClose)
 			for tabKind, button in pairs(tabs) do
 				button.TextColor3 = tabKind == selectedKind and Color3.new(1, 1, 1) or Style.Text
 				button:FindFirstChildOfClass("UIStroke").Color = tabKind == selectedKind and Style.Accent or Style.Ink
+				Style.Recolor(button, tabKind == selectedKind and (Style.Selected or Style.ButtonColor) or Style.ButtonColor)
 			end
 			scroll.CanvasPosition = Vector2.zero
 			refresh()
@@ -137,6 +152,7 @@ function Inventory.Create(parent, equipRemote, onClose)
 	end
 	tabs.All.TextColor3 = Color3.new(1, 1, 1)
 	tabs.All:FindFirstChildOfClass("UIStroke").Color = Style.Accent
+	Style.Recolor(tabs.All, Style.Selected or Style.ButtonColor)
 	equip.Activated:Connect(function()
 		confirmItem = nil
 		if selected and Catalog.Owns(player, selected.Kind, selected.Name) then equipRemote:FireServer(selected.Kind, selected.Name) end

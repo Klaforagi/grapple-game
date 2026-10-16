@@ -1,22 +1,24 @@
 local Ui = require(script.Parent:WaitForChild("CollectionUi"))
 local Assets = require(script.Parent.Parent:WaitForChild("Assets"))
 local Palettes = require(script.Parent.Parent:WaitForChild("ItemColors"))
-local Style = {
-	Ink = Color3.fromRGB(13, 17, 27), Text = Color3.fromRGB(242, 239, 255),
-	Muted = Color3.fromRGB(178, 178, 205), Accent = Color3.fromRGB(92, 229, 184),
-	Panel = Color3.fromRGB(70, 58, 99), Header = Color3.fromRGB(99, 78, 138),
-	Slot = Color3.fromRGB(29, 32, 48), ButtonColor = Color3.fromRGB(76, 78, 108),
-}
+local Style = table.clone(require(script.Parent:WaitForChild("UiTheme")).Current)
 local make, round = Ui.Make, Ui.Round
 local ink, white = Style.Ink, Style.Text
 
 -- Dark outlines and diagonal highlights give the panels a chunky toy-like finish.
 function Style.Sequence(color)
+	local gradient
+	if color == Style.Header then gradient = Style.HeaderGradient
+	elseif color == Style.Slot then gradient = Style.SlotGradient end
+	if color == Style.CoinBackground then gradient = Style.CoinGradient or gradient end
+	local light = gradient and gradient[1] or 0.18
+	local middle = gradient and gradient[2] or 0.06
+	local shade = gradient and gradient[3] or 0.30
 	return ColorSequence.new({
-		ColorSequenceKeypoint.new(0, color:Lerp(white, 0.18)),
-		ColorSequenceKeypoint.new(0.44, color:Lerp(white, 0.06)),
+		ColorSequenceKeypoint.new(0, color:Lerp(white, light)),
+		ColorSequenceKeypoint.new(0.44, color:Lerp(white, middle)),
 		ColorSequenceKeypoint.new(0.45, color),
-		ColorSequenceKeypoint.new(1, color:Lerp(ink, 0.30)),
+		ColorSequenceKeypoint.new(1, color:Lerp(ink, shade)),
 	})
 end
 

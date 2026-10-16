@@ -5,6 +5,7 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage:WaitForChild("GrappleConfig"))
+local Theme = require(ReplicatedStorage.Modules:WaitForChild("UiTheme")).Current
 local Ragdoll = require(ReplicatedStorage.Modules:WaitForChild("RagdollService"))
 local releaseGrapple = ServerStorage:FindFirstChild("ReleaseGrapple")
 if not releaseGrapple then
@@ -134,8 +135,8 @@ local function createHealthDisplay(occupant)
 	text.BackgroundColor3 = Color3.fromRGB(27, 42, 53)
 	text.BackgroundTransparency = 1
 	text.BorderSizePixel = 0
-	text.TextColor3 = Color3.fromRGB(242, 239, 255)
-	text.TextStrokeColor3 = Color3.fromRGB(13, 17, 27)
+	text.TextColor3 = Theme.Text
+	text.TextStrokeColor3 = Theme.Ink
 	text.TextStrokeTransparency = 0.35
 	text.Font = Enum.Font.GothamBold
 	text.TextScaled = true
@@ -143,7 +144,7 @@ local function createHealthDisplay(occupant)
 	local track = Instance.new("Frame")
 	track.Size = UDim2.fromScale(1, 0.2)
 	track.Position = UDim2.fromScale(0, 0.75)
-	track.BackgroundColor3 = Color3.fromRGB(29, 32, 48)
+	track.BackgroundColor3 = Theme.Slot
 	track.BorderSizePixel = 0
 	track.ClipsDescendants = true
 	track.Parent = gui

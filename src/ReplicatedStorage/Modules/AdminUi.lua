@@ -7,10 +7,10 @@ local CrispFit = require(script.Parent:WaitForChild("CrispFit"))
 local INK = Style.Text
 local MUTED = Style.Muted
 local FIELD = Style.Slot
-local GREEN = Color3.fromRGB(62, 165, 110)
-local RED = Color3.fromRGB(195, 76, 87)
+local GREEN = Style.Action
+local RED = Style.Danger
 local TAB = Style.ButtonColor
-local TAB_ON = Style.Header
+local TAB_ON = Style.Selected or Style.Header
 
 local M = {}
 

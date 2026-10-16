@@ -14,8 +14,8 @@ local WINDOW_X, WINDOW_Y = 640, 584
 local ROBUX = utf8.char(0xE002)
 local INK = Style.Text
 local MUTED = Style.Muted
-local BUY = Color3.fromRGB(62, 165, 110)
-local IDLE = Style.ButtonColor
+local BUY = Style.Action
+local IDLE = Style.Disabled or Style.ButtonColor
 local RANK_COLOR = Style.Accent
 
 local M = {}
@@ -74,9 +74,9 @@ function M.Mount(screen, onClose)
 	local balance = make("Frame", header, {
 		Name = "Balance", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -58, 0, 32),
 		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 36),
-		BackgroundColor3 = Style.Slot, BorderSizePixel = 0, ZIndex = 27,
+		BackgroundColor3 = Style.CoinBackground or Style.Slot, BorderSizePixel = 0, ZIndex = 27,
 	})
-	Style.Surface(balance, Style.Slot, 8)
+	Style.Surface(balance, Style.CoinBackground or Style.Slot, 8)
 	make("UIPadding", balance, {PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 12)})
 	make("UIListLayout", balance, {
 		FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center,
@@ -89,9 +89,9 @@ function M.Mount(screen, onClose)
 	local balanceText = strokeText(make("TextLabel", balance, {
 		BackgroundTransparency = 1, BorderSizePixel = 0, Text = "0", LayoutOrder = 2,
 		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 36),
-		Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = INK, ZIndex = 28,
+		Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Style.CoinText or INK, ZIndex = 28,
 	}))
-	local close = Style.Button(header, "X", UDim2.new(1, -14, 0, 32), UDim2.fromOffset(36, 36), Color3.fromRGB(195, 76, 87))
+	local close = Style.Button(header, "X", UDim2.new(1, -14, 0, 32), UDim2.fromOffset(36, 36), Style.Danger)
 	close.AnchorPoint = Vector2.new(1, 0.5)
 	close.Position = UDim2.new(1, -14, 0, 32)
 	close.Name = "Close"
@@ -129,11 +129,11 @@ function M.Mount(screen, onClose)
 		local afford = loaded and cost ~= nil and coins >= cost and not row.pending
 		row.button.Active = loaded and cost ~= nil and not row.pending
 		row.button.AutoButtonColor = afford
-		Style.Recolor(row.button, afford and BUY or IDLE)
+		Style.Recolor(row.button, afford and row.buyColor or IDLE)
 		row.icon.Visible = cost ~= nil and not row.pending
 		row.robux.Active = loaded and cost ~= nil and not row.pending
 		row.robux.AutoButtonColor = loaded and cost ~= nil and not row.pending
-		Style.Recolor(row.robux, (loaded and cost ~= nil and not row.pending) and BUY or IDLE)
+		Style.Recolor(row.robux, (loaded and cost ~= nil and not row.pending) and row.buyColor or IDLE)
 		row.robux.Visible = cost ~= nil or not loaded
 		if not loaded then
 			row.buttonText.Text = "..."
@@ -164,11 +164,13 @@ function M.Mount(screen, onClose)
 	end
 
 	for index, stat in ipairs(Catalog.Stats) do
+		local cardColor = Style.AlternateCard and index % 2 == 0 and Style.AlternateCard or Style.Slot
+		local buyColor = cardColor == Style.AlternateCard and Style.AlternateAction or BUY
 		local card = make("Frame", list, {
-			Name = stat.id, LayoutOrder = index, BackgroundColor3 = Style.Slot, BorderSizePixel = 0,
+			Name = stat.id, LayoutOrder = index, BackgroundColor3 = cardColor, BorderSizePixel = 0,
 			Size = UDim2.new(1, 0, 0, 112), ZIndex = 26,
 		})
-		Style.Surface(card, Style.Slot, 6)
+		Style.Surface(card, cardColor, 6)
 		local title = strokeText(make("TextLabel", card, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = stat.name,
 			Position = UDim2.fromOffset(18, 10), Size = UDim2.new(1, -168, 0, 27),
@@ -248,7 +250,7 @@ function M.Mount(screen, onClose)
 		})
 		local icon = make("ImageLabel", coinFace, {
 			BackgroundTransparency = 1, Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
-			Size = UDim2.fromOffset(16, 16), LayoutOrder = 1, ZIndex = 28,
+			Size = UDim2.fromOffset(22, 22), LayoutOrder = 1, ZIndex = 28,
 		})
 		local buttonText = strokeText(make("TextLabel", coinFace, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", LayoutOrder = 2,
@@ -260,7 +262,7 @@ function M.Mount(screen, onClose)
 			Name = "BuyRobux", Text = "", AutoButtonColor = false, BorderSizePixel = 0,
 			Size = UDim2.fromOffset(128, 34), BackgroundTransparency = 1, LayoutOrder = 2, ZIndex = 27,
 		})
-		Style.Backdrop(robux, BUY, 6)
+		Style.Backdrop(robux, buyColor, 6)
 		local robuxText = strokeText(make("TextLabel", robux, {
 			BackgroundTransparency = 1, BorderSizePixel = 0, Text = ROBUX .. " " .. tostring(Catalog.RobuxPrice),
 			Size = UDim2.fromScale(1, 1), Font = Enum.Font.GothamBold, TextSize = 18,
@@ -269,7 +271,7 @@ function M.Mount(screen, onClose)
 		local row = {
 			stat = stat, pips = pipFrames, rankLabel = rankLabel, current = current,
 			next = nextText, button = button, buttonText = buttonText, icon = icon,
-			robux = robux, robuxText = robuxText, pending = false,
+			robux = robux, robuxText = robuxText, buyColor = buyColor, pending = false,
 		}
 		rows[stat.id] = row
 		title.Text = stat.name

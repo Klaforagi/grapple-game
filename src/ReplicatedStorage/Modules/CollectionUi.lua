@@ -55,8 +55,9 @@ function Ui.PopulateCodex(window)
 		for _, item in ipairs(listed) do
 			order += 1
 			local rarity = Catalog.Rarity(item.Rarity)
+			local cardColor = Style.ItemCard or (Style.AlternateCard and order % 2 == 0 and Style.AlternateCard or Style.Slot)
 			local row = make("Frame", scroll, {Name = item.Id, Size = UDim2.new(1, 0, 0, 56), LayoutOrder = order, BorderSizePixel = 0})
-			Style.Surface(row, Style.Slot, 6)
+			Style.Surface(row, cardColor, 6)
 			local art = make("Frame", row, {Position = UDim2.fromOffset(8, 7), Size = UDim2.fromOffset(42, 42), BackgroundTransparency = 1, BorderSizePixel = 0})
 			Style.Icon(art, item)
 			local name = Ui.Text(row, item.Name, UDim2.fromOffset(56, 5), UDim2.new(1, -124, 0, 23), 15, Style.Text)
@@ -76,7 +77,7 @@ function Ui.PopulateCodex(window)
 		local luck = Catalog.LuckMultiplier(player)
 		local _, currentOdds = Catalog.Odds(luck)
 		luckLabel.Text = luck > 1 and "2x Luck active" or "2x Luck not active"
-		luckLabel.TextColor3 = luck > 1 and Style.Accent or Color3.fromRGB(195, 76, 87)
+		luckLabel.TextColor3 = luck > 1 and Style.Accent or Style.Danger
 		ownedLabel.Text = Ui.OwnedText(player)
 		for _, row in ipairs(rows) do
 			local owned = Catalog.Owns(player, row.Item.Kind, row.Item.Name)

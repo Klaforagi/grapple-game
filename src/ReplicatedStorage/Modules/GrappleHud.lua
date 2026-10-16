@@ -62,8 +62,8 @@ function M.Init()
 	local function rounded(frame)
 		make("UICorner", frame, {CornerRadius = UDim.new(0, 12)})
 	end
-	local CLOSE_RED = Color3.fromRGB(195, 76, 87)
-	local GO_GREEN = Color3.fromRGB(62, 165, 110)
+	local CLOSE_RED = Style.Danger
+	local GO_GREEN = Style.Selected or Style.Action
 	local function withCommas(amount)
 		local value = tostring(math.max(0, math.floor(tonumber(amount) or 0)))
 		while true do
@@ -194,7 +194,7 @@ function M.Init()
 	wallLabel.TextSize, wallLabel.TextXAlignment = 11, Enum.TextXAlignment.Center
 	styleReelLabel(wallLabel)
 	if UIS.KeyboardEnabled and not UIS.TouchEnabled then wallLabel.Text = "Wall Mode (X)" end
-	local wallButton = button(wallControls, "OFF", UDim2.fromOffset(0, 0), UDim2.fromOffset(78, 36), toggleWallMode, Color3.fromRGB(176, 64, 64))
+	local wallButton = button(wallControls, "OFF", UDim2.fromOffset(0, 0), UDim2.fromOffset(78, 36), toggleWallMode, Style.WallOff)
 	wallButton.Font, wallButton.TextSize = Enum.Font.GothamBlack, 14
 	local inventoryOpen = false
 	-- Square buttons with the name underneath, outside the button.
@@ -236,7 +236,7 @@ function M.Init()
 		BorderSizePixel = 0, ClipsDescendants = false, ZIndex = 2,
 	})
 	local coinScale = make("UIScale", coins, {Scale = 1})
-	Style.Surface(coins, Style.Slot, 6)
+	Style.Surface(coins, Style.CoinBackground or Style.Slot, 6)
 	make("UIPadding", coins, {
 		PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 8),
 		PaddingTop = UDim.new(0, 0), PaddingBottom = UDim.new(0, 0),
@@ -258,6 +258,7 @@ function M.Init()
 	coinAmount.LayoutOrder = 2
 	coinAmount.ZIndex = 3
 	styleReelLabel(coinAmount)
+	coinAmount.TextColor3 = Style.CoinText or Style.Text
 	coinAmount.TextSize = 20
 	coinAmount.TextYAlignment = Enum.TextYAlignment.Center
 	-- Width follows the digit count, not the rendered glyph width, so 8 and 1
@@ -283,9 +284,9 @@ function M.Init()
 	})
 	local ragdollBorderGradient = make("UIGradient", ragdollBorder, {
 		Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 140, 180)),
-			ColorSequenceKeypoint.new(0.7, Color3.fromRGB(60, 255, 180)),
-			ColorSequenceKeypoint.new(1, Color3.fromRGB(220, 255, 255)),
+			ColorSequenceKeypoint.new(0, Style.RagdollRim[1]),
+			ColorSequenceKeypoint.new(0.7, Style.RagdollRim[2]),
+			ColorSequenceKeypoint.new(1, Style.RagdollRim[3]),
 		}),
 	})
 	if UIS.KeyboardEnabled and not UIS.TouchEnabled then
@@ -669,11 +670,13 @@ function M.Init()
 	end
 	for index, tier in ipairs(Hourly.Tiers) do
 		local y = 82 + (index - 1) * 48
+		local cardColor = Style.AlternateCard and index % 2 == 0 and Style.AlternateCard or Style.Slot
+		local claimColor = cardColor == Style.AlternateCard and Style.AlternateAction or Style.Action
 		local row = make("Frame", hourlyWindow, {
 			Name = "Tier" .. tier.minutes, Position = UDim2.fromOffset(12, y),
 			Size = UDim2.new(1, -24, 0, 42), BorderSizePixel = 0, ZIndex = 25,
 		})
-		Style.Surface(row, Style.Slot, 6)
+		Style.Surface(row, cardColor, 6)
 		local timeLabel = label(row, tier.minutes .. " MIN", UDim2.fromOffset(8, 4), UDim2.fromOffset(72, 34))
 		timeLabel.TextSize = 14
 		timeLabel.TextStrokeTransparency = 1
@@ -695,7 +698,7 @@ function M.Init()
 		stateLabel.TextXAlignment = Enum.TextXAlignment.Right
 		stateLabel.TextStrokeTransparency = 1
 		stateLabel.ZIndex = 26
-		local claim = button(row, "CLAIM", UDim2.new(1, -74, 0.5, 0), UDim2.fromOffset(64, 26), nil, Color3.fromRGB(62, 165, 110))
+		local claim = button(row, "CLAIM", UDim2.new(1, -74, 0.5, 0), UDim2.fromOffset(64, 26), nil, claimColor)
 		claim.AnchorPoint = Vector2.new(0, 0.5)
 		claim.TextSize = 12
 		claim.Visible = false
@@ -1262,7 +1265,7 @@ function M.Init()
 		inventory.Visible = player.Character ~= nil and inventoryOpen
 		local wallMode = equipped and equipped:GetAttribute("WallMode") == true
 		wallButton.Text = wallMode and "ON" or "OFF"
-		Style.Recolor(wallButton, wallMode and GO_GREEN or Color3.fromRGB(176, 64, 64))
+		Style.Recolor(wallButton, wallMode and GO_GREEN or Style.WallOff)
 		if currentRope and not shorten and not lengthen then displayLength = currentRope.Length end
 		ropeLength.Text = currentRope and string.format("%.1f studs", displayLength) or ""
 	end)
