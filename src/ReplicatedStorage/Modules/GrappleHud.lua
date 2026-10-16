@@ -17,6 +17,7 @@ local CosmeticHotbar = require(script.Parent:WaitForChild("CosmeticHotbar"))
 local Upgrades = require(script.Parent:WaitForChild("UpgradeCatalog"))
 local Remotes = require(script.Parent:WaitForChild("GrappleRemotes"))
 local Hourly = require(script.Parent:WaitForChild("HourlyRewards"))
+local Daily = require(script.Parent:WaitForChild("DailyRewards"))
 local CrispFit = require(script.Parent:WaitForChild("CrispFit"))
 local ToolClient = require(script.Parent:WaitForChild("GrappleToolClient"))
 local ToolSetup = require(script.Parent:WaitForChild("GrappleToolSetup"))
@@ -639,6 +640,7 @@ function M.Init()
 		if visible then
 			placeMenuList()
 			if showHourly then showHourly(false) end
+			if M.dailyUi then M.dailyUi.show(false) end
 		end
 	end
 	local function pointerInside(gui, x, y)
@@ -788,6 +790,7 @@ function M.Init()
 		hourlyWindow.Visible = visible
 		if not visible then return end
 		showMenu(false)
+		if M.dailyUi then M.dailyUi.show(false) end
 		fitHourly()
 		refreshHourly()
 		placeHourly()
@@ -797,6 +800,174 @@ function M.Init()
 	player:GetAttributeChangedSignal("HourlySeconds"):Connect(refreshHourly)
 	player:GetAttributeChangedSignal("HourlyClaimed"):Connect(refreshHourly)
 	refreshHourly()
+
+	-- Keep the daily panel's locals out of Init, which is near Luau's register limit.
+	M.dailyUi = (function()
+	local dailyButton = pill(topPills, "DailyButton", 4)
+	dailyButton.Size = UDim2.fromOffset(32, 32)
+	make("ImageLabel", dailyButton, {
+		Name = "Icon", BackgroundTransparency = 1, Image = "rbxassetid://118784136329728", ScaleType = Enum.ScaleType.Fit,
+		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(23, 23),
+	})
+	local dailyBadge = make("Frame", dailyButton, {
+		Name = "Alert", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 4, 0, -4),
+		Size = UDim2.fromOffset(16, 16), BackgroundColor3 = Style.Danger,
+		BorderSizePixel = 0, ZIndex = 5, Visible = false, Active = false,
+	})
+	make("UICorner", dailyBadge, {CornerRadius = UDim.new(1, 0)})
+	local dailyBang = label(dailyBadge, "!", UDim2.fromScale(0, 0), UDim2.fromScale(1, 1))
+	dailyBang.TextXAlignment = Enum.TextXAlignment.Center
+	dailyBang.TextYAlignment = Enum.TextYAlignment.Center
+	dailyBang.Font = Enum.Font.GothamBlack
+	dailyBang.TextSize = 12
+	dailyBang.ZIndex = 6
+	dailyBang.Active = false
+	local dailyOpen = false
+	local dailyWindow = make("Frame", screen, {
+		Name = "DailyWindow", AnchorPoint = Vector2.new(0, 0), Visible = false,
+		Size = UDim2.fromOffset(324, 414), BorderSizePixel = 0, ZIndex = 24,
+	})
+	Style.Surface(dailyWindow, Style.Panel, 8)
+	local dailyHeader = make("Frame", dailyWindow, {Name = "Header", Size = UDim2.new(1, 0, 0, 46), ZIndex = 25})
+	Style.Surface(dailyHeader, Style.Header, 8)
+	local dailyTitle = label(dailyHeader, "DAILY REWARDS", UDim2.fromOffset(14, 8), UDim2.fromOffset(230, 30))
+	dailyTitle.TextSize = 18
+	dailyTitle.TextStrokeTransparency = 1
+	dailyTitle.ZIndex = 26
+	local closeDaily = button(dailyHeader, "X", UDim2.new(1, -44, 0, 6), UDim2.fromOffset(34, 34), nil, CLOSE_RED)
+	closeDaily.ZIndex = 26
+	local dailySummary = label(dailyWindow, "Streak: 0/7  •  Resets 12:00 UTC", UDim2.fromOffset(14, 54), UDim2.new(1, -28, 0, 20))
+	dailySummary.TextSize = 14
+	dailySummary.TextStrokeTransparency = 1
+	dailySummary.ZIndex = 25
+	local dailyRows = {}
+	for index, coins in ipairs(Daily.Coins) do
+		local cardColor = Style.AlternateCard and index % 2 == 0 and Style.AlternateCard or Style.Slot
+		local claimColor = cardColor == Style.AlternateCard and Style.AlternateAction or Style.Action
+		local row = make("Frame", dailyWindow, {
+			Name = "Day" .. index, Position = UDim2.fromOffset(12, 82 + (index - 1) * 46),
+			Size = UDim2.new(1, -24, 0, 40), BorderSizePixel = 0, ZIndex = 25,
+		})
+		Style.Surface(row, cardColor, 6)
+		local dayLabel = label(row, "DAY " .. index, UDim2.fromOffset(8, 3), UDim2.fromOffset(66, 34))
+		dayLabel.TextSize = 14
+		dayLabel.TextStrokeTransparency = 1
+		dayLabel.ZIndex = 26
+		local coinIcon = make("ImageLabel", row, {
+			BackgroundTransparency = 1, Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
+			AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 78, 0.5, 0),
+			Size = UDim2.fromOffset(17, 17), ZIndex = 26,
+		})
+		local amount = label(row, "+" .. coins, UDim2.fromOffset(102, 3), UDim2.fromOffset(54, 34))
+		amount.TextSize = 14
+		amount.TextColor3 = Style.Accent
+		amount.TextStrokeTransparency = 1
+		amount.ZIndex = 26
+		local state = label(row, "", UDim2.new(1, -90, 0, 3), UDim2.fromOffset(78, 34))
+		state.TextSize = 13
+		state.TextXAlignment = Enum.TextXAlignment.Right
+		state.TextStrokeTransparency = 1
+		state.ZIndex = 26
+		local claim = button(row, "CLAIM", UDim2.new(1, -82, 0.5, 0), UDim2.fromOffset(70, 26), function()
+			Remotes.ClaimDaily:FireServer()
+		end, claimColor)
+		claim.AnchorPoint = Vector2.new(0, 0.5)
+		claim.TextSize = 12
+		claim.Visible = false
+		claim.ZIndex = 27
+		dailyRows[index] = {Row = row, Day = dayLabel, Icon = coinIcon, Amount = amount, State = state, Claim = claim}
+	end
+	local function fitDaily()
+		local phone = UIS.TouchEnabled
+		local headerH = phone and 30 or 46
+		local rowH = phone and 28 or 40
+		local stride = phone and 32 or 46
+		local top = phone and 58 or 82
+		local width = phone and 214 or 324
+		dailyWindow.Size = UDim2.fromOffset(width, top + #Daily.Coins * stride + (phone and 6 or 10))
+		dailyHeader.Size = UDim2.new(1, 0, 0, headerH)
+		dailyTitle.TextSize = phone and 13 or 18
+		dailyTitle.Position = UDim2.fromOffset(phone and 8 or 14, phone and 4 or 8)
+		dailyTitle.Size = UDim2.fromOffset(phone and 156 or 230, phone and 22 or 30)
+		closeDaily.Size = UDim2.fromOffset(phone and 22 or 34, phone and 22 or 34)
+		closeDaily.Position = UDim2.new(1, phone and -26 or -44, 0, phone and 4 or 6)
+		closeDaily.TextSize = phone and 11 or 13
+		dailySummary.TextSize = phone and 11 or 14
+		dailySummary.Position = UDim2.fromOffset(phone and 8 or 14, headerH + (phone and 4 or 8))
+		dailySummary.Size = UDim2.new(1, phone and -16 or -28, 0, phone and 16 or 20)
+		for index, row in ipairs(dailyRows) do
+			row.Row.Position = UDim2.fromOffset(phone and 6 or 12, top + (index - 1) * stride)
+			row.Row.Size = UDim2.new(1, phone and -12 or -24, 0, rowH)
+			row.Day.TextSize = phone and 12 or 14
+			row.Day.Position = UDim2.fromOffset(phone and 6 or 8, 3)
+			row.Day.Size = UDim2.fromOffset(phone and 48 or 66, rowH - 6)
+			row.Icon.Position = UDim2.new(0, phone and 57 or 78, 0.5, 0)
+			row.Icon.Size = UDim2.fromOffset(phone and 14 or 17, phone and 14 or 17)
+			row.Amount.TextSize = phone and 12 or 14
+			row.Amount.Position = UDim2.fromOffset(phone and 76 or 102, 3)
+			row.Amount.Size = UDim2.fromOffset(phone and 48 or 54, rowH - 6)
+			row.State.TextSize = phone and 11 or 13
+			row.State.Position = UDim2.new(1, phone and -68 or -90, 0, 3)
+			row.State.Size = UDim2.fromOffset(phone and 60 or 78, rowH - 6)
+			row.Claim.Size = UDim2.fromOffset(phone and 56 or 70, phone and 20 or 26)
+			row.Claim.Position = UDim2.new(1, phone and -62 or -82, 0.5, 0)
+			row.Claim.TextSize = phone and 11 or 12
+		end
+	end
+	fitDaily()
+	local function refreshDaily()
+		local loaded = player:GetAttribute("DailyLoaded") == true
+		local day = player:GetAttribute("DailyDay") or Daily.DayKey(os.time())
+		local lastClaim = player:GetAttribute("DailyLastClaim")
+		local streak = player:GetAttribute("DailyStreak") or 0
+		local current, claimed = Daily.Current(day, lastClaim, streak)
+		dailySummary.Text = string.format("Streak: %d/7  •  Resets 12:00 UTC", streak)
+		dailyBadge.Visible = loaded and not claimed
+		for index, row in ipairs(dailyRows) do
+			local ready = loaded and index == current and not claimed
+			row.Claim.Visible = ready
+			row.State.Visible = not ready
+			if not loaded then
+				row.State.Text = "..."
+			elseif index < current or (index == current and claimed) then
+				row.State.Text = "Claimed"
+			else
+				row.State.Text = "Locked"
+			end
+			row.State.TextColor3 = row.State.Text == "Claimed" and Style.Accent or Style.Muted
+		end
+	end
+	local function placeDaily()
+		local origin = screen.AbsolutePosition
+		local pos = dailyButton.AbsolutePosition
+		local size = dailyButton.AbsoluteSize
+		dailyWindow.Position = UDim2.fromOffset(pos.X - origin.X, pos.Y + size.Y - origin.Y + 6)
+	end
+	local function showDaily(visible)
+		dailyOpen = visible
+		dailyWindow.Visible = visible
+		if not visible then return end
+		showMenu(false)
+		showHourly(false)
+		fitDaily()
+		refreshDaily()
+		placeDaily()
+	end
+	closeDaily.Activated:Connect(function() showDaily(false) end)
+	dailyButton.Activated:Connect(function() showDaily(not dailyOpen) end)
+	for _, attribute in ipairs({"DailyLoaded", "DailyDay", "DailyLastClaim", "DailyStreak"}) do
+		player:GetAttributeChangedSignal(attribute):Connect(refreshDaily)
+	end
+	refreshDaily()
+	return {
+		button = dailyButton,
+		window = dailyWindow,
+		show = showDaily,
+		fit = fitDaily,
+		place = placeDaily,
+		isOpen = function() return dailyOpen end,
+	}
+	end)()
 	menuButton.Activated:Connect(function() showMenu(not menuOpen) end)
 	settingsEntry.Activated:Connect(function()
 		showMenu(false)
@@ -833,10 +1004,16 @@ function M.Init()
 			if pointerInside(hourlyWindow, input.Position.X, input.Position.Y) then return end
 			showHourly(false)
 		end
+		if M.dailyUi.isOpen() then
+			if pointerInside(M.dailyUi.button, input.Position.X, input.Position.Y) then return end
+			if pointerInside(M.dailyUi.window, input.Position.X, input.Position.Y) then return end
+			M.dailyUi.show(false)
+		end
 	end)
 	GuiService.MenuOpened:Connect(function()
 		showMenu(false)
 		showHourly(false)
+		M.dailyUi.show(false)
 	end)
 
 	local showShop
@@ -981,7 +1158,7 @@ function M.Init()
 	-- own time and shadow preference without changing the server's world.
 	local timeControls = make("Frame", settingsWindow, {
 		Name = "LocalTimeControls", Position = UDim2.fromOffset(18, 52),
-		Size = UDim2.fromOffset(294, 56), BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(294, 60), BackgroundTransparency = 1,
 	})
 	local timeLabel = label(timeControls, "Time of Day", UDim2.fromOffset(0, 0), UDim2.fromOffset(294, 16))
 	timeLabel.TextXAlignment, timeLabel.Font = Enum.TextXAlignment.Center, Enum.Font.GothamBold
@@ -993,15 +1170,22 @@ function M.Init()
 		end
 		if shouldSave then saveSetting("LocalClockTime", clock, true) end
 	end
-	local presetWidth, presetGap = 140, 14
+	local presetSize, presetGap = 42, 16
+	local presetStart = (294 - (presetSize * 2 + presetGap)) / 2
 	for index, preset in ipairs({
-		{text = "Day", clock = 8},
-		{text = "Night", clock = 20},
+		{text = "Day", clock = 8, image = "rbxassetid://5012125430"},
+		{text = "Night", clock = 20, image = "rbxassetid://5012126105"},
 	}) do
-		local choice = button(timeControls, preset.text, UDim2.fromOffset((index - 1) * (presetWidth + presetGap), 20), UDim2.fromOffset(presetWidth, 36), function()
+		local choice = button(timeControls, "", UDim2.fromOffset(presetStart + (index - 1) * (presetSize + presetGap), 18), UDim2.fromOffset(presetSize, presetSize), function()
 			applyLocalTime(preset.clock, true)
 		end)
-		choice.Name = "Time" .. string.gsub(preset.text, ":", "")
+		choice.Name = "Time" .. preset.text
+		make("ImageLabel", choice, {
+			Name = "Icon", BackgroundTransparency = 1, Image = preset.image,
+			AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(30, 30), ScaleType = Enum.ScaleType.Fit,
+			ZIndex = choice.ZIndex + 2,
+		})
 		timeButtons[index] = {button = choice, clock = preset.clock}
 	end
 
@@ -1249,6 +1433,7 @@ function M.Init()
 			applySettings(settingsUiScale)
 			applyCodex(settingsUiScale)
 			fitHourly()
+			M.dailyUi.fit()
 			fitShop()
 			fitLeftStack()
 			upgradeUi.fit()
@@ -1256,6 +1441,7 @@ function M.Init()
 		end
 		if menuOpen then placeMenuList() end
 		if hourlyOpen then placeHourly() end
+		if M.dailyUi.isOpen() then M.dailyUi.place() end
 		if currentRope and not currentRope.Parent then grapple() end
 		local equipped = tool()
 		reelControls.Visible = currentRope ~= nil and equipped ~= nil

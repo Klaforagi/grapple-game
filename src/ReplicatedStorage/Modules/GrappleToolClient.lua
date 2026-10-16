@@ -32,11 +32,19 @@ function M.Fire(tool, aimPosition)
 	end
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = {character}
+	local ignored = {character}
+	params.FilterDescendantsInstances = ignored
 	-- The hook still stops at its upgrade range. The aim point stays on the
 	-- clicked surface so a far ground shot keeps that direction.
 	local aimDistance = Config.aimRayLength or 100000
-	local result = workspace:Raycast(ray.Origin, ray.Direction * aimDistance, params)
+	local result
+	for _ = 1, 64 do
+		result = workspace:Raycast(ray.Origin, ray.Direction * aimDistance, params)
+		if not result or result.Instance.Name ~= "InvisPart" then break end
+		table.insert(ignored, result.Instance)
+		params.FilterDescendantsInstances = ignored
+	end
+	if result and result.Instance.Name == "InvisPart" then result = nil end
 	local target = result and result.Position or ray.Origin + ray.Direction * aimDistance
 	Remotes.FireGrapple:FireServer(target, camera.CFrame.Position)
 end

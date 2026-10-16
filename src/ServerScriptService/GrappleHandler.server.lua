@@ -715,6 +715,17 @@ adminColor.OnInvoke = function(userId, target, colorName)
 end
 adminColor.Parent = ReplicatedStorage
 
+local function raycastPastInvisParts(origin, direction, params)
+	local ignored = params.FilterDescendantsInstances
+	for _ = 1, 64 do
+		local result = Workspace:Raycast(origin, direction, params)
+		if not result or result.Instance.Name ~= "InvisPart" then return result end
+		table.insert(ignored, result.Instance)
+		params.FilterDescendantsInstances = ignored
+	end
+	return nil
+end
+
 local function fireGrapple(player, hitPosition, cameraPosition)
 	local now = os.clock()
 	if lastFire[player] and now - lastFire[player] < FIRE_INTERVAL then return end
@@ -804,7 +815,7 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 			local seen = {}
 			for _ = 1, 8 do
 				rayParams.FilterDescendantsInstances = ignored
-				local result = Workspace:Raycast(lastPosition, nextPosition - lastPosition, rayParams)
+				local result = raycastPastInvisParts(lastPosition, nextPosition - lastPosition, rayParams)
 				if not result or not result.Instance:IsA("BasePart") then break end
 				local hitModel = characterFromPart(result.Instance)
 				if not hitModel then
@@ -823,7 +834,7 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 			impactPosition = hit and hit.Position or nil
 			-- Overlap boxes see through solid walls; verify the selected target is visible.
 			if hit then
-				local obstruction = Workspace:Raycast(lastPosition, impactPosition - lastPosition, rayParams)
+				local obstruction = raycastPastInvisParts(lastPosition, impactPosition - lastPosition, rayParams)
 				if obstruction and characterFromPart(obstruction.Instance) ~= characterFromPart(hit) then
 					disconnectRope(player)
 					break
