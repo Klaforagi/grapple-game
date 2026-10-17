@@ -29,6 +29,7 @@ local overrides = {
 }
 for name in pairs(Palettes.NeonRopes) do overrides.Rope[name] = "Epic" end
 for name in pairs(Palettes.NeonGuns) do overrides.Gun[name] = "Epic" end
+for name in pairs(Palettes.RareGuns) do overrides.Gun[name] = "Rare" end
 local ranks = {}
 function Catalog.Id(kind, name)
 	return tostring(kind) .. "_" .. string.gsub(tostring(name), "%s+", "")

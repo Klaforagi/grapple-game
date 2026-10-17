@@ -236,7 +236,8 @@ return function(sources)
 			RenderPriority = {Camera = {Value = 200}},
 			ForceLimitMode = {PerAxis = "PerAxis"}, ActuatorRelativeTo = {World = "World"},
 			PositionAlignmentMode = {OneAttachment = "OneAttachment"}, RaycastFilterType = {Exclude = "Exclude"},
-			Material = {Neon = "Neon", Air = "Air", Water = "Water"}, KeyCode = setmetatable({}, {__index = function(_, key) return key end})},
+			Material = setmetatable({Neon = "Neon", Air = "Air", Water = "Water"}, {__index = function(_, key) return key end}),
+			KeyCode = setmetatable({}, {__index = function(_, key) return key end})},
 		Region3 = {new = function(min, max)
 			return setmetatable({Min = min, Max = max}, {__index = {ExpandToGrid = function(self) return self end}})
 		end},
@@ -306,6 +307,7 @@ return function(sources)
 	local handle = instance("Part", "Handle", gun)
 	handle.Anchored, handle.CanCollide = true, true
 	handle.Material = "Plastic"
+	handle.Transparency = 0
 	local firePoint = instance("Attachment", "FirePoint", handle)
 	local ropeBeam = instance("Beam", "Rope", gun)
 	ropeBeam.Texture, ropeBeam.TextureLength = "rbxassetid://18383765441", 6
@@ -342,6 +344,14 @@ return function(sources)
 			"Neon gun did not apply its Tool part color and Neon material")
 		remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Gun", "Gray")
 		assert(handle.Material == "Plastic", "switching away from a Neon gun did not restore its material")
+		attacker:SetAttribute("Owned_Gun_Ice", true)
+		remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Gun", "Ice")
+		assert(handle.Material == "Ice" and handle.Transparency == 0.15
+			and handle.Color[1] == 6 and handle.Color[2] == 166 and handle.Color[3] == 198,
+			"Ice gun did not apply its rare finish")
+		remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Gun", "Gray")
+		assert(handle.Material == "Plastic" and handle.Transparency == 0,
+			"switching away from Ice did not restore the gun finish")
 		remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Bomb", "Banana")
 		assert(attacker:GetAttribute("BombColor") == nil, "non-admin equipped banana")
 		attacker:SetAttribute("Admin", true)

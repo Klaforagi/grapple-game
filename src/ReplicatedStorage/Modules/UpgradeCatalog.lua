@@ -13,6 +13,8 @@ Catalog.MaxRank = 10
 Catalog.MinTetherSeconds = 2
 -- Wall mode flies and reels at this multiple of the player's current hook distance.
 Catalog.WallLengthScale = 3
+-- Wall-mode projectiles travel three times faster at every Hook Speed rank.
+Catalog.WallSpeedScale = 3
 Catalog.RobuxPrice = 299
 Catalog.RobuxProductId = 0
 -- Cost to leave this rank. Index 1 buys rank 1.
@@ -109,8 +111,10 @@ function Catalog.Text(stat, rank)
 	return tostring(value) .. " studs"
 end
 
-function Catalog.HookSpeed(player)
-	return Catalog.Value(Catalog.ById.speed, Catalog.Rank(player, "speed"))
+function Catalog.HookSpeed(player, wallMode)
+	local speed = Catalog.Value(Catalog.ById.speed, Catalog.Rank(player, "speed"))
+	if wallMode then speed *= Catalog.WallSpeedScale end
+	return speed
 end
 
 function Catalog.HookDistance(player)

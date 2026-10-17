@@ -72,6 +72,30 @@ for _, entry in ipairs({
 	palettes.Swatches.Rope[name] = palettes.Swatches.Rope[baseName]
 	palettes.Swatches.Gun[name] = palettes.Swatches.Gun[baseName]
 end
+-- Rare gun finishes. Material names are resolved to Enum.Material by the server.
+palettes.RareGuns = {
+	Sandstorm = {Color = Color3.fromRGB(198, 168, 138), Material = "Cobblestone"},
+	Jungle = {Color = Color3.fromRGB(62, 121, 44), Material = "Cobblestone"},
+	Ice = {Color = Color3.fromRGB(6, 166, 198), Material = "Ice", Transparency = 0.15},
+	Autumn = {Color = Color3.fromRGB(255, 119, 0), Material = "LeafyGrass"},
+	Brick = {Color = Color3.fromRGB(180, 4, 7), Material = "Brick"},
+	Panther = {Color = Color3.fromRGB(0, 0, 0), Material = "Asphalt"},
+	Rust = {Color = Color3.fromRGB(122, 60, 60), Material = "CorrodedMetal"},
+	Lava = {Color = Color3.fromRGB(226, 123, 38), Material = "CrackedLava"},
+	Crimson = {Color = Color3.fromRGB(255, 0, 4), Material = "CrackedLava"},
+	["Baby Pink"] = {Color = Color3.fromRGB(255, 201, 232), Material = "Fabric"},
+	["Baby Blue"] = {Color = Color3.fromRGB(143, 255, 251), Material = "Fabric"},
+	Nebula = {Color = Color3.fromRGB(47, 0, 148), Material = "Grass"},
+	Construction = {Color = Color3.fromRGB(255, 213, 0), Material = "Pavement"},
+	["Pink Venom"] = {Color = Color3.fromRGB(255, 0, 208), Material = "CrackedLava"},
+	Grass = {Color = Color3.fromRGB(31, 208, 0), Material = "Grass"},
+	Wooden = {Color = Color3.fromRGB(141, 71, 66), Material = "Wood"},
+	Ocean = {Color = Color3.fromRGB(0, 123, 255), Material = "Marble"},
+}
+for name, finish in pairs(palettes.RareGuns) do
+	palettes.Gun[name] = finish.Color
+	palettes.Swatches.Gun[name] = finish.Color
+end
 -- Shared names use the gun and rope card. Bomb-only cards stay. Part colors stay on palettes.Bomb.
 for name, color in pairs(palettes.Swatches.Gun) do
 	if palettes.Swatches.Bomb[name] then palettes.Swatches.Bomb[name] = color end

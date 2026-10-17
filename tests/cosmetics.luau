@@ -15,8 +15,8 @@ return function(sources)
 	local player = {attributes = {}}
 	function player:GetAttribute(key) return self.attributes[key] end
 	local count, total = catalog.Count(player)
-	assert(count == 3 and total == 64, "starter/collection count changed: " .. total)
-	for kind, expectedTotal in pairs({All = 64, Gun = 25, Rope = 26, Bomb = 13}) do
+	assert(count == 3 and total == 81, "starter/collection count changed: " .. total)
+	for kind, expectedTotal in pairs({All = 81, Gun = 42, Rope = 26, Bomb = 13}) do
 		local owned, available = catalog.Count(player, kind)
 		assert(owned == (kind == "All" and 3 or 1) and available == expectedTotal, "incorrect tab count for " .. kind)
 	end
@@ -29,7 +29,26 @@ return function(sources)
 	end
 	assert(catalog.ById.Gun_Cyan.Rarity == "Uncommon" and catalog.ById.Rope_Cyan.Rarity == "Uncommon")
 	assert(catalog.ById.Rope_Chain.Rarity == "Rare" and catalog.ById.Rope_Chain.Color == palettes.Rope.Chain)
-	assert(#catalog.Pools.Rare == 1 and catalog.Pools.Rare[1] == catalog.ById.Rope_Chain)
+	assert(#catalog.Pools.Rare == 18, "expected Chain plus 17 Rare guns")
+	local rareGunFinishes = {
+		Sandstorm = {198, 168, 138, "Cobblestone"}, Jungle = {62, 121, 44, "Cobblestone"},
+		Ice = {6, 166, 198, "Ice"}, Autumn = {255, 119, 0, "LeafyGrass"},
+		Brick = {180, 4, 7, "Brick"}, Panther = {0, 0, 0, "Asphalt"},
+		Rust = {122, 60, 60, "CorrodedMetal"}, Lava = {226, 123, 38, "CrackedLava"},
+		Crimson = {255, 0, 4, "CrackedLava"}, ["Baby Pink"] = {255, 201, 232, "Fabric"},
+		["Baby Blue"] = {143, 255, 251, "Fabric"}, Nebula = {47, 0, 148, "Grass"},
+		Construction = {255, 213, 0, "Pavement"}, ["Pink Venom"] = {255, 0, 208, "CrackedLava"},
+		Grass = {31, 208, 0, "Grass"}, Wooden = {141, 71, 66, "Wood"},
+		Ocean = {0, 123, 255, "Marble"},
+	}
+	for name, expected in pairs(rareGunFinishes) do
+		local finish = assert(palettes.RareGuns[name])
+		local item = assert(catalog.ById[catalog.Id("Gun", name)])
+		assert(item.Rarity == "Rare" and item.Color == finish.Color and palettes.Gun[name] == finish.Color)
+		assert(finish.Material == expected[4] and not string.find(item.Id, " ", 1, true))
+		for index = 1, 3 do assert(finish.Color[index] == expected[index], name .. " RGB changed") end
+	end
+	assert(palettes.RareGuns.Ice.Transparency == 0.15)
 	local neonRopeColors = {
 		["Neon Red"] = {255, 53, 53}, ["Neon Orange"] = {255, 86, 52},
 		["Neon Yellow"] = {255, 140, 46}, ["Neon Green"] = {50, 249, 50},
@@ -105,7 +124,7 @@ return function(sources)
 	assert(catalog.Roll(random({0.00499})).Rarity == "Legendary")
 	assert(catalog.Roll(random({0.005, 0.01, 0.1, 0.34999})).Rarity == "Uncommon")
 	assert(catalog.Roll(random({0.005, 0.01, 0.1, 0.35})).Rarity == "Common")
-	assert(catalog.Roll(random({0.5, 0.5, 0.099})).Id == "Rope_Chain")
+	assert(catalog.Roll(random({0.5, 0.5, 0.099})).Rarity == "Rare")
 	assert(catalog.Roll(random({0.009, 0.9, 0.9, 0.9})).Rarity == "Common", "base luck treated 0.009 as legendary")
 	assert(catalog.Roll(random({0.009}), 2).Rarity == "Legendary", "2x luck did not double the legendary check")
 	assert(catalog.Roll(random({0.02, 0.5, 0.5, 0.5}), 2).Rarity == "Common", "2x luck incorrectly boosted the uncommon check")

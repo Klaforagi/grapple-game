@@ -72,6 +72,8 @@ local nextPhysicsSession = 0
 local Palettes = require(ReplicatedStorage:WaitForChild("ItemColors"))
 local cosmeticColors = Palettes.Gun
 local defaultGunMaterials = setmetatable({}, {__mode = "k"})
+local defaultGunMaterialVariants = setmetatable({}, {__mode = "k"})
+local defaultGunTransparency = setmetatable({}, {__mode = "k"})
 local CHAIN_TEXTURE = "rbxassetid://18383765441"
 local ROPE_STYLE_ATTRIBUTE = "DefaultRopeStyleSaved"
 local ropeTransparencyDefaults = setmetatable({}, {__mode = "k"})
@@ -145,12 +147,29 @@ local function applyCosmetics(player: Player, tool: Tool?)
 	if not tool then return end
 	local gunName = player:GetAttribute("GrappleGunColor")
 	local gunColor = Palettes.NeonGunPartColors[gunName] or cosmeticColors[gunName]
+	local rareGun = Palettes.RareGuns[gunName]
 	local goldGun = gunName == "Gold"
 	local neonGun = Palettes.NeonGuns[gunName] ~= nil
 	for _, part in ipairs(tool:GetDescendants()) do
 		if part:IsA("BasePart") then
 			if not defaultGunMaterials[part] then defaultGunMaterials[part] = part.Material end
-			part.Material = neonGun and Enum.Material.Neon or defaultGunMaterials[part]
+			if defaultGunMaterialVariants[part] == nil then defaultGunMaterialVariants[part] = part.MaterialVariant or "" end
+			if defaultGunTransparency[part] == nil then
+				defaultGunTransparency[part] = part:GetAttribute("GrappleBoltVisibleTransparency") or part.Transparency
+			end
+			part.Material = rareGun and Enum.Material[rareGun.Material]
+				or neonGun and Enum.Material.Neon or defaultGunMaterials[part]
+			part.MaterialVariant = rareGun and "" or defaultGunMaterialVariants[part]
+			local visibleTransparency = rareGun and rareGun.Transparency or defaultGunTransparency[part]
+			local activeState = Active[player]
+			if part.Name == "Bolt" and activeState and activeState.boltTransparency ~= nil then
+				activeState.boltTransparency = visibleTransparency
+				part:SetAttribute("GrappleBoltVisibleTransparency", visibleTransparency)
+				if activeState.hitbox then activeState.hitbox:SetAttribute("BoltVisibleTransparency", visibleTransparency) end
+				part.Transparency = 1
+			else
+				part.Transparency = visibleTransparency
+			end
 			part:SetAttribute("RainbowPart", gunName == "Rainbow" or goldGun)
 			part:SetAttribute("RainbowPalette", goldGun and "Gold" or nil)
 			if gunColor then part:SetAttribute("SolidPartColor", gunColor) end
@@ -884,7 +903,7 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
 	rayParams.FilterDescendantsInstances = {character, tool, hitboxFolder}
 	local reach = Upgrades.ShotDistance(player, state.wallMode)
-	local hookSpeed = Upgrades.HookSpeed(player)
+	local hookSpeed = Upgrades.HookSpeed(player, state.wallMode)
 	local travelled, lastPosition, accumulator = 0, origin, 0
 	while Active[player] == state and travelled < reach do
 		accumulator += RunService.Heartbeat:Wait()

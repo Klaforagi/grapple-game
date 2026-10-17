@@ -12,27 +12,27 @@ The station is labeled **COSMETICS**. Its dark gradient panels share their style
 
 Opening inventory closes Shop, Upgrades, Settings, Codex, Admin, and the menu dropdown in the same button handler. Its `Owned X out of X` counter follows the active tab; All shows the complete collection, while Gun, Rope, and Bomb count only that category. Copies and admin-only Banana do not inflate completion. Bomb artwork in the inventory and reel is a glowing sphere with no fuse. The roll status reads `Rolling...` until the result appears.
 
-The idle reel continuously drifts left, cycling through a shuffled list of all rollable cosmetics. It keeps seven preview cards alive, replacing cards after they leave the screen. Idle previews do not indicate drop frequencies and are silent. The center pointer appears for an actual roll; the result stays visible for four seconds before the idle preview resumes. Bomb icons have no shine marks or shadow bar. Button text sits above the decorative gradient so selected tabs stay bright.
+The idle reel continuously drifts left, cycling through a shuffled list of all rollable cosmetics. It keeps seven preview cards alive, replacing cards after they leave the screen. Idle previews do not indicate drop frequencies and are silent. The center pointer appears for an actual roll; the result stays visible until another roll begins or the menu is reopened. Bomb icons have no shine marks or shadow bar. Button text sits above the decorative gradient so selected tabs stay bright.
 
 Place a `Sound` named **`Tick`** under `ReplicatedStorage/Sounds` (nested folders work too). The client clones it locally as each item center passes the reel pointer. The timing follows reel movement, including deceleration, rather than a fixed timer. Other players do not hear these ticks.
 
 ## Collection and rarity
 
-Every player starts with Gun / Black, Rope / Gray, and Bomb / Cyan. These are Common and count toward completion, but never enter the roll pool. Existing players also start from these three unless they have saved roll unlocks; old equipped choices are not unlocks. There are currently **42 collectible cosmetics: 3 starters and 39 rollable items**. Gold and admin Banana are excluded from collection totals.
+Every player starts with Gun / Gray, Rope / Gray, and Bomb / Cyan. These are Common and count toward completion, but never enter the roll pool. Existing players also start from these three unless they have saved roll unlocks; old equipped choices are not unlocks. There are currently **81 collectible cosmetics**, including 3 starters and 3 VIP Gold items. Admin Banana is excluded from collection totals.
 
 | Rarity | Items | Independent check | Current overall chance |
 | --- | --- | --- | --- |
 | Legendary | Rainbow for Gun, Rope, Bomb | 0.5% | 0.5% |
-| Epic | None yet | 1% | 0% until populated |
-| Rare | None yet | 10% | 0% until populated |
-| Uncommon | Gun/Rope: Teal, Lime, Pink; Bomb: Mint, Pink | 35% | 34.825% |
-| Common | All other available colors, excluding starters | Fallback | 64.675% |
+| Epic | Nine Neon Guns and nine Neon Ropes | 1% | 0.995% |
+| Rare | Chain Rope and 17 material-finish Guns | 10% | 9.8505% |
+| Uncommon | 16 color items across Gun, Rope, and Bomb | 35% | 31.029075% |
+| Common | 20 rollable colors, excluding starters | Fallback | 57.625425% |
 
 A roll costs **50 coins**. Check the highest populated rarity first and stop at the first successful independent check. Skip empty tiers. If every check fails, choose Common. Then pick uniformly from **all items in the winning rarity**, combining Gun, Rope, and Bomb; category is not a separate roll. Owned items remain eligible. Every duplicate adds one extra copy; there are no automatic coin refunds. Inventory icons show `x2`, `x3`, etc. in their bottom corner, with no quantity badge for one copy. The codex and billboard still count unique collected items, not copies. The starter colors stay at one copy and are excluded from rolling.
 
-Currently, each Rainbow is approximately 0.166667% per roll, each of the 8 Uncommons is 4.353125%, and each of the 28 rollable Commons is approximately 2.309821%. With every tier populated, the overall chances would be Legendary 0.5%, Epic 0.995%, Rare 9.8505%, Uncommon 31.029075%, Common 57.625425%. The UI calculates these probabilities from the actual populated pools and displays individual odds rounded to four decimal places. The odds panel contains only the rarity totals and possible items; algorithm explanations are kept in this document.
+The UI calculates item odds from the current pools and displays them rounded to four decimal places. The odds panel contains only the rarity totals and possible items; algorithm explanations are kept in this document.
 
-Gold remains in the equipment palettes for a future VIP implementation but is absent from rolls, ordinary inventory, and the codex. Banana appears only in admins' Bomb inventory, using `ServerScriptService/AdminList.lua`; the server rejects non-admin Banana equips.
+Gold is a VIP-only Legendary entry in the codex and inventory, excluded from rolls. Banana appears only in admins' Bomb inventory, using `ServerScriptService/AdminList.lua`; the server rejects non-admin Banana equips.
 
 ## Selling
 
@@ -42,7 +42,7 @@ Starters and admin Banana have no Sell button and are rejected by the server. Se
 
 ## Adding items
 
-Add a new color to the relevant palette in `src/ReplicatedStorage/ItemColors.lua`, including its swatch if the displayed color should differ from the equipment color. It enters the catalog as Common automatically. Assign another rarity in the per-category `overrides` table in `CosmeticCatalog.lua`. The codex, inventory, odds list, roll pool, and collection denominator update from that shared catalog. Use stable category/color names: the saved identifier is `Kind_Name`, such as `Gun_Rainbow`. Renaming an existing item requires a saved-data migration.
+Add a new color to the relevant palette in `src/ReplicatedStorage/ItemColors.lua`, including its swatch if the displayed color should differ from the equipment color. It enters the catalog as Common automatically. Assign another rarity in the per-category `overrides` table in `CosmeticCatalog.lua`. Rare gun finishes belong in `ItemColors.RareGuns`, which also sets their in-game material and optional transparency. The codex, inventory, odds list, roll pool, and collection denominator update from that shared catalog. Use stable category/color names: the saved identifier is `Kind_Name`, such as `Gun_Rainbow`. Renaming an existing item requires a saved-data migration.
 
 Future model-based skins also need equipment rendering support; adding a catalog entry alone does not create a new 3D model. Rainbow already uses the existing animated equipment renderer.
 
