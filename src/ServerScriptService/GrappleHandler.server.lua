@@ -71,6 +71,7 @@ local physicsSessions = {}
 local nextPhysicsSession = 0
 local Palettes = require(ReplicatedStorage:WaitForChild("ItemColors"))
 local cosmeticColors = Palettes.Gun
+local defaultGunMaterials = setmetatable({}, {__mode = "k"})
 local CHAIN_TEXTURE = "rbxassetid://18383765441"
 local ROPE_STYLE_ATTRIBUTE = "DefaultRopeStyleSaved"
 local ropeTransparencyDefaults = setmetatable({}, {__mode = "k"})
@@ -143,10 +144,13 @@ end
 local function applyCosmetics(player: Player, tool: Tool?)
 	if not tool then return end
 	local gunName = player:GetAttribute("GrappleGunColor")
-	local gunColor = cosmeticColors[gunName]
+	local gunColor = Palettes.NeonGunPartColors[gunName] or cosmeticColors[gunName]
 	local goldGun = gunName == "Gold"
+	local neonGun = Palettes.NeonGuns[gunName] ~= nil
 	for _, part in ipairs(tool:GetDescendants()) do
 		if part:IsA("BasePart") then
+			if not defaultGunMaterials[part] then defaultGunMaterials[part] = part.Material end
+			part.Material = neonGun and Enum.Material.Neon or defaultGunMaterials[part]
 			part:SetAttribute("RainbowPart", gunName == "Rainbow" or goldGun)
 			part:SetAttribute("RainbowPalette", goldGun and "Gold" or nil)
 			if gunColor then part:SetAttribute("SolidPartColor", gunColor) end
@@ -449,9 +453,9 @@ disconnectRope = function(player: Player, skipCooldown: boolean?, preserveVictim
 			cooldownUntil[player] = nil
 			tool:SetAttribute("InCooldown", false)
 		end
-		local bolt = tool:FindFirstChild("Bolt")
+		local bolt = tool:FindFirstChild("Bolt", true)
 		if bolt and bolt:IsA("BasePart") then
-			bolt.Transparency = 0
+			bolt.Transparency = state.boltTransparency or 0
 			PlaySound(bolt, sound("Disconnect"))
 		end
 	end
@@ -558,8 +562,10 @@ local function grapplePart(state, firePoint: Attachment, hit: BasePart, position
 				assembly:SetAttribute("WallGrappleOwner", state.owner.UserId)
 			end)
 		end
-		PlaySound(hit, sound("HitWall"))
 		local attachment = createImpactAttachment(state.owner, hit, position)
+		-- Sounds parented to a large part play from its center. The impact
+		-- attachment stays at the actual bolt landing point as the part moves.
+		PlaySound(attachment, sound("HitWall"))
 		-- Wall ropes originate at the gun itself. FirePoint is part of the tool
 		-- rig, so do not register it for session cleanup.
 		local rope = makeRope(state, firePoint, attachment, (firePoint.WorldPosition - position).Magnitude)
@@ -694,6 +700,9 @@ local function createHitbox(state, origin: Vector3, direction: Vector3): BasePar
 	hitbox.Material = Enum.Material.Neon
 	hitbox.Transparency = Config.debugMode and 0 or 1
 	hitbox.CFrame = CFrame.new(origin, origin + direction)
+	if state.boltTransparency ~= nil then
+		hitbox:SetAttribute("BoltVisibleTransparency", state.boltTransparency)
+	end
 	hitbox.Parent = hitboxFolder
 	state.hitbox = hitbox
 	return hitbox
@@ -837,7 +846,11 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	local beam = tool:FindFirstChild("Rope")
 	if beam and beam:IsA("Beam") then beam.Enabled = true end
 	local bolt = tool:FindFirstChild("Bolt", true)
-	if bolt and bolt:IsA("BasePart") then bolt.Transparency = 1 end
+	if bolt and bolt:IsA("BasePart") then
+		state.boltTransparency = bolt.Transparency
+		bolt:SetAttribute("GrappleBoltVisibleTransparency", state.boltTransparency)
+		bolt.Transparency = 1
+	end
 	PlaySound(tool:FindFirstChild("Handle"), sound("Fire"))
 	state.connections.ownerDied = humanoid.Died:Connect(function() disconnectRope(player, true) end)
 	state.connections.ownerBlasted = humanoid:GetAttributeChangedSignal("BombBlastRevision"):Connect(function()
@@ -846,7 +859,7 @@ local function fireGrapple(player, hitPosition, cameraPosition)
 	state.connections.toolDestroyed = tool.Destroying:Connect(function() disconnectRope(player, true) end)
 	local hitbox = createHitbox(state, origin, direction)
 	local gunName = player:GetAttribute("GrappleGunColor")
-	local boltColor = cosmeticColors[gunName]
+	local boltColor = Palettes.NeonGunPartColors[gunName] or cosmeticColors[gunName]
 	hitbox:SetAttribute("RainbowPart", gunName == "Rainbow" or gunName == "Gold")
 	hitbox:SetAttribute("RainbowPalette", gunName == "Gold" and "Gold" or nil)
 	if boltColor then

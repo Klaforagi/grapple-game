@@ -15,8 +15,8 @@ return function(sources)
 	local player = {attributes = {}}
 	function player:GetAttribute(key) return self.attributes[key] end
 	local count, total = catalog.Count(player)
-	assert(count == 3 and total == 55, "starter/collection count changed: " .. total)
-	for kind, expectedTotal in pairs({All = 55, Gun = 16, Rope = 26, Bomb = 13}) do
+	assert(count == 3 and total == 64, "starter/collection count changed: " .. total)
+	for kind, expectedTotal in pairs({All = 64, Gun = 25, Rope = 26, Bomb = 13}) do
 		local owned, available = catalog.Count(player, kind)
 		assert(owned == (kind == "All" and 3 or 1) and available == expectedTotal, "incorrect tab count for " .. kind)
 	end
@@ -30,21 +30,33 @@ return function(sources)
 	assert(catalog.ById.Gun_Cyan.Rarity == "Uncommon" and catalog.ById.Rope_Cyan.Rarity == "Uncommon")
 	assert(catalog.ById.Rope_Chain.Rarity == "Rare" and catalog.ById.Rope_Chain.Color == palettes.Rope.Chain)
 	assert(#catalog.Pools.Rare == 1 and catalog.Pools.Rare[1] == catalog.ById.Rope_Chain)
-	local neonColors = {
+	local neonRopeColors = {
 		["Neon Red"] = {255, 53, 53}, ["Neon Orange"] = {255, 86, 52},
 		["Neon Yellow"] = {255, 140, 46}, ["Neon Green"] = {50, 249, 50},
 		["Neon Blue"] = {49, 49, 255}, ["Neon Purple"] = {95, 52, 239},
 		["Neon Pink"] = {255, 44, 209}, ["Neon Cyan"] = {39, 218, 254},
 		["Neon Mint"] = {67, 255, 89},
 	}
-	assert(#catalog.Pools.Epic == 9 and catalog.ById.Rope_NeonLime == nil, "expected nine Epic Neon ropes")
+	local neonGunColors = {
+		["Neon Red"] = {255, 115, 117}, ["Neon Orange"] = {255, 132, 101},
+		["Neon Yellow"] = {255, 209, 102}, ["Neon Green"] = {91, 185, 89},
+		["Neon Blue"] = {98, 106, 255}, ["Neon Purple"] = {130, 99, 255},
+		["Neon Pink"] = {251, 149, 255}, ["Neon Cyan"] = {98, 195, 255},
+		["Neon Mint"] = {125, 255, 162},
+	}
+	assert(#catalog.Pools.Epic == 18 and catalog.ById.Rope_NeonLime == nil, "expected nine Epic Neon ropes and guns")
 	for neonName, baseName in pairs(palettes.NeonRopes) do
-		local item = catalog.ById[catalog.Id("Rope", neonName)]
-		local expected = assert(neonColors[neonName])
-		assert(item and item.Rarity == "Epic" and not item.Starter)
-		assert(not string.find(item.Id, " ", 1, true), "Neon item ID cannot be used as a Roblox attribute")
-		assert(item.Color == catalog.ById["Rope_" .. baseName].Color, "Neon rope icon changed")
-		for index = 1, 3 do assert(palettes.Rope[neonName][index] == expected[index], "Neon beam color changed") end
+		assert(palettes.NeonGuns[neonName] == baseName, "Neon gun is missing")
+		for _, kind in ipairs({"Gun", "Rope"}) do
+			local expected = assert(neonRopeColors[neonName])
+			local item = catalog.ById[catalog.Id(kind, neonName)]
+			assert(item and item.Rarity == "Epic" and not item.Starter)
+			assert(not string.find(item.Id, " ", 1, true), "Neon item ID cannot be used as a Roblox attribute")
+			assert(item.Color == catalog.ById[kind .. "_" .. baseName].Color, "Neon icon base swatch changed")
+			for index = 1, 3 do assert(palettes[kind][neonName][index] == expected[index], "Neon equipment color changed") end
+		end
+		local gunParts = assert(palettes.NeonGunPartColors[neonName])
+		for index = 1, 3 do assert(gunParts[index] == neonGunColors[neonName][index], "Neon gun part color changed") end
 	end
 	local legacyNeon = { ["Rope_Neon Red"] = 2 }
 	catalog.NormalizeCosmetics(legacyNeon)
@@ -129,25 +141,25 @@ return function(sources)
 		local item = catalog.Pools[rarity][1]
 		local request = {id = rarity, itemId = item.Id}
 		local record = transaction.Apply({coins = 500, earned = 900}, request, catalog)
-		assert(record.coins == 400 and record.earned == 900 and record.cosmetics[item.Id])
+		assert(record.coins == 450 and record.earned == 900 and record.cosmetics[item.Id])
 		assert(not record.lastCosmeticRoll.duplicate and record.lastCosmeticRoll.copies == 1)
 		record = transaction.Apply(record, request, catalog)
-		assert(record.coins == 400 and record.cosmetics[item.Id] == 1, "retried request charged or awarded twice")
+		assert(record.coins == 450 and record.cosmetics[item.Id] == 1, "retried request charged or awarded twice")
 		request = {id = rarity .. "2", itemId = item.Id}
 		record = transaction.Apply(record, request, catalog)
-		assert(record.coins == 300 and record.cosmetics[item.Id] == 2 and record.earned == 900)
+		assert(record.coins == 400 and record.cosmetics[item.Id] == 2 and record.earned == 900)
 		assert(record.lastCosmeticRoll.duplicate)
 	end
 	local legacy = transaction.Apply({coins = 500, cosmetics = {Gun_Rainbow = true}}, {id = "legacy", itemId = "Gun_Rainbow"}, catalog)
-	assert(legacy.cosmetics.Gun_Rainbow == 2 and legacy.coins == 400, "legacy unlock lost when adding a duplicate")
+	assert(legacy.cosmetics.Gun_Rainbow == 2 and legacy.coins == 450, "legacy unlock lost when adding a duplicate")
 	for _, tier in ipairs({"Epic", "Rare"}) do
 		local item = {Id = "Future_" .. tier, Rarity = tier}
 		catalog.ById[item.Id] = item
-		local result = transaction.Apply({coins = 100, cosmetics = {[item.Id] = 3}}, {id = tier, itemId = item.Id}, catalog)
+		local result = transaction.Apply({coins = 50, cosmetics = {[item.Id] = 3}}, {id = tier, itemId = item.Id}, catalog)
 		assert(result.coins == 0 and result.cosmetics[item.Id] == 4, "future tier refunded instead of stacking")
 		catalog.ById[item.Id] = nil
 	end
-	assert(transaction.Apply({coins = 99, cosmetics = {Gun_Rainbow = true}}, {id = "poor", itemId = "Gun_Rainbow"}, catalog) == nil,
+	assert(transaction.Apply({coins = 49, cosmetics = {Gun_Rainbow = true}}, {id = "poor", itemId = "Gun_Rainbow"}, catalog) == nil,
 		"duplicate allowed a roll without full price")
 	assert(transaction.Apply({coins = 100}, {id = "invalid", itemId = "Gun_Gray"}, catalog) == nil)
 	assert(transaction.Apply({coins = 100}, {id = "vip", itemId = "Gun_Gold"}, catalog) == nil)

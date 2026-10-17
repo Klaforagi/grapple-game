@@ -509,7 +509,7 @@ function M.Init()
 	hourlyButton.Size = UDim2.fromOffset(32, 32)
 	make("ImageLabel", hourlyButton, {
 		Name = "Icon", BackgroundTransparency = 1, Image = Assets.Coins, ScaleType = Enum.ScaleType.Fit,
-		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(23, 23),
+		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(28, 28),
 	})
 	local hourlyBadge = make("Frame", hourlyButton, {
 		Name = "Alert", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 4, 0, -4),

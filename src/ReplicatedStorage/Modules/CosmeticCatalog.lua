@@ -2,7 +2,7 @@
 -- Add new palette entries in ItemColors, then optionally override their rarity here.
 local Palettes = require(script.Parent.Parent:WaitForChild("ItemColors"))
 local Catalog = {
-	Cost = 100,
+	Cost = 50,
 	SellPrices = {Common = 10, Uncommon = 25, Rare = 100, Epic = 200, Legendary = 500},
 	ModelName = "CosmeticRollStation", PartName = "RollZone",
 	-- The root sits above the feet, so a floor plate still counts as standing on the zone.
@@ -28,6 +28,7 @@ local overrides = {
 		Mint = "Uncommon", Pink = "Uncommon"},
 }
 for name in pairs(Palettes.NeonRopes) do overrides.Rope[name] = "Epic" end
+for name in pairs(Palettes.NeonGuns) do overrides.Gun[name] = "Epic" end
 local ranks = {}
 function Catalog.Id(kind, name)
 	return tostring(kind) .. "_" .. string.gsub(tostring(name), "%s+", "")

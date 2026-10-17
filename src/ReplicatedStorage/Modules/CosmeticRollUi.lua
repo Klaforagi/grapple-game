@@ -67,7 +67,7 @@ function RollUi.Init()
 	headline.TextXAlignment = Enum.TextXAlignment.Center
 	local detail = text(panel, "", UDim2.fromOffset(24, 414), UDim2.fromOffset(632, 36), 15, Style.Muted)
 	detail.TextXAlignment, detail.TextWrapped = Enum.TextXAlignment.Center, true
-	local rollButton = Style.Button(panel, "ROLL  /  100 COINS", UDim2.fromOffset(150, 466), UDim2.fromOffset(380, 52), Style.Action)
+	local rollButton = Style.Button(panel, "ROLL  /  " .. Catalog.Cost .. " COINS", UDim2.fromOffset(150, 466), UDim2.fromOffset(380, 52), Style.Action)
 	rollButton.TextSize = 23
 	local footer = text(panel, "", UDim2.fromOffset(24, 525), UDim2.fromOffset(632, 18), 12, Style.Muted)
 	footer.TextXAlignment = Enum.TextXAlignment.Center
@@ -133,7 +133,7 @@ function RollUi.Init()
 		tag.TextXAlignment = Enum.TextXAlignment.Center
 		return frame
 	end
-	local idle, resumePreviewAt, idleOffset = true, 0, 0
+	local idle, idleOffset = true, 0
 	local idleCards, previewBag = {}, {}
 	local function nextPreviewItem()
 		if #previewBag == 0 then
@@ -252,7 +252,6 @@ function RollUi.Init()
 		if not result.duplicate then PlaySound(SoundService, "Reward") end
 		local rareOrBetter = item.Rarity == "Rare" or item.Rarity == "Epic" or item.Rarity == "Legendary"
 		if rareOrBetter or not result.duplicate then celebrate(rarity.Color) end
-		resumePreviewAt = os.clock() + 4
 		busy = false
 	end)
 
@@ -302,10 +301,6 @@ function RollUi.Init()
 		if camera then applyFit(math.max(0.01, math.min(1, (camera.ViewportSize.X - 24) / 680, (camera.ViewportSize.Y - 64) / 548))) end
 		if spinning then updateTicks() end
 		if shade.Visible and not oddsPanel.Visible then
-			if not busy and not idle and os.clock() >= resumePreviewAt then
-				preview()
-				headline.Text, detail.Text = "Roll a cosmetic", ""
-			end
 			if idle then
 				idleOffset -= 32 * math.min(dt, 0.25)
 				while idleOffset <= -146 do
@@ -344,7 +339,7 @@ function RollUi.Init()
 		rollButton.AutoButtonColor = enabled
 		rollButton.TextTransparency = enabled and 0 or 0.35
 		rollButton.Text = busy and "ROLLING..." or not loaded and "LOADING COLLECTION..." or not allowed and "ROLLS UNAVAILABLE"
-			or cooldown > 0 and ("READY IN " .. cooldown .. "s") or "ROLL  •  100 COINS"
+			or cooldown > 0 and ("READY IN " .. cooldown .. "s") or "ROLL  •  " .. Catalog.Cost .. " COINS"
 		footer.Text = allowed and "" or (player:GetAttribute("CosmeticRollPolicy") or "Checking roll availability...")
 	end)
 end

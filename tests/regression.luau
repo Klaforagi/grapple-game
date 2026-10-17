@@ -228,7 +228,7 @@ return function(sources)
 		CFrame = {new = function() return identity end, lookAt = function(origin, target)
 			return setmetatable({Position = origin, LookVector = (target - origin).Unit}, {__mul = function(a) return a end})
 		end}, BrickColor = {new = function() return {} end},
-		Color3 = {fromRGB = function() return {} end, fromHSV = function() return {} end}, ColorSequence = {new = function() return {} end},
+		Color3 = {fromRGB = function(...) return {...} end, fromHSV = function(...) return {...} end}, ColorSequence = {new = function() return {} end},
 		NumberSequence = {new = transparency},
 		PhysicalProperties = {new = function(d, f) return {Density = d, Friction = f} end},
 		RaycastParams = {new = function() return {} end}, OverlapParams = {new = function() return {} end},
@@ -305,6 +305,7 @@ return function(sources)
 	local gun = instance("Tool", config.toolName, attacker.Character)
 	local handle = instance("Part", "Handle", gun)
 	handle.Anchored, handle.CanCollide = true, true
+	handle.Material = "Plastic"
 	local firePoint = instance("Attachment", "FirePoint", handle)
 	local ropeBeam = instance("Beam", "Rope", gun)
 	ropeBeam.Texture, ropeBeam.TextureLength = "rbxassetid://18383765441", 6
@@ -334,6 +335,13 @@ return function(sources)
 		attacker:SetAttribute("Owned_Gun_Rainbow", true)
 		remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Gun", "Rainbow")
 		assert(attacker:GetAttribute("GrappleGunColor") == "Rainbow", "owned color could not equip")
+		attacker:SetAttribute("Owned_Gun_NeonYellow", true)
+		remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Gun", "Neon Yellow")
+		assert(attacker:GetAttribute("GrappleGunColor") == "Neon Yellow" and handle.Material == "Neon"
+			and handle.Color[1] == 255 and handle.Color[2] == 209 and handle.Color[3] == 102,
+			"Neon gun did not apply its Tool part color and Neon material")
+		remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Gun", "Gray")
+		assert(handle.Material == "Plastic", "switching away from a Neon gun did not restore its material")
 		remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Bomb", "Banana")
 		assert(attacker:GetAttribute("BombColor") == nil, "non-admin equipped banana")
 		attacker:SetAttribute("Admin", true)

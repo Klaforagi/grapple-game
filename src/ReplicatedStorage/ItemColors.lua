@@ -34,20 +34,43 @@ for _, target in ipairs({"Gun", "Rope"}) do
 		if not palettes.Swatches[target][name] then palettes.Swatches[target][name] = color end
 	end
 end
--- Neon rope beams have their own colors; icons retain the regular rope swatches.
+-- Neon equipment colors, base icon swatches, and icon glows are independent.
 palettes.NeonRopes = {}
+palettes.NeonGuns = {}
+palettes.NeonGunPartColors = {}
+-- Icon halos use clear named colors; beam RGBs are tuned separately for brightness 10.
+palettes.NeonIconGlows = {
+	["Neon Red"] = Color3.fromRGB(255, 64, 73),
+	["Neon Orange"] = Color3.fromRGB(255, 154, 51),
+	["Neon Yellow"] = Color3.fromRGB(255, 228, 64),
+	["Neon Green"] = Color3.fromRGB(72, 255, 100),
+	["Neon Blue"] = Color3.fromRGB(72, 120, 255),
+	["Neon Purple"] = Color3.fromRGB(165, 89, 255),
+	["Neon Pink"] = Color3.fromRGB(255, 88, 200),
+	["Neon Cyan"] = Color3.fromRGB(70, 230, 255),
+	["Neon Mint"] = Color3.fromRGB(80, 255, 190),
+}
+-- Name, base icon swatch, rope beam RGB, then Neon gun part RGB.
 for _, entry in ipairs({
-	{"Red", "Red", 255, 53, 53}, {"Orange", "Orange", 255, 86, 52},
-	{"Yellow", "Yellow", 255, 140, 46}, {"Green", "Green", 50, 249, 50},
-	{"Blue", "Blue", 49, 49, 255}, {"Purple", "Purple", 95, 52, 239},
-	{"Pink", "Pink", 255, 44, 209}, {"Cyan", "Cyan", 39, 218, 254},
-	{"Mint", "Mint", 67, 255, 89},
+	{"Red", "Red", 255, 53, 53, 255, 115, 117},
+	{"Orange", "Orange", 255, 86, 52, 255, 132, 101},
+	{"Yellow", "Yellow", 255, 140, 46, 255, 209, 102},
+	{"Green", "Green", 50, 249, 50, 91, 185, 89},
+	{"Blue", "Blue", 49, 49, 255, 98, 106, 255},
+	{"Purple", "Purple", 95, 52, 239, 130, 99, 255},
+	{"Pink", "Pink", 255, 44, 209, 251, 149, 255},
+	{"Cyan", "Cyan", 39, 218, 254, 98, 195, 255},
+	{"Mint", "Mint", 67, 255, 89, 125, 255, 162},
 }) do
 	local baseName = entry[2]
 	local name = "Neon " .. entry[1]
 	palettes.NeonRopes[name] = baseName
+	palettes.NeonGuns[name] = baseName
 	palettes.Rope[name] = Color3.fromRGB(entry[3], entry[4], entry[5])
+	palettes.Gun[name] = palettes.Rope[name]
+	palettes.NeonGunPartColors[name] = Color3.fromRGB(entry[6], entry[7], entry[8])
 	palettes.Swatches.Rope[name] = palettes.Swatches.Rope[baseName]
+	palettes.Swatches.Gun[name] = palettes.Swatches.Gun[baseName]
 end
 -- Shared names use the gun and rope card. Bomb-only cards stay. Part colors stay on palettes.Bomb.
 for name, color in pairs(palettes.Swatches.Gun) do

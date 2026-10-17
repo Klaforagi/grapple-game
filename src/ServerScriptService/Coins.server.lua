@@ -535,7 +535,7 @@ rollCosmetic.OnInvoke = function(player)
 			result = {ok = true, itemId = receipt.itemId, duplicate = receipt.duplicate,
 				copies = receipt.copies or catalog.Quantity(data.cosmetics and data.cosmetics[receipt.itemId])}
 		else
-			result = {ok = false, message = "You need 100 coins to roll."}
+			result = {ok = false, message = "You need " .. catalog.Cost .. " coins to roll."}
 		end
 	end
 	state.saving = false

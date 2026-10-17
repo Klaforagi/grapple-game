@@ -106,7 +106,7 @@ function Hotbar.Mount(screen, player, hidden)
 					})
 					make("UICorner", badge, {CornerRadius = UDim.new(0, 4)})
 					local rope = Style.Icon(badge, {Kind = "Rope", Name = ropeName, Color = ropeColor})
-					rope.ZIndex = 15
+					rope.ZIndex = math.max(rope.ZIndex, 15)
 				end
 			elseif tool.TextureId ~= "" then
 				make("ImageLabel", button, {
