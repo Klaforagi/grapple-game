@@ -16,6 +16,7 @@ return function(sources)
 		GrappleCoins_v1 = {
 			player_77 = {coins = 5, earned = 8, name = "OfflineDisplay", username = "OfflineUser"},
 		},
+		GrappleRobuxSpent_v1 = {player_77 = {spent = 123}},
 		GrappleKills_v1 = {player_77 = {kills = 2}},
 		GrapplePlayedTime_v1 = {player_77 = {seconds = 90}},
 		GrappleUpgrades_v1 = {
@@ -251,6 +252,7 @@ return function(sources)
 	fire(owner, {action = "lookup", user = "Target"})
 	assert(last().ok == true and last().profile.userId == 42, "username lookup missed the user")
 	assert(last().profile.coins == 3 and last().profile.coinsEarned == 9, "live coins were not used")
+	assert(last().profile.robuxSpent == 0, "new players should start with no tracked spending")
 	assert(last().profile.kills == 4 and last().profile.playedSeconds == 120, "live stats were not used")
 	assert(last().profile.speed == 2 and last().profile.resistance == 4, "live ranks were not used")
 	assert(last().profile.online == true, "online player looked offline")
@@ -258,6 +260,7 @@ return function(sources)
 	fire(owner, {action = "lookup", user = "77"})
 	local offline = last().profile
 	assert(offline.coins == 5 and offline.coinsEarned == 8, "offline coins were wrong")
+	assert(offline.robuxSpent == 123, "offline Robux spending was not loaded")
 	assert(offline.kills == 2 and offline.playedSeconds == 90, "offline stats were wrong")
 	assert(offline.speed == 3 and offline.distance == 4 and offline.duration == 5 and offline.resistance == 6, "offline ranks were wrong")
 	assert(offline.gun == "Red" and offline.displayName == "OfflineDisplay", "offline profile missed saved fields")

@@ -18,6 +18,7 @@ return function(sources)
 	assert(loadstring(sources.coinsBoardTests))()(sources.coins, sources.coinsBoardClient)
 	assert(loadstring(sources.killTests))()(sources.killCredit)
 	assert(loadstring(sources.hourlyTests))()(sources.hourly)
+	assert(loadstring(sources.robuxSpendingTests))()(sources.robuxSpending, sources.shop)
 	local objects, delayed = {}, {}
 	local now = 10
 	local function signal()
@@ -51,6 +52,7 @@ return function(sources)
 		if key == "Dot" then return function(_, b) return a.X*b.X + a.Y*b.Y + a.Z*b.Z end end
 	end
 	local identity = setmetatable({LookVector = V.new(0, 0, -1)}, {__mul = function(a) return a end})
+	local function transparency(value) return {Keypoints = {{Value = value}, {Value = value}}} end
 	local function descendant(object, ancestor)
 		local parent = object.Parent
 		while parent do if parent == ancestor then return true end parent = parent.Parent end
@@ -227,6 +229,7 @@ return function(sources)
 			return setmetatable({Position = origin, LookVector = (target - origin).Unit}, {__mul = function(a) return a end})
 		end}, BrickColor = {new = function() return {} end},
 		Color3 = {fromRGB = function() return {} end, fromHSV = function() return {} end}, ColorSequence = {new = function() return {} end},
+		NumberSequence = {new = transparency},
 		PhysicalProperties = {new = function(d, f) return {Density = d, Friction = f} end},
 		RaycastParams = {new = function() return {} end}, OverlapParams = {new = function() return {} end},
 		Enum = {HumanoidStateType = {Physics = "Physics", Ragdoll = "Ragdoll", GettingUp = "GettingUp", Freefall = "Freefall", Running = "Running", Swimming = "Swimming", Dead = "Dead", Jumping = "Jumping"},
@@ -303,12 +306,22 @@ return function(sources)
 	local handle = instance("Part", "Handle", gun)
 	handle.Anchored, handle.CanCollide = true, true
 	local firePoint = instance("Attachment", "FirePoint", handle)
+	local ropeBeam = instance("Beam", "Rope", gun)
+	ropeBeam.Texture, ropeBeam.TextureLength = "rbxassetid://18383765441", 6
+	ropeBeam.Width0, ropeBeam.Width1 = 4, 4
+	ropeBeam.Brightness = 2
+	ropeBeam.Transparency = transparency(0.2)
 	local expectedTether
 	local function fire()
 		now += 1.6
 		remotes.FireGrapple.OnServerEvent:Emit(attacker, V.new(0, 0, 20), V.new(0, 0, 0))
 	end
 	local starterGun = instance("Tool", config.toolName, services.StarterPack)
+	local starterRopeBeam = instance("Beam", "Rope", starterGun)
+	starterRopeBeam.Texture, starterRopeBeam.TextureLength = "", 2
+	starterRopeBeam.Width0, starterRopeBeam.Width1 = 0.25, 0.25
+	starterRopeBeam.Brightness = 1
+	starterRopeBeam.Transparency = transparency(0.1)
 	local starterScript = instance("LocalScript", "OldEquipController", starterGun)
 	starterScript.Disabled = false
 	execute(sources.server)
@@ -330,6 +343,29 @@ return function(sources)
 		attacker:SetAttribute("BombColor", nil)
 		attacker:SetAttribute("GrappleGunColor", nil)
 	end
+	assert(ropeBeam.Texture == "" and ropeBeam.TextureLength == 2 and ropeBeam.Width0 == 0.25 and ropeBeam.Width1 == 0.25,
+		"non-Chain rope retained Chain settings from the live tool")
+	attacker:SetAttribute("Owned_Rope_Chain", true)
+	remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Rope", "Chain")
+	assert(ropeBeam.Texture == "rbxassetid://18383765441" and ropeBeam.TextureLength == 6
+		and ropeBeam.Width0 == 4 and ropeBeam.Width1 == 4, "Chain beam settings were not applied")
+	remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Rope", "Gray")
+	assert(ropeBeam.Texture == "" and ropeBeam.TextureLength == 2 and ropeBeam.Width0 == 0.25 and ropeBeam.Width1 == 0.25,
+		"switching away from Chain did not restore the original beam settings")
+	attacker:SetAttribute("TestPass_VIP", true)
+	remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Rope", "Gold")
+	assert(ropeBeam.Brightness == 1.25, "Gold rope brightness was not applied")
+	remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Rope", "Gray")
+	assert(ropeBeam.Brightness == 1, "switching away from Gold did not restore rope brightness")
+	attacker:SetAttribute("TestPass_VIP", nil)
+	attacker:SetAttribute("Owned_Rope_NeonRed", true)
+	remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Rope", "Neon Red")
+	assert(ropeBeam.Brightness == 10 and ropeBeam.Transparency.Keypoints[1].Value == 0.1
+		and attacker:GetAttribute("GrappleRopeColor") == "Neon Red",
+		"Epic Neon rope did not use brightness 10 and its original transparency")
+	remotes.SetGrappleColor.OnServerEvent:Emit(attacker, "Rope", "Gray")
+	assert(ropeBeam.Brightness == 1 and ropeBeam.Transparency.Keypoints[1].Value == 0.1,
+		"regular rope kept Neon brightness or transparency")
 	assert(starterScript.Disabled and starterGun:GetAttribute("GrappleManagedTool"), "StarterPack gun was not prepared before cloning")
 	assert(not handle.Anchored and not handle.CanCollide and handle.Massless, "gun parts were only prepared after firing")
 	hitParts = {victimRoot}

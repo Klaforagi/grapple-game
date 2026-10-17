@@ -33,12 +33,17 @@ local function publishCollection(player, data)
 	if type(owned) == "table" then
 		local catalog = require(ReplicatedStorage.Modules:WaitForChild("CosmeticCatalog"))
 		catalog.NormalizeCosmetics(owned)
+		local publish = {}
 		for id, value in pairs(owned) do
-			local copies = value == true and 1 or type(value) == "number" and value == value and value < math.huge and math.max(0, math.floor(value)) or 0
-			if type(id) == "string" and #id <= 100 then
-				player:SetAttribute("Owned_" .. id, copies)
+			if type(id) == "string" then
+				local safeId = string.gsub(id, "%s+", "")
+				if #safeId <= 100 and string.match(safeId, "^[%w_%.%-%/]+$") and catalog.ById[safeId] then
+					local copies = catalog.Quantity(value)
+					publish[safeId] = math.max(publish[safeId] or 0, copies)
+				end
 			end
 		end
+		for id, copies in pairs(publish) do player:SetAttribute("Owned_" .. id, copies) end
 	end
 	player:SetAttribute("CollectionLoaded", true)
 end
@@ -649,6 +654,7 @@ local function adminGrantCosmetic(userId, itemId)
 		return store:UpdateAsync("player_" .. userId, function(previous)
 			local record = type(previous) == "table" and previous or {coins = 0, earned = 0}
 			record.cosmetics = type(record.cosmetics) == "table" and record.cosmetics or {}
+			catalog.NormalizeCosmetics(record.cosmetics)
 			record.cosmetics[item.Id] = catalog.Quantity(record.cosmetics[item.Id]) + 1
 			return record
 		end)

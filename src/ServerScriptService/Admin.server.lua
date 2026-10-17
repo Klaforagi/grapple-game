@@ -141,15 +141,18 @@ end
 
 local function normalizeColor(target, colorName)
 	if target ~= "Gun" and target ~= "Rope" and target ~= "Bomb" then return nil end
-	colorName = trim(colorName)
+	colorName = string.gsub(trim(colorName), "%s+", " ")
 	if colorName == "" then return nil end
-	if colorName == "Teal" then colorName = "Mint" end
-	if target == "Bomb" and colorName == "Lime" then colorName = "Green" end
+	if string.lower(colorName) == "teal" then colorName = "Mint" end
+	if target == "Rope" and string.lower(colorName) == "neon lime" then colorName = "Neon Green" end
+	if target == "Bomb" and string.lower(colorName) == "lime" then colorName = "Green" end
 	local colors = colorPalettes()
-	if colorName ~= "Rainbow" and (type(colors[target]) ~= "table" or colors[target][colorName] == nil) then
-		return nil
+	if string.lower(colorName) == "rainbow" then return "Rainbow" end
+	if type(colors[target]) ~= "table" then return nil end
+	for name in pairs(colors[target]) do
+		if string.lower(name) == string.lower(colorName) then return name end
 	end
-	return colorName
+	return nil
 end
 
 local function isBanned(data)
@@ -167,6 +170,7 @@ local function lookupProfile(userId, username)
 	local timeRecord = (type(liveTime) ~= "table") and readRecord("GrapplePlayedTime_v1", userId) or nil
 	local rankRecord = (type(liveRanks) ~= "table") and readRecord("GrappleUpgrades_v1", userId) or nil
 	local colorRecord = readRecord("GrappleCosmetics_v1", userId)
+	local robuxRecord = readRecord("GrappleRobuxSpent_v1", userId)
 	local banRecord = readRecord("GrappleBans_v1", userId)
 	local held, earned = coinTotals(coinRecord)
 	if type(liveCoins) == "table" then
@@ -199,6 +203,7 @@ local function lookupProfile(userId, username)
 		online = player ~= nil,
 		coins = held,
 		coinsEarned = earned,
+		robuxSpent = numberOr(robuxRecord and robuxRecord.spent, 0),
 		kills = kills,
 		playedSeconds = seconds,
 		speed = clampRank(ranks.speed),
@@ -327,7 +332,7 @@ local function setColor(admin, query, target, colorName)
 	local userId, nameOrError = resolveUser(query)
 	if not userId then return reply(admin, false, "color", nameOrError) end
 	local catalog = require(ReplicatedStorage.Modules:WaitForChild("CosmeticCatalog"))
-	local item = catalog.ById[target .. "_" .. normalized]
+	local item = catalog.ById[catalog.Id(target, normalized)]
 	if not item or item.Starter or item.Vip then return reply(admin, false, "color", "That cosmetic cannot be granted.") end
 	if invoke("AdminCosmetics", "grant", userId, item.Id) ~= true then
 		return reply(admin, false, "color", "Could not add that cosmetic to their inventory.")

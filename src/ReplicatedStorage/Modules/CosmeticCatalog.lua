@@ -22,12 +22,16 @@ local Catalog = {
 local overrides = {
 	Gun = {Rainbow = "Legendary", Black = "Uncommon", White = "Uncommon", Cyan = "Uncommon",
 		Mint = "Uncommon", Lime = "Uncommon", Pink = "Uncommon"},
-	Rope = {Rainbow = "Legendary", Black = "Uncommon", White = "Uncommon", Cyan = "Uncommon",
+	Rope = {Rainbow = "Legendary", Chain = "Rare", Black = "Uncommon", White = "Uncommon", Cyan = "Uncommon",
 		Mint = "Uncommon", Lime = "Uncommon", Pink = "Uncommon"},
 	Bomb = {Rainbow = "Legendary", Black = "Uncommon", White = "Uncommon",
 		Mint = "Uncommon", Pink = "Uncommon"},
 }
+for name in pairs(Palettes.NeonRopes) do overrides.Rope[name] = "Epic" end
 local ranks = {}
+function Catalog.Id(kind, name)
+	return tostring(kind) .. "_" .. string.gsub(tostring(name), "%s+", "")
+end
 for rank, rarity in ipairs(Catalog.Rarities) do
 	ranks[rarity.Name] = rank
 	Catalog.Pools[rarity.Name] = {}
@@ -44,7 +48,7 @@ for _, kind in ipairs({"Gun", "Rope", "Bomb"}) do
 	table.sort(names)
 	for _, name in ipairs(names) do
 		local item = {
-			Id = kind .. "_" .. name, Kind = kind, Name = name,
+			Id = Catalog.Id(kind, name), Kind = kind, Name = name,
 			Rarity = overrides[kind][name] or "Common",
 			Starter = Catalog.Defaults[kind] == name,
 			Color = Palettes.Swatches[kind][name] or Color3.new(1, 1, 1),
@@ -84,6 +88,18 @@ function Catalog.NormalizeCosmetics(owned)
 			owned[legacyId] = nil
 		end
 	end
+	local oldNeonLime = math.max(Catalog.Quantity(owned.Rope_NeonLime), Catalog.Quantity(owned["Rope_Neon Lime"]))
+	if oldNeonLime > 0 then
+		owned.Rope_NeonGreen = math.max(Catalog.Quantity(owned.Rope_NeonGreen), oldNeonLime)
+	end
+	owned.Rope_NeonLime = nil
+	owned["Rope_Neon Lime"] = nil
+	for name in pairs(Palettes.NeonRopes) do
+		local legacyId, id = "Rope_" .. name, Catalog.Id("Rope", name)
+		local legacyCopies = Catalog.Quantity(owned[legacyId])
+		if legacyCopies > 0 then owned[id] = math.max(Catalog.Quantity(owned[id]), legacyCopies) end
+		owned[legacyId] = nil
+	end
 	return owned
 end
 
@@ -93,7 +109,7 @@ function Catalog.Copies(player, kind, name)
 	if name == "Gold" and Catalog.ById[tostring(kind) .. "_Gold"] then
 		return player:GetAttribute("TestPass_VIP") == true and 1 or 0
 	end
-	local item = Catalog.ById[tostring(kind) .. "_" .. tostring(name)]
+	local item = Catalog.ById[Catalog.Id(kind, name)]
 	if not item then return 0 end
 	return item.Starter and 1 or Catalog.Quantity(player:GetAttribute("Owned_" .. item.Id))
 end

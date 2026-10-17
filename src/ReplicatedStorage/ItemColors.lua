@@ -28,10 +28,26 @@ local function gunRopePalette()
 	}
 end
 palettes.Gun, palettes.Rope = gunRopePalette(), gunRopePalette()
+palettes.Rope.Chain = Color3.fromRGB(184, 184, 184)
 for _, target in ipairs({"Gun", "Rope"}) do
 	for name, color in pairs(palettes[target]) do
 		if not palettes.Swatches[target][name] then palettes.Swatches[target][name] = color end
 	end
+end
+-- Neon rope beams have their own colors; icons retain the regular rope swatches.
+palettes.NeonRopes = {}
+for _, entry in ipairs({
+	{"Red", "Red", 255, 53, 53}, {"Orange", "Orange", 255, 86, 52},
+	{"Yellow", "Yellow", 255, 140, 46}, {"Green", "Green", 50, 249, 50},
+	{"Blue", "Blue", 49, 49, 255}, {"Purple", "Purple", 95, 52, 239},
+	{"Pink", "Pink", 255, 44, 209}, {"Cyan", "Cyan", 39, 218, 254},
+	{"Mint", "Mint", 67, 255, 89},
+}) do
+	local baseName = entry[2]
+	local name = "Neon " .. entry[1]
+	palettes.NeonRopes[name] = baseName
+	palettes.Rope[name] = Color3.fromRGB(entry[3], entry[4], entry[5])
+	palettes.Swatches.Rope[name] = palettes.Swatches.Rope[baseName]
 end
 -- Shared names use the gun and rope card. Bomb-only cards stay. Part colors stay on palettes.Bomb.
 for name, color in pairs(palettes.Swatches.Gun) do
@@ -39,7 +55,7 @@ for name, color in pairs(palettes.Swatches.Gun) do
 end
 -- Use a softer jade swatch for the icon; the in-game bomb stays neon.
 palettes.Swatches.Bomb.Mint = Color3.fromRGB(32, 205, 137)
-palettes.Order = {"Black", "White", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Cyan", "Mint", "Gray", "Lime", "Brown", "Gold"}
+palettes.Order = {"Black", "White", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Cyan", "Mint", "Gray", "Lime", "Brown", "Chain", "Neon Red", "Neon Orange", "Neon Yellow", "Neon Green", "Neon Blue", "Neon Purple", "Neon Pink", "Neon Cyan", "Neon Mint", "Gold"}
 -- Four close golds. Gun and rope shift through these the way rainbow shifts hues.
 palettes.GoldStops = {
 	Color3.fromRGB(176, 108, 24),

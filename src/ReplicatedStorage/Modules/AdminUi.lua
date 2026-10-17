@@ -93,6 +93,7 @@ local function profileText(profile)
 		profile.online and "In this server" or "Offline",
 		profile.admin and "Admin" or "Not an admin",
 		"Coins  " .. tostring(profile.coins or 0) .. " held, " .. tostring(profile.coinsEarned or 0) .. " lifetime",
+		"Robux spent (tracked)  " .. tostring(profile.robuxSpent or 0),
 		"Kills  " .. tostring(profile.kills or 0),
 		"Played  " .. formatTime(profile.playedSeconds),
 		"Hook Speed  rank " .. tostring(profile.speed or 0),
@@ -299,7 +300,7 @@ function M.Mount(screen, onOpen)
 			end
 		end)
 	end
-	local colorName = field(colorPage, "Color", "Red, Gold, Rainbow, Mint", 3)
+	local colorName = field(colorPage, "Color", "Red, Neon Red, Rainbow, Mint", 3)
 	local applyColor = actionButton(colorPage, "Apply", "Give Cosmetic", 4, GREEN)
 	make("TextLabel", colorPage, {
 		BackgroundTransparency = 1,
@@ -313,7 +314,7 @@ function M.Mount(screen, onOpen)
 	local serverPage = addPage("server")
 	local serverList = make("ScrollingFrame", serverPage, {
 		Name = "Players", BackgroundColor3 = Style.Ink, BackgroundTransparency = 0.28, BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 148), LayoutOrder = 1, ScrollBarThickness = 4,
+		Size = UDim2.new(1, 0, 0, 100), LayoutOrder = 1, ScrollBarThickness = 4,
 		ScrollBarImageColor3 = MUTED,
 		CanvasSize = UDim2.fromOffset(0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
@@ -347,7 +348,7 @@ function M.Mount(screen, onOpen)
 		BackgroundColor3 = FIELD, BorderSizePixel = 0, TextColor3 = INK,
 		Font = Enum.Font.GothamBold, TextSize = 15,
 		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
-		Size = UDim2.new(1, 0, 0, 92), LayoutOrder = 3, ClipsDescendants = true,
+		Size = UDim2.new(1, 0, 0, 140), LayoutOrder = 3, ClipsDescendants = true,
 	})
 	corner(serverStats, 6)
 	outlineField(serverStats)
@@ -497,6 +498,7 @@ function M.Mount(screen, onOpen)
 			tostring(profile.displayName or "Player") .. " (@" .. tostring(profile.username or "Unknown") .. ")",
 			profile.online and "In this server" or "Offline",
 			"Coins  " .. tostring(profile.coins or 0) .. " held, " .. tostring(profile.coinsEarned or 0) .. " lifetime",
+			"Robux spent (tracked)  " .. tostring(profile.robuxSpent or 0),
 			"Kills  " .. tostring(profile.kills or 0) .. "    Played  " .. formatTime(profile.playedSeconds),
 			"Speed rank " .. tostring(profile.speed or 0) .. "   Distance " .. tostring(profile.distance or 0),
 			"Duration rank " .. tostring(profile.duration or 0) .. "   Resistance " .. tostring(profile.resistance or 0),

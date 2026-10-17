@@ -6,6 +6,9 @@
 
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local PlaySound = require(ReplicatedStorage.Modules:WaitForChild("PlaySound"))
 
 local DAMAGE = 30
 local ONE_TAP_DAMAGE = 1000
@@ -53,8 +56,16 @@ local function damageHumanoid(humanoid: Humanoid, lavaBrick: BasePart)
 		humanoid:SetAttribute("DeathCause", "Lava")
 		marked = true
 	end
+	local healthBefore = humanoid.Health
 	humanoid:TakeDamage(amount)
 	if marked and humanoid.Health > 0 then humanoid:SetAttribute("DeathCause", nil) end
+	if humanoid.Health < healthBefore then
+		local character = humanoid.Parent
+		if character and Players:GetPlayerFromCharacter(character) then
+			local soundPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
+			if soundPart then PlaySound(soundPart, "LavaDamage") end
+		end
+	end
 
 	local damageSound = lavaBrick:FindFirstChild("DamageSound")
 	if damageSound and damageSound:IsA("Sound") then damageSound:Play() end

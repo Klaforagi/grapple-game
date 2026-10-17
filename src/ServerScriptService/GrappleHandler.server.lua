@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local ServerStorage = game:GetService("ServerStorage")
+local StarterPack = game:GetService("StarterPack")
 
 local Config = require(ReplicatedStorage:WaitForChild("GrappleConfig"))
 local Upgrades = require(ReplicatedStorage.Modules:WaitForChild("UpgradeCatalog"))
@@ -70,6 +71,74 @@ local physicsSessions = {}
 local nextPhysicsSession = 0
 local Palettes = require(ReplicatedStorage:WaitForChild("ItemColors"))
 local cosmeticColors = Palettes.Gun
+local CHAIN_TEXTURE = "rbxassetid://18383765441"
+local ROPE_STYLE_ATTRIBUTE = "DefaultRopeStyleSaved"
+local ropeTransparencyDefaults = setmetatable({}, {__mode = "k"})
+
+local function defaultRopeBeamStyle(beam: Beam)
+	local template = StarterPack:FindFirstChild(Config.toolName)
+	local templateBeam = template and template:FindFirstChild("Rope", true)
+	local source = templateBeam and templateBeam:IsA("Beam") and templateBeam or beam
+	local transparency = ropeTransparencyDefaults[beam]
+	if not transparency then
+		local saved = beam:GetAttribute("DefaultRopeTransparency")
+		transparency = source ~= beam and source.Transparency
+			or saved ~= nil and NumberSequence.new(saved) or beam.Transparency
+		ropeTransparencyDefaults[beam] = transparency
+		beam:SetAttribute("DefaultRopeTransparency", transparency.Keypoints[1].Value)
+	end
+	if beam:GetAttribute(ROPE_STYLE_ATTRIBUTE) then
+		local brightness = beam:GetAttribute("DefaultRopeBrightness")
+		if brightness == nil then
+			brightness = source.Brightness
+			beam:SetAttribute("DefaultRopeBrightness", brightness)
+		end
+		return {
+			Texture = beam:GetAttribute("DefaultRopeTexture"),
+			TextureLength = beam:GetAttribute("DefaultRopeTextureLength"),
+			Width0 = beam:GetAttribute("DefaultRopeWidth0"),
+			Width1 = beam:GetAttribute("DefaultRopeWidth1"),
+			Brightness = brightness,
+			Transparency = transparency,
+		}
+	end
+	-- A live tool may already have Chain's settings after a script restart. The
+	-- StarterPack tool is the untouched source for its regular beam appearance.
+	local defaults
+	if source.Texture == CHAIN_TEXTURE then
+		-- Also handle tools supplied without a pristine StarterPack template.
+		defaults = {Texture = "", TextureLength = 1, Width0 = 0.1, Width1 = 0.1, Brightness = source.Brightness}
+	else
+		defaults = {
+			Texture = source.Texture, TextureLength = source.TextureLength,
+			Width0 = source.Width0, Width1 = source.Width1, Brightness = source.Brightness,
+		}
+	end
+	beam:SetAttribute("DefaultRopeTexture", defaults.Texture)
+	beam:SetAttribute("DefaultRopeTextureLength", defaults.TextureLength)
+	beam:SetAttribute("DefaultRopeWidth0", defaults.Width0)
+	beam:SetAttribute("DefaultRopeWidth1", defaults.Width1)
+	beam:SetAttribute("DefaultRopeBrightness", defaults.Brightness)
+	beam:SetAttribute(ROPE_STYLE_ATTRIBUTE, true)
+	defaults.Transparency = transparency
+	return defaults
+end
+
+local function applyRopeBeamStyle(beam: Beam, ropeName: string?)
+	local defaults = defaultRopeBeamStyle(beam)
+	local neon = Palettes.NeonRopes[ropeName] ~= nil
+	beam.Brightness = neon and 10 or ropeName == "Gold" and 1.25 or defaults.Brightness
+	beam.Transparency = defaults.Transparency
+	if ropeName == "Chain" then
+		beam.Texture = CHAIN_TEXTURE
+		beam.TextureLength = 6
+		beam.Width0, beam.Width1 = 4, 4
+	else
+		beam.Texture = defaults.Texture
+		beam.TextureLength = defaults.TextureLength
+		beam.Width0, beam.Width1 = defaults.Width0, defaults.Width1
+	end
+end
 
 local function applyCosmetics(player: Player, tool: Tool?)
 	if not tool then return end
@@ -96,6 +165,7 @@ local function applyCosmetics(player: Player, tool: Tool?)
 	local rainbow = ropeName == "Rainbow" or ropeName == "Gold"
 	local goldRope = ropeName == "Gold"
 	if beam and beam:IsA("Beam") then
+		applyRopeBeamStyle(beam, ropeName)
 		beam:SetAttribute("RainbowRope", rainbow)
 		beam:SetAttribute("RainbowPalette", goldRope and "Gold" or nil)
 		if ropeColor then beam:SetAttribute("SolidRopeColor", ropeColor) end
@@ -103,6 +173,11 @@ local function applyCosmetics(player: Player, tool: Tool?)
 	local activeState = Active[player]
 	local activeVisual = activeState and activeState.rope and activeState.rope:FindFirstChild("RopeVisual")
 	if activeVisual then
+		if beam and beam:IsA("Beam") then
+			for _, property in ipairs({"Texture", "TextureLength", "Width0", "Width1", "Brightness", "Transparency"}) do
+				activeVisual[property] = beam[property]
+			end
+		end
 		activeVisual:SetAttribute("RainbowRope", rainbow)
 		activeVisual:SetAttribute("RainbowPalette", goldRope and "Gold" or nil)
 		if ropeColor then activeVisual:SetAttribute("SolidRopeColor", ropeColor) end
@@ -1178,9 +1253,8 @@ handle:SetAttribute("RainbowPart", player:GetAttribute("BombColor") == "Rainbow"
 end
 
 -- Prepare the template too, before a Backpack clone can start its old scripts.
-local starterPack = game:GetService("StarterPack")
-starterPack.ChildAdded:Connect(function(tool) ToolSetup.Prepare(tool, true) end)
-for _, tool in ipairs(starterPack:GetChildren()) do ToolSetup.Prepare(tool, true) end
+StarterPack.ChildAdded:Connect(function(tool) ToolSetup.Prepare(tool, true) end)
+for _, tool in ipairs(StarterPack:GetChildren()) do ToolSetup.Prepare(tool, true) end
 Players.PlayerAdded:Connect(watchPlayer)
 for _, player in ipairs(Players:GetPlayers()) do watchPlayer(player) end
 

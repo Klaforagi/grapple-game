@@ -15,8 +15,8 @@ return function(sources)
 	local player = {attributes = {}}
 	function player:GetAttribute(key) return self.attributes[key] end
 	local count, total = catalog.Count(player)
-	assert(count == 3 and total == 45, "starter/collection count changed: " .. total)
-	for kind, expectedTotal in pairs({All = 45, Gun = 16, Rope = 16, Bomb = 13}) do
+	assert(count == 3 and total == 55, "starter/collection count changed: " .. total)
+	for kind, expectedTotal in pairs({All = 55, Gun = 16, Rope = 26, Bomb = 13}) do
 		local owned, available = catalog.Count(player, kind)
 		assert(owned == (kind == "All" and 3 or 1) and available == expectedTotal, "incorrect tab count for " .. kind)
 	end
@@ -28,6 +28,31 @@ return function(sources)
 		assert(catalog.ById[kind .. "_Gold"].Rarity == "Legendary" and catalog.ById[kind .. "_Gold"].Vip)
 	end
 	assert(catalog.ById.Gun_Cyan.Rarity == "Uncommon" and catalog.ById.Rope_Cyan.Rarity == "Uncommon")
+	assert(catalog.ById.Rope_Chain.Rarity == "Rare" and catalog.ById.Rope_Chain.Color == palettes.Rope.Chain)
+	assert(#catalog.Pools.Rare == 1 and catalog.Pools.Rare[1] == catalog.ById.Rope_Chain)
+	local neonColors = {
+		["Neon Red"] = {255, 53, 53}, ["Neon Orange"] = {255, 86, 52},
+		["Neon Yellow"] = {255, 140, 46}, ["Neon Green"] = {50, 249, 50},
+		["Neon Blue"] = {49, 49, 255}, ["Neon Purple"] = {95, 52, 239},
+		["Neon Pink"] = {255, 44, 209}, ["Neon Cyan"] = {39, 218, 254},
+		["Neon Mint"] = {67, 255, 89},
+	}
+	assert(#catalog.Pools.Epic == 9 and catalog.ById.Rope_NeonLime == nil, "expected nine Epic Neon ropes")
+	for neonName, baseName in pairs(palettes.NeonRopes) do
+		local item = catalog.ById[catalog.Id("Rope", neonName)]
+		local expected = assert(neonColors[neonName])
+		assert(item and item.Rarity == "Epic" and not item.Starter)
+		assert(not string.find(item.Id, " ", 1, true), "Neon item ID cannot be used as a Roblox attribute")
+		assert(item.Color == catalog.ById["Rope_" .. baseName].Color, "Neon rope icon changed")
+		for index = 1, 3 do assert(palettes.Rope[neonName][index] == expected[index], "Neon beam color changed") end
+	end
+	local legacyNeon = { ["Rope_Neon Red"] = 2 }
+	catalog.NormalizeCosmetics(legacyNeon)
+	assert(legacyNeon.Rope_NeonRed == 2 and legacyNeon["Rope_Neon Red"] == nil, "old Neon copies were not migrated")
+	local legacyLime = {Rope_NeonLime = 2, ["Rope_Neon Lime"] = 3, Rope_NeonGreen = 1}
+	catalog.NormalizeCosmetics(legacyLime)
+	assert(legacyLime.Rope_NeonGreen == 3 and legacyLime.Rope_NeonLime == nil and legacyLime["Rope_Neon Lime"] == nil,
+		"Neon Lime copies were not renamed to Neon Green")
 	assert(catalog.ById.Bomb_Cyan.Rarity == "Common" and catalog.ById.Bomb_Cyan.Starter)
 	assert(catalog.ById.Bomb_Mint.Color == palettes.Swatches.Bomb.Mint and catalog.ById.Bomb_Mint.Color ~= palettes.Bomb.Mint,
 		"mint bomb icon should use the softer jade swatch")
@@ -66,17 +91,18 @@ return function(sources)
 		end, NextInteger = function(_, first, last) return pickLast and last or first end}
 	end
 	assert(catalog.Roll(random({0.00499})).Rarity == "Legendary")
-	assert(catalog.Roll(random({0.005, 0.34999})).Rarity == "Uncommon")
-	assert(catalog.Roll(random({0.005, 0.35})).Rarity == "Common")
-	assert(catalog.Roll(random({0.009, 0.9})).Rarity == "Common", "base luck treated 0.009 as legendary")
+	assert(catalog.Roll(random({0.005, 0.01, 0.1, 0.34999})).Rarity == "Uncommon")
+	assert(catalog.Roll(random({0.005, 0.01, 0.1, 0.35})).Rarity == "Common")
+	assert(catalog.Roll(random({0.5, 0.5, 0.099})).Id == "Rope_Chain")
+	assert(catalog.Roll(random({0.009, 0.9, 0.9, 0.9})).Rarity == "Common", "base luck treated 0.009 as legendary")
 	assert(catalog.Roll(random({0.009}), 2).Rarity == "Legendary", "2x luck did not double the legendary check")
-	assert(catalog.Roll(random({0.02, 0.5}), 2).Rarity == "Common", "2x luck incorrectly boosted the uncommon check")
-	assert(catalog.Roll(random({0.9, 0.9}, true)) == catalog.Pools.Common[#catalog.Pools.Common], "last pool entry unreachable")
+	assert(catalog.Roll(random({0.02, 0.5, 0.5, 0.5}), 2).Rarity == "Common", "2x luck incorrectly boosted the uncommon check")
+	assert(catalog.Roll(random({0.9, 0.9, 0.9, 0.9}, true)) == catalog.Pools.Common[#catalog.Pools.Common], "last pool entry unreachable")
 	local tiers, odds = catalog.Odds()
 	assert(math.abs(tiers.Legendary - 0.005) < 1e-10)
-	assert(tiers.Epic == 0 and tiers.Rare == 0)
-	assert(math.abs(tiers.Uncommon - 0.34825) < 1e-10)
-	assert(math.abs(tiers.Common - 0.64675) < 1e-10)
+	assert(math.abs(tiers.Epic - 0.00995) < 1e-10 and math.abs(tiers.Rare - 0.098505) < 1e-10)
+	assert(math.abs(tiers.Uncommon - 0.31029075) < 1e-10)
+	assert(math.abs(tiers.Common - 0.57625425) < 1e-10)
 	local sum = 0
 	for id, chance in pairs(odds) do
 		sum += chance
@@ -95,13 +121,10 @@ return function(sources)
 	assert(catalog.Inside(plate, {X = 6, Y = 0, Z = 0}, catalog.ServerPadding), "server padding rejected the zone edge")
 	assert(not catalog.Inside(plate, {X = 0, Y = 8, Z = 0}), "high above the zone counted as standing on it")
 	assert(math.abs(odds.Gun_Rainbow - 0.005 / 3) < 1e-10)
-	-- Future populated tiers use the same independent highest-first checks.
-	local epic, rare = {Rarity = "Epic"}, {Rarity = "Rare"}
-	table.insert(catalog.Pools.Epic, epic) table.insert(catalog.Pools.Rare, rare)
-	assert(catalog.Roll(random({0.5, 0.009})) == epic)
-	assert(catalog.Roll(random({0.5, 0.01, 0.099})) == rare)
+	-- Epic and Rare pools use the same independent highest-first checks.
+	assert(catalog.Roll(random({0.5, 0.009})) == catalog.Pools.Epic[1])
+	assert(catalog.Roll(random({0.5, 0.01, 0.099}, true)) == catalog.Pools.Rare[#catalog.Pools.Rare])
 	assert(catalog.Roll(random({0.5, 0.01, 0.1, 0.349})).Rarity == "Uncommon")
-	table.clear(catalog.Pools.Epic) table.clear(catalog.Pools.Rare)
 	for _, rarity in ipairs({"Common", "Uncommon", "Legendary"}) do
 		local item = catalog.Pools[rarity][1]
 		local request = {id = rarity, itemId = item.Id}

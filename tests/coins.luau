@@ -1,7 +1,10 @@
 return function(source, cosmeticCatalog, cosmeticTransaction)
 	local now, saved, heartbeat, leaving, shutdown = 0, nil, nil, nil, nil
 	local player = {Name = "CoinTester", UserId = 77, attributes = {}}
-	function player:SetAttribute(key, value) self.attributes[key] = value end
+	function player:SetAttribute(key, value)
+		assert(not string.find(key, " ", 1, true), "Roblox rejects spaces in attribute names")
+		self.attributes[key] = value
+	end
 	function player:GetAttribute(key) return self.attributes[key] end
 	local players = {PlayerAdded = {Connect = function() end},
 		PlayerRemoving = {Connect = function(_, fn) leaving = fn end}}
@@ -165,8 +168,14 @@ return function(source, cosmeticCatalog, cosmeticTransaction)
 	assert(sale.OnInvoke(player, item.Id, "sale-5").ok and saved.coins == 721 and saved.cosmetics[item.Id] == 1,
 		"ambiguous sale retry paid twice")
 	assert(sale.OnInvoke(player, item.Id, "sale-6").ok and saved.coins == 731 and saved.cosmetics[item.Id] == 0)
+	saved.cosmetics["Rope_Neon Red"] = 2
+	saved.cosmetics.Rope_NeonLime = 1
 	leaving(player)
 	player.attributes = {}
 	boot()
 	assert(player.attributes.Coins == 731 and player.attributes["Owned_" .. item.Id] == 0, "rejoin restored sold copies or lost proceeds")
+	assert(player.attributes.Owned_Rope_NeonRed == 2 and saved.cosmetics["Rope_Neon Red"] == nil,
+		"legacy Neon copies were not published with a safe attribute name")
+	assert(player.attributes.Owned_Rope_NeonGreen == 1 and saved.cosmetics.Rope_NeonLime == nil,
+		"Neon Lime copies were not migrated to Neon Green")
 end

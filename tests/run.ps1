@@ -53,6 +53,9 @@ $sources = @{
     killTests = 'tests/kills.luau'
     hourly = 'src/ReplicatedStorage/Modules/HourlyRewards.lua'
     hourlyTests = 'tests/hourly.luau'
+    robuxSpending = 'src/ServerScriptService/RobuxSpending.server.lua'
+    robuxSpendingTests = 'tests/robuxspending.luau'
+    shop = 'src/ServerScriptService/Shop.server.lua'
 }
 $bundle = 'local sources = {}' + [Environment]::NewLine
 foreach ($key in $sources.Keys) {
