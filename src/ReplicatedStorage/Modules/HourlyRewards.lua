@@ -7,7 +7,7 @@ Hourly.Tiers = {
 	{minutes = 15, coins = 15},
 	{minutes = 30, coins = 25},
 	{minutes = 45, coins = 35},
-	{minutes = 60, coins = 65},
+	{minutes = 60, coins = 65, tickets = 1},
 }
 
 function Hourly.Cap()

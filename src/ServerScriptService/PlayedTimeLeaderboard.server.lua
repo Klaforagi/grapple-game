@@ -3,6 +3,7 @@ local DataStoreService = game:GetService("DataStoreService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
+local IS_STUDIO = RunService:IsStudio()
 
 local PAGE_SIZE = 100
 local SAVE_EVERY = 60
@@ -36,6 +37,7 @@ local function shortName(name)
 end
 
 local function currentSession(state)
+	if IS_STUDIO then return 0 end
 	return math.max(0, math.floor(os.clock() - state.started))
 end
 

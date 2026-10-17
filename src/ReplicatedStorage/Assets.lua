@@ -3,6 +3,7 @@ return {
 	Settings = "rbxassetid://15652354559",
 	Codex = "rbxassetid://127110909372919",
 	Coins = "rbxassetid://137097999028880",
+	RollTickets = "rbxassetid://89962451311218",
 	Shop = "rbxassetid://125802850445187",
 	Upgrades = "rbxassetid://75622516233535",
 	Inventory = "rbxassetid://84744522449588",
@@ -10,6 +11,7 @@ return {
 	Gun = "rbxassetid://123492124131940",
 	Rope = "rbxassetid://101453331330750",
 	Bomb = "rbxassetid://90880415826748",
+	CartoonBomb = "rbxassetid://79716487147399",
 	-- Stored for a future trade button. No trade control uses it yet.
 	Trade = "rbxassetid://84944388732041",
 }

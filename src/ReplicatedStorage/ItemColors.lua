@@ -13,6 +13,7 @@ local palettes = {Gun = originalPalette(), Rope = originalPalette(), Bomb = {
 	Pink = Color3.fromRGB(240, 70, 255), White = Color3.fromRGB(255, 255, 255), Black = Color3.fromRGB(0, 0, 0),
 	Cyan = Color3.fromRGB(0, 174, 255), Mint = Color3.fromRGB(34, 245, 94),
 	Banana = Color3.fromRGB(255, 255, 0), Gold = Color3.fromRGB(232, 164, 38),
+	["Cartoon Bomb"] = Color3.fromRGB(94, 83, 98),
 }}
 -- Backward-compatible lookup for saved selections from before Mint was added.
 palettes.Bomb.Teal = palettes.Bomb.Mint

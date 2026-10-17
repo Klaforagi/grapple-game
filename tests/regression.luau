@@ -780,6 +780,7 @@ return function(sources)
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
 	assert(gun:GetAttribute("WallMode") == true, "duplicate X handlers cancelled target mode")
+	wall.Name = "Window"
 	world.Raycast = function() return {Instance = wall, Position = V.new(0, 0, 100)} end
 	now += 0.2
 	remotes.FireGrapple.OnServerEvent:Emit(attacker, V.new(0, 0, 100), V.new(0, 0, -100))
@@ -787,6 +788,7 @@ return function(sources)
 	local firePoint = assert(gun:FindFirstChild("FirePoint", true))
 	assert(wallRope.Attachment0 == firePoint, "wall rope did not originate at the gun")
 	assert(wallRope:GetAttribute("WallGrapple") == true, "wall rope was not marked for the longer reel")
+	wall.Name = "Wall"
 	remotes.ToggleWallMode.OnServerEvent:Emit(attacker)
 	assert(gun:GetAttribute("WallMode") == true, "wall mode changed during a shot")
 	attackerRoot.AssemblyLinearVelocity = V.new(12, 0, 0)
@@ -1127,10 +1129,18 @@ return function(sources)
 		end,
 	}
 	local clickedPoint = V.new(7, 3, 100)
+	local window = instance("Part", "Window", world)
+	local skippedWindow = false
 	world.Raycast = function(_, _, direction, params)
 		services.aimSpan = direction.Magnitude
 		assert(params.FilterDescendantsInstances[1] == attacker.Character, "aim ray must exclude own character")
-		return {Position = clickedPoint}
+		for _, ignored in ipairs(params.FilterDescendantsInstances) do
+			if ignored == window then
+				skippedWindow = true
+				return {Instance = wall, Position = clickedPoint}
+			end
+		end
+		return {Instance = window, Position = V.new(0, 0, 5)}
 	end
 	env.Enum.UserInputType = {MouseButton1 = "MouseButton1", Keyboard = "Keyboard"}
 	local toolClient = execute(sources.tool)
@@ -1142,6 +1152,7 @@ return function(sources)
 	assert(#remotes.FireGrapple.sent == 1, "mouse fallback duplicated or missed shot")
 	assert(aimPixels[1] == 100 and aimPixels[2] == 100, "mouse pixel changed during ray conversion")
 	assert(remotes.FireGrapple.sent[1][1] == clickedPoint, "shot target differs from exact aim ray hit")
+	assert(skippedWindow, "aim ray targeted a Window part instead of the surface behind it")
 	assert(math.abs(services.aimSpan - config.aimRayLength) < 0.001, "aim ray was shortened to the hook range")
 	input.InputBegan:Emit({UserInputType = "Keyboard", KeyCode = "W"}, false)
 	assert(#remotes.FireGrapple.sent == 1, "movement fired the gun")

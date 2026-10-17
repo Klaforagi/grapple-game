@@ -58,17 +58,53 @@ local function bananaPart(name)
 	return part
 end
 
+local function cartoonVisual(anchor, followsCast)
+	local templates = Storage:FindFirstChild("Templates")
+	local template = templates and (templates:FindFirstChild("Cartoon Bomb") or templates:FindFirstChild("CartoonBomb"))
+	local main = template and template:FindFirstChild("Main", true)
+	if not template or not template:IsA("Model") or not main or not main:IsA("BasePart") then
+		warn("[Bomb] Missing Model with a Main part in ReplicatedStorage.Templates.Cartoon Bomb")
+		return nil
+	end
+	local visual = template:Clone()
+	local visualMain = visual:FindFirstChild("Main", true)
+	local originalMain = visualMain.CFrame
+	local pivotOffset = originalMain:ToObjectSpace(visual:GetPivot())
+	local transparencies = {}
+	for _, part in ipairs(visual:GetDescendants()) do
+		if part:IsA("BasePart") then
+			transparencies[part] = part.Transparency
+			part.Anchored, part.CanCollide, part.CanTouch, part.CanQuery, part.Massless = followsCast, false, false, false, true
+			if not followsCast then
+				part.CFrame = anchor.CFrame * originalMain:ToObjectSpace(part.CFrame)
+				local weld = Instance.new("WeldConstraint")
+				weld.Part0, weld.Part1 = anchor, part
+				weld.Parent = part
+			end
+		end
+	end
+	visual.Name = "CartoonBombVisual"
+	visual.Parent = anchor
+	if followsCast then visual:PivotTo(anchor.CFrame * pivotOffset) end
+	return visual, visualMain, transparencies, pivotOffset
+end
+
 local function hideUntilReady(tool, readyAt)
 	local parts = coolingTools[tool] and coolingTools[tool].parts or {}
+	local effects = coolingTools[tool] and coolingTools[tool].effects or {}
 	for _, part in ipairs(tool:GetDescendants()) do
 		if part:IsA("BasePart") or part:IsA("Decal") then
 			if parts[part] == nil then parts[part] = part.Transparency end
 			part.Transparency = 1
+		elseif part:IsA("ParticleEmitter") or part:IsA("Trail") or part:IsA("Beam") then
+			if effects[part] == nil then effects[part] = part.Enabled end
+			part.Enabled = false
+			if part:IsA("ParticleEmitter") then part:Clear() end
 		end
 	end
 	tool.Enabled = false
 	tool:SetAttribute("BombCoolingDown", true)
-	coolingTools[tool] = {readyAt = readyAt, parts = parts}
+	coolingTools[tool] = {readyAt = readyAt, parts = parts, effects = effects}
 end
 
 local function giveBomb(player, character)
@@ -99,10 +135,11 @@ local function giveBomb(player, character)
 	handle:SetAttribute("RainbowPart", colorName == "Rainbow" or colorName == "Gold")
 	handle.CanCollide, handle.CanTouch, handle.CanQuery, handle.Massless = false, false, false, true
 	handle.Parent = tool
-	local banana
+	local banana, cartoon, cartoonTransparencies, cartoonEffects
 	local function refreshSkin()
 		local skin = player:GetAttribute("BombColor")
 		local selected = skin == "Banana"
+		local cartoonSelected = skin == "Cartoon Bomb"
 		handle:SetAttribute("RainbowPalette", skin == "Gold" and "Gold" or "Bomb")
 		handle:SetAttribute("RainbowPart", skin == "Rainbow" or skin == "Gold")
 		local solidColor = bombColors[skin]
@@ -123,15 +160,42 @@ local function giveBomb(player, character)
 			banana:Destroy()
 			banana = nil
 		end
+		if cartoonSelected and not cartoon then
+			cartoon, _, cartoonTransparencies = cartoonVisual(handle)
+			if cartoon then
+				cartoonEffects = {}
+				for _, effect in ipairs(cartoon:GetDescendants()) do
+					if effect:IsA("ParticleEmitter") or effect:IsA("Trail") or effect:IsA("Beam") then
+						cartoonEffects[effect] = effect.Enabled
+					end
+				end
+			end
+		elseif not cartoonSelected and cartoon then
+			cartoon:Destroy()
+			cartoon, cartoonTransparencies, cartoonEffects = nil, nil, nil
+		end
 		local cooling = tool:GetAttribute("BombCoolingDown") == true
-		handle.Transparency = (banana or cooling) and 1 or 0
+		handle.Transparency = (banana or cartoon or cooling) and 1 or 0
 		if banana then banana.Transparency = cooling and 1 or 0 end
+		if cartoonTransparencies then
+			for part, transparency in pairs(cartoonTransparencies) do
+				if part.Parent then part.Transparency = cooling and 1 or transparency end
+			end
+		end
+		if cartoonEffects then
+			for effect, enabled in pairs(cartoonEffects) do
+				if effect.Parent then
+					effect.Enabled = not cooling and enabled
+					if cooling and effect:IsA("ParticleEmitter") then effect:Clear() end
+				end
+			end
+		end
 	end
 	local skinConnection = player:GetAttributeChangedSignal("BombColor"):Connect(refreshSkin)
 	tool.Destroying:Connect(function() skinConnection:Disconnect() end)
 	tool:GetAttributeChangedSignal("BombCoolingDown"):Connect(refreshSkin)
 	handle:GetPropertyChangedSignal("Transparency"):Connect(function()
-		if banana and handle.Transparency ~= 1 then handle.Transparency = 1 end
+		if (banana or cartoon) and handle.Transparency ~= 1 then handle.Transparency = 1 end
 	end)
 	refreshSkin()
 	tool.Parent = backpack
@@ -190,11 +254,18 @@ local function canStick(state, bomb, hit)
 	return true
 end
 
+local function updateCartoonVisual(state)
+	if state.visual and state.visual.Parent then
+		state.visual:PivotTo(state.bomb.CFrame * state.visualPivotOffset)
+	end
+end
+
 local function stick(bomb, state, hit, position)
 	if not canStick(state, bomb, hit) then return false end
 	state.stuck = true
 	bomb.AssemblyLinearVelocity, bomb.AssemblyAngularVelocity = Vector3.zero, Vector3.zero
 	if position then bomb.Position = position end
+	updateCartoonVisual(state)
 	bomb.CanCollide, bomb.CanTouch, bomb.Massless = false, false, true
 	if hit:IsA("Terrain") then
 		bomb.Anchored = true
@@ -214,6 +285,7 @@ bombCaster.LengthChanged:Connect(function(cast, lastPoint, rayDirection, rayDisp
 	if not state or state.cleaned or state.stuck or not bomb or not bomb.Parent then return end
 	-- FastCast simulates the trajectory; the anchored sphere is only its visual.
 	bomb.Position = lastPoint + rayDirection * rayDisplacement
+	updateCartoonVisual(state)
 end)
 
 bombCaster.RayHit:Connect(function(cast, result)
@@ -377,6 +449,8 @@ end
 
 local function explode(bomb, position, attacker, when)
 	-- Remove the sticky weld before any victim is ragdolled/launched.
+	local fuse = bomb:FindFirstChild("FuseSound", true)
+	if fuse and fuse:IsA("Sound") then fuse:Stop() end
 	local cycling = bomb:GetAttribute("RainbowPart") == true
 	local palette = bomb:GetAttribute("RainbowPalette")
 	local bombColor = cycling and bombPaint(palette == "Gold" and "Gold" or "Rainbow")
@@ -528,6 +602,9 @@ Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 		if banana then bomb:Destroy() bomb = banana end
 		bomb:SetAttribute("ExplosionColor", bombColors.Banana)
 	end
+	if colorName == "Cartoon Bomb" then
+		bomb:SetAttribute("ExplosionColor", Color3.fromRGB(255, 125, 28))
+	end
 	bomb:SetAttribute("RainbowPalette", colorName == "Gold" and "Gold" or "Bomb")
 	bomb:SetAttribute("RainbowPart", colorName == "Rainbow" or colorName == "Gold")
 	local handle = tool:FindFirstChild("Handle")
@@ -535,8 +612,28 @@ Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 	-- This is a cosmetic shell driven by FastCast, never a competing physics body.
 	bomb.Anchored, bomb.CanCollide, bomb.CanTouch, bomb.CanQuery = true, false, false, false
 	bomb.Parent = workspace
+	local visual, visualPivotOffset
+	if colorName == "Cartoon Bomb" then
+		local cartoonMain
+		visual, cartoonMain, _, visualPivotOffset = cartoonVisual(bomb, true)
+		if cartoonMain then
+			bomb.Transparency = 1
+			local sounds = Storage:FindFirstChild("Sounds")
+			local fuseTemplate = sounds and sounds:FindFirstChild("FuseSound", true)
+			if fuseTemplate and fuseTemplate:IsA("Sound") then
+				local fuse = fuseTemplate:Clone()
+				fuse.Looped = true
+				fuse.Parent = cartoonMain
+				fuse:Play()
+			end
+			TweenService:Create(cartoonMain, TweenInfo.new(math.max(0.1, Config.bombFuse - 0.05), Enum.EasingStyle.Linear), {
+				Color = Color3.fromRGB(255, 0, 0), Size = cartoonMain.Size * 1.12,
+			}):Play()
+		end
+	end
 	local state = {bomb = bomb, detonatesAt = now + Config.bombFuse,
-		character = character, player = player, connections = {}, filter = {bomb}, ignored = {}}
+		character = character, player = player, connections = {}, filter = {bomb}, ignored = {},
+		visual = visual, visualPivotOffset = visualPivotOffset}
 	protectThrower(bomb, state, character)
 	local backpack = player:FindFirstChildOfClass("Backpack")
 	if backpack then protectThrower(bomb, state, backpack) end
@@ -624,6 +721,9 @@ RunService.Heartbeat:Connect(function()
 			for part, transparency in pairs(state.parts) do
 				if part.Parent then part.Transparency = transparency end
 			end
+			for effect, enabled in pairs(state.effects) do
+				if effect.Parent then effect.Enabled = enabled end
+			end
 			tool.Enabled = true
 			tool:SetAttribute("BombCoolingDown", false)
 		end
@@ -634,6 +734,8 @@ RunService.Heartbeat:Connect(function()
 		elseif now >= state.detonatesAt then
 			cleanupBomb(bomb, state)
 			explode(bomb, bomb.Position, state.player, now)
+		elseif state.stuck then
+			updateCartoonVisual(state)
 		end
 	end
 end)

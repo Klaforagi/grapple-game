@@ -21,12 +21,12 @@ local function publish(player, session)
 	player:SetAttribute("HourlyClaimed", session.claimed)
 end
 
-local function pay(player, day, index, amount)
+local function pay(player, day, index, amount, tickets)
 	local grant = ReplicatedStorage:FindFirstChild("GrantCoins")
 	if not grant or type(grant.Invoke) ~= "function" then return false end
 	local purchaseId = string.format("hourly_%d_%d", day, index)
 	local ok, paid = pcall(function()
-		return grant:Invoke(player.UserId, amount, purchaseId)
+		return grant:Invoke(player.UserId, amount, purchaseId, tickets)
 	end)
 	return ok and paid == true
 end
@@ -40,7 +40,7 @@ local function claim(player, index)
 	-- Keep the tier labels at their base value; only the actual payout and gain
 	-- popup reflect the 2x Coins pass.
 	local amount = tier.coins * (player:GetAttribute("TestPass_2xCoins") == true and 2 or 1)
-	if not pay(player, session.day, index, amount) then return end
+	if not pay(player, session.day, index, amount, tier.tickets or 0) then return end
 	session.claimed = Hourly.Mark(session.claimed, index)
 	session.dirty = true
 	session.saveAt = 0

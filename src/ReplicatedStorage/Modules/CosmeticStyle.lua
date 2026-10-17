@@ -81,11 +81,13 @@ end
 
 function Style.Icon(parent, item)
 	local special = item.Name == "Rainbow" or item.Name == "Gold"
+	local cartoon = item.Kind == "Bomb" and item.Name == "Cartoon Bomb"
 	local neon = (item.Kind == "Rope" and Palettes.NeonRopes[item.Name] ~= nil)
 		or (item.Kind == "Gun" and Palettes.NeonGuns[item.Name] ~= nil)
 	local neonColor = neon and Palettes.NeonIconGlows[item.Name]
+	local neonWhiteMix = item.Kind == "Gun" and 0.45 or 0.8
 	if neon then
-		-- Colored outer glow around a near-white core, using the same rope image.
+		-- Colored outer glow around a bright core, using the item's icon image.
 		for _, layer in ipairs({
 			{Scale = 1.22, Transparency = 0.72},
 			{Scale = 1.09, Transparency = 0.42},
@@ -102,9 +104,9 @@ function Style.Icon(parent, item)
 	end
 	local image = make("ImageLabel", parent, {
 		Name = "CosmeticIcon", BackgroundTransparency = 1, BorderSizePixel = 0,
-		Size = UDim2.fromScale(1, 1), Image = Assets[item.Kind],
-		ImageColor3 = special and Color3.new(1, 1, 1)
-			or neon and neonColor:Lerp(Color3.new(1, 1, 1), 0.8) or item.Color,
+		Size = UDim2.fromScale(1, 1), Image = cartoon and Assets.CartoonBomb or Assets[item.Kind],
+		ImageColor3 = (special or cartoon) and Color3.new(1, 1, 1)
+			or neon and neonColor:Lerp(Color3.new(1, 1, 1), neonWhiteMix) or item.Color,
 		ScaleType = Enum.ScaleType.Fit, ZIndex = parent.ZIndex + (neon and 2 or 1),
 	})
 	if special then

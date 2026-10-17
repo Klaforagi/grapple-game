@@ -24,7 +24,7 @@ local overrides = {
 		Mint = "Uncommon", Lime = "Uncommon", Pink = "Uncommon"},
 	Rope = {Rainbow = "Legendary", Chain = "Rare", Black = "Uncommon", White = "Uncommon", Cyan = "Uncommon",
 		Mint = "Uncommon", Lime = "Uncommon", Pink = "Uncommon"},
-	Bomb = {Rainbow = "Legendary", Black = "Uncommon", White = "Uncommon",
+	Bomb = {Rainbow = "Legendary", ["Cartoon Bomb"] = "Legendary", Black = "Uncommon", White = "Uncommon",
 		Mint = "Uncommon", Pink = "Uncommon"},
 }
 for name in pairs(Palettes.NeonRopes) do overrides.Rope[name] = "Epic" end

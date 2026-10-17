@@ -93,6 +93,7 @@ local function profileText(profile)
 		profile.online and "In this server" or "Offline",
 		profile.admin and "Admin" or "Not an admin",
 		"Coins  " .. tostring(profile.coins or 0) .. " held, " .. tostring(profile.coinsEarned or 0) .. " lifetime",
+		"Roll Tickets  " .. tostring(profile.rollTickets or 0),
 		"Robux spent (tracked)  " .. tostring(profile.robuxSpent or 0),
 		"Kills  " .. tostring(profile.kills or 0),
 		"Played  " .. formatTime(profile.playedSeconds),
@@ -180,6 +181,9 @@ function M.Mount(screen, onOpen)
 		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
 		Size = UDim2.new(1, 0, 0, 40), LayoutOrder = 4,
 	})
+	local ticketUser = field(coinsPage, "TicketUserId", "User id", 5)
+	local ticketAmount = field(coinsPage, "TicketAmount", "Roll ticket amount", 6)
+	local giveTickets = actionButton(coinsPage, "GiveTickets", "Give Roll Tickets", 7, GREEN)
 
 	local lookupPage = addPage("lookup")
 	local lookupUser = field(lookupPage, "User", "User id or username", 1)
@@ -393,7 +397,7 @@ function M.Mount(screen, onOpen)
 		if name == "server" and refreshServer then refreshServer() end
 	end
 	for index, spec in ipairs({
-		{"coins", "Coins"}, {"lookup", "Lookup"}, {"ban", "Ban"}, {"reset", "Reset"}, {"colors", "Colors"}, {"server", "Server"},
+		{"coins", "Coins"}, {"lookup", "Lookup"}, {"ban", "Ban"}, {"reset", "Reset"}, {"colors", "Items"}, {"server", "Server"},
 	}) do
 		local button = Style.Button(tabRow, spec[2], UDim2.fromOffset(0, 0), UDim2.new(1 / 6, -5, 1, 0), index == 1 and TAB_ON or TAB)
 		button.Name = spec[1]
@@ -498,6 +502,7 @@ function M.Mount(screen, onOpen)
 			tostring(profile.displayName or "Player") .. " (@" .. tostring(profile.username or "Unknown") .. ")",
 			profile.online and "In this server" or "Offline",
 			"Coins  " .. tostring(profile.coins or 0) .. " held, " .. tostring(profile.coinsEarned or 0) .. " lifetime",
+			"Roll Tickets  " .. tostring(profile.rollTickets or 0),
 			"Robux spent (tracked)  " .. tostring(profile.robuxSpent or 0),
 			"Kills  " .. tostring(profile.kills or 0) .. "    Played  " .. formatTime(profile.playedSeconds),
 			"Speed rank " .. tostring(profile.speed or 0) .. "   Distance " .. tostring(profile.distance or 0),
@@ -514,6 +519,9 @@ function M.Mount(screen, onOpen)
 
 	give.Activated:Connect(function()
 		send("grant", {user = coinUser.Text, amount = coinAmount.Text})
+	end)
+	giveTickets.Activated:Connect(function()
+		send("grantTickets", {user = ticketUser.Text, amount = ticketAmount.Text})
 	end)
 	loadPlayer.Activated:Connect(function()
 		hideLookupFace()

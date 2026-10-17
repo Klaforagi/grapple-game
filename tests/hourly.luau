@@ -24,6 +24,7 @@ return function(source)
 	expect(hourly.Tiers[3].coins, 25, "30 minute coins")
 	expect(hourly.Tiers[4].coins, 35, "45 minute coins")
 	expect(hourly.Tiers[5].coins, 65, "60 minute coins")
+	expect(hourly.Tiers[5].tickets, 1, "60 minute ticket")
 	expect(hourly.Cap(), 3600, "cap")
 	print("Hourly rewards: noon reset, tier times, and coin amounts passed")
 end

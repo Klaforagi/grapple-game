@@ -62,7 +62,7 @@ local function claim(player)
 	local paid = false
 	if grant and type(grant.Invoke) == "function" then
 		local ok, result = pcall(function()
-			return grant:Invoke(player.UserId, amount, "daily_" .. day)
+			return grant:Invoke(player.UserId, amount, "daily_" .. day, Daily.Tickets[index])
 		end)
 		paid = ok and result == true
 	end

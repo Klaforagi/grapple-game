@@ -151,7 +151,10 @@ return function(sources)
 	assert(not catalog.Inside(plate, {X = 8, Y = 0, Z = 0}), "near the zone counted as inside")
 	assert(catalog.Inside(plate, {X = 6, Y = 0, Z = 0}, catalog.ServerPadding), "server padding rejected the zone edge")
 	assert(not catalog.Inside(plate, {X = 0, Y = 8, Z = 0}), "high above the zone counted as standing on it")
-	assert(math.abs(odds.Gun_Rainbow - 0.005 / 3) < 1e-10)
+	assert(catalog.ById.Bomb_CartoonBomb and catalog.ById.Bomb_CartoonBomb.Rarity == "Legendary",
+		"Cartoon Bomb was not added to the legendary roll pool")
+	assert(math.abs(odds.Gun_Rainbow - 0.005 / 4) < 1e-10)
+	assert(math.abs(odds.Bomb_CartoonBomb - 0.005 / 4) < 1e-10)
 	-- Epic and Rare pools use the same independent highest-first checks.
 	assert(catalog.Roll(random({0.5, 0.009})) == catalog.Pools.Epic[1])
 	assert(catalog.Roll(random({0.5, 0.01, 0.099}, true)) == catalog.Pools.Rare[#catalog.Pools.Rare])
@@ -180,6 +183,22 @@ return function(sources)
 	end
 	assert(transaction.Apply({coins = 49, cosmetics = {Gun_Rainbow = true}}, {id = "poor", itemId = "Gun_Rainbow"}, catalog) == nil,
 		"duplicate allowed a roll without full price")
+	local ticketRecord = transaction.Apply({coins = 0, earned = 0, rollTickets = 2},
+		{id = "ticket-1", itemId = "Gun_Rainbow"}, catalog)
+	assert(ticketRecord and ticketRecord.coins == 0 and ticketRecord.rollTickets == 1
+		and ticketRecord.lastCosmeticRoll.payment == "Ticket", "ticket did not take priority over coins")
+	transaction.Apply(ticketRecord, {id = "ticket-1", itemId = "Gun_Rainbow"}, catalog)
+	assert(ticketRecord.rollTickets == 1 and ticketRecord.cosmetics.Gun_Rainbow == 1,
+		"retried ticket roll charged or awarded twice")
+	ticketRecord = transaction.Apply(ticketRecord, {id = "ticket-2", itemId = "Gun_Rainbow"}, catalog)
+	assert(ticketRecord.rollTickets == 0 and ticketRecord.cosmetics.Gun_Rainbow == 2,
+		"second ticket roll did not stack its item")
+	assert(transaction.Apply(ticketRecord, {id = "ticket-3", itemId = "Gun_Rainbow"}, catalog) == nil,
+		"roll succeeded with no tickets or coins")
+	ticketRecord.coins = catalog.Cost
+	ticketRecord = transaction.Apply(ticketRecord, {id = "ticket-4", itemId = "Gun_Rainbow"}, catalog)
+	assert(ticketRecord.coins == 0 and ticketRecord.rollTickets == 0
+		and ticketRecord.lastCosmeticRoll.payment == "Coins", "coin fallback did not work after tickets ran out")
 	assert(transaction.Apply({coins = 100}, {id = "invalid", itemId = "Gun_Gray"}, catalog) == nil)
 	assert(transaction.Apply({coins = 100}, {id = "vip", itemId = "Gun_Gold"}, catalog) == nil)
 	assert(transaction.Apply({coins = 100}, {id = "invalid", itemId = "Bomb_Banana"}, catalog) == nil)

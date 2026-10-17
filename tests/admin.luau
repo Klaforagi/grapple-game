@@ -14,7 +14,7 @@ return function(sources)
 			player_1127843745 = {banned = true, reason = "ignore"},
 		},
 		GrappleCoins_v1 = {
-			player_77 = {coins = 5, earned = 8, name = "OfflineDisplay", username = "OfflineUser"},
+			player_77 = {coins = 5, earned = 8, rollTickets = 4, name = "OfflineDisplay", username = "OfflineUser"},
 		},
 		GrappleRobuxSpent_v1 = {player_77 = {spent = 123}},
 		GrappleKills_v1 = {player_77 = {kills = 2}},
@@ -92,8 +92,8 @@ return function(sources)
 	binder("GrantCoins", function() return true end)
 	binder("SpendCoins", function() error("spend") end)
 	binder("AdminCoins", function(action, userId)
-		if action == "read" and userId == 42 then return {coins = 3, earned = 9} end
-		if action == "reset" or action == "grant" then return true end
+		if action == "read" and userId == 42 then return {coins = 3, earned = 9, rollTickets = 2} end
+		if action == "reset" or action == "grant" or action == "grantTickets" then return true end
 		return nil
 	end)
 	binder("AdminKills", function(action, userId)
@@ -230,6 +230,15 @@ return function(sources)
 	assert(grant.args[1] == "grant" and grant.args[2] == 42 and grant.args[3] == 25, "grant args were wrong")
 	assert(grant.args[3] > 0, "grant amount was not positive")
 	assert(last().ok == true, "grant did not succeed")
+	fire(stranger, {action = "grantTickets", user = "42", amount = "3"})
+	assert(count("AdminCoins", "grantTickets") == 0, "stranger gave roll tickets")
+	fire(owner, {action = "grantTickets", user = "42", amount = "3"})
+	assert(count("AdminCoins", "grantTickets") == 1 and last().ok == true,
+		"admin ticket grant did not use the saved currency")
+	local ticketGrant = calls[#calls]
+	assert(ticketGrant.args[2] == 42 and ticketGrant.args[3] == 3, "ticket grant args were wrong")
+	fire(owner, {action = "grantTickets", user = "42", amount = "1.5"})
+	assert(count("AdminCoins", "grantTickets") == 1, "fractional ticket grant was accepted")
 
 	local before = count("AdminCoins", "grant")
 	fire(owner, {action = "grant", user = "42", amount = "0"})
@@ -252,6 +261,7 @@ return function(sources)
 	fire(owner, {action = "lookup", user = "Target"})
 	assert(last().ok == true and last().profile.userId == 42, "username lookup missed the user")
 	assert(last().profile.coins == 3 and last().profile.coinsEarned == 9, "live coins were not used")
+	assert(last().profile.rollTickets == 2, "live roll tickets were not used")
 	assert(last().profile.robuxSpent == 0, "new players should start with no tracked spending")
 	assert(last().profile.kills == 4 and last().profile.playedSeconds == 120, "live stats were not used")
 	assert(last().profile.speed == 2 and last().profile.resistance == 4, "live ranks were not used")
@@ -260,6 +270,7 @@ return function(sources)
 	fire(owner, {action = "lookup", user = "77"})
 	local offline = last().profile
 	assert(offline.coins == 5 and offline.coinsEarned == 8, "offline coins were wrong")
+	assert(offline.rollTickets == 4, "offline roll tickets were wrong")
 	assert(offline.robuxSpent == 123, "offline Robux spending was not loaded")
 	assert(offline.kills == 2 and offline.playedSeconds == 90, "offline stats were wrong")
 	assert(offline.speed == 3 and offline.distance == 4 and offline.duration == 5 and offline.resistance == 6, "offline ranks were wrong")

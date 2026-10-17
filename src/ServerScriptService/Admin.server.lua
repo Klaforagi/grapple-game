@@ -173,9 +173,11 @@ local function lookupProfile(userId, username)
 	local robuxRecord = readRecord("GrappleRobuxSpent_v1", userId)
 	local banRecord = readRecord("GrappleBans_v1", userId)
 	local held, earned = coinTotals(coinRecord)
+	local rollTickets = numberOr(coinRecord and coinRecord.rollTickets, 0)
 	if type(liveCoins) == "table" then
 		held = numberOr(liveCoins.coins, 0)
 		earned = numberOr(liveCoins.earned, 0)
+		rollTickets = numberOr(liveCoins.rollTickets, 0)
 	end
 	local kills = type(liveKills) == "table" and numberOr(liveKills.kills, 0) or numberOr(killRecord and killRecord.kills, 0)
 	local seconds = type(liveTime) == "table" and numberOr(liveTime.seconds, 0) or numberOr(timeRecord and timeRecord.seconds, 0)
@@ -203,6 +205,7 @@ local function lookupProfile(userId, username)
 		online = player ~= nil,
 		coins = held,
 		coinsEarned = earned,
+		rollTickets = rollTickets,
 		robuxSpent = numberOr(robuxRecord and robuxRecord.spent, 0),
 		kills = kills,
 		playedSeconds = seconds,
@@ -231,6 +234,21 @@ local function giveCoins(admin, query, amountText)
 	if granted ~= true then return reply(admin, false, "grant", "Could not give those coins.") end
 	local who = nameOrError or tostring(userId)
 	reply(admin, true, "grant", "Gave " .. tostring(amount) .. " coins to " .. who .. ". Lifetime coins were not changed.")
+end
+
+local function giveTickets(admin, query, amountText)
+	local userId, nameOrError = resolveUser(query)
+	if not userId then return reply(admin, false, "grantTickets", nameOrError) end
+	local amount = tonumber(amountText)
+	if not amount or amount ~= math.floor(amount) then
+		return reply(admin, false, "grantTickets", "Enter a whole roll ticket amount.")
+	end
+	if amount <= 0 then return reply(admin, false, "grantTickets", "Amount has to be at least 1.") end
+	if amount > 100000000 then return reply(admin, false, "grantTickets", "Amount is too large.") end
+	if invoke("AdminCoins", "grantTickets", userId, amount) ~= true then
+		return reply(admin, false, "grantTickets", "Could not give those roll tickets.")
+	end
+	reply(admin, true, "grantTickets", "Gave " .. tostring(amount) .. " roll tickets to " .. (nameOrError or tostring(userId)) .. ".")
 end
 
 local function onlinePlayer(userId)
@@ -386,6 +404,8 @@ local function handle(player, payload)
 	local action = payload.action
 	if action == "grant" then
 		giveCoins(player, payload.user, payload.amount)
+	elseif action == "grantTickets" then
+		giveTickets(player, payload.user, payload.amount)
 	elseif action == "players" then
 		listPlayers(player)
 	elseif action == "bring" then

@@ -103,7 +103,7 @@ return function(serverSource, clientSource)
 		end
 	end
 
-	local function scenario(source, broken)
+	local function scenario(source, broken, isStudio)
 		local now, session, orderedWrites = 0, 0, 0
 		local records, ranks, warnings = {}, {}, {}
 		local storeName, orderedName
@@ -167,7 +167,8 @@ return function(serverSource, clientSource)
 				PlayerRemoving = {Connect = function(_, fn) api.leave = fn end}}}),
 			DataStoreService = dataStores,
 			HttpService = {GenerateGUID = function() session += 1 return tostring(session) end},
-			RunService = {Heartbeat = {Connect = function(_, fn) api.beat = fn end}},
+			RunService = {Heartbeat = {Connect = function(_, fn) api.beat = fn end},
+				IsStudio = function() return isStudio == true end},
 			ReplicatedStorage = replicated,
 		}
 		local env = setmetatable({
@@ -299,6 +300,17 @@ return function(serverSource, clientSource)
 	studio.close()
 	assert(studio.records["player_77"] == nil, "studio shutdown wrote without a store")
 	expect(#studio.warnings, 0, "studio warning")
+
+	local studioWithStore = scenario(serverSource, false, true)
+	studioWithStore.setTime(120)
+	studioWithStore.beat()
+	expect(studioWithStore.player.attributes.PlayedSeconds, 0, "Studio session counted toward playtime")
+	assert(studioWithStore.records["player_77"] == nil and studioWithStore.ranks["77"] == nil,
+		"Studio session saved leaderboard playtime")
+	studioWithStore.leave()
+	studioWithStore.close()
+	assert(studioWithStore.records["player_77"] == nil and studioWithStore.writes() == 0,
+		"Studio leave or shutdown wrote leaderboard playtime")
 
 	local new = makeWorld()
 	local workspace = new("Workspace", "Workspace")

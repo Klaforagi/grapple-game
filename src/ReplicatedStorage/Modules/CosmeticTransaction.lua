@@ -5,16 +5,23 @@ function Transaction.Apply(previous, request, catalog)
 	local record = type(previous) == "table" and previous or {coins = 0, earned = 0}
 	if record.lastCosmeticRoll and record.lastCosmeticRoll.id == request.id then return record end
 	local held = math.max(0, math.floor(tonumber(record.coins) or 0))
-	if held < catalog.Cost then return nil end
+	local tickets = math.max(0, math.floor(tonumber(record.rollTickets) or 0))
+	if tickets == 0 and held < catalog.Cost then return nil end
 	local item = catalog.ById[request.itemId]
 	if not item or item.Starter or item.Vip then return nil end
 	record.cosmetics = type(record.cosmetics) == "table" and record.cosmetics or {}
 	catalog.NormalizeCosmetics(record.cosmetics)
 	local copies = catalog.Quantity(record.cosmetics[item.Id]) + 1
 	record.earned = tonumber(record.earned) or held
-	record.coins = held - catalog.Cost
+	if tickets > 0 then
+		record.rollTickets = tickets - 1
+		record.coins = held
+	else
+		record.coins = held - catalog.Cost
+	end
 	record.cosmetics[item.Id] = copies
-	record.lastCosmeticRoll = {id = request.id, itemId = item.Id, duplicate = copies > 1, copies = copies}
+	record.lastCosmeticRoll = {id = request.id, itemId = item.Id, duplicate = copies > 1, copies = copies,
+		payment = tickets > 0 and "Ticket" or "Coins"}
 	return record
 end
 

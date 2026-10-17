@@ -40,11 +40,11 @@ function M.Fire(tool, aimPosition)
 	local result
 	for _ = 1, 64 do
 		result = workspace:Raycast(ray.Origin, ray.Direction * aimDistance, params)
-		if not result or result.Instance.Name ~= "InvisPart" then break end
+		if not result or (result.Instance.Name ~= "InvisPart" and result.Instance.Name ~= "Window") then break end
 		table.insert(ignored, result.Instance)
 		params.FilterDescendantsInstances = ignored
 	end
-	if result and result.Instance.Name == "InvisPart" then result = nil end
+	if result and (result.Instance.Name == "InvisPart" or result.Instance.Name == "Window") then result = nil end
 	local target = result and result.Position or ray.Origin + ray.Direction * aimDistance
 	Remotes.FireGrapple:FireServer(target, camera.CFrame.Position)
 end

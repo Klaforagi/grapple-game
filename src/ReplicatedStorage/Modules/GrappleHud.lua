@@ -663,6 +663,11 @@ function M.Init()
 		menuOpen = visible
 		menuList.Visible = false
 		if visible then
+			task.spawn(function()
+				while menuOpen and not pcall(StarterGui.SetCore, StarterGui, "ChatActive", false) do
+					task.wait(0.1)
+				end
+			end)
 			placeMenuList()
 			if showHourly then showHourly(false) end
 			if M.dailyUi then M.dailyUi.show(false) end
@@ -723,6 +728,19 @@ function M.Init()
 		coinLabel.TextStrokeTransparency = 1
 		coinLabel.TextTruncate = Enum.TextTruncate.None
 		coinLabel.ZIndex = 26
+		local ticketAmount, ticketIcon
+		if tier.tickets then
+			ticketAmount = label(row, "+" .. tier.tickets, UDim2.fromOffset(158, 4), UDim2.fromOffset(24, 34))
+			ticketAmount.TextSize = 14
+			ticketAmount.TextColor3 = Style.Accent
+			ticketAmount.TextStrokeTransparency = 1
+			ticketAmount.ZIndex = 26
+			ticketIcon = make("ImageLabel", row, {
+				BackgroundTransparency = 1, Image = Assets.RollTickets, ScaleType = Enum.ScaleType.Fit,
+				AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 184, 0.5, 0),
+				Size = UDim2.fromOffset(17, 17), ZIndex = 26,
+			})
+		end
 		local stateLabel = label(row, "", UDim2.new(1, -78, 0, 4), UDim2.fromOffset(66, 34))
 		stateLabel.TextSize = 13
 		stateLabel.TextXAlignment = Enum.TextXAlignment.Right
@@ -736,7 +754,8 @@ function M.Init()
 		claim.Activated:Connect(function()
 			Remotes.ClaimHourly:FireServer(index)
 		end)
-		hourlyRows[index] = {Row = row, Time = timeLabel, Amount = coinLabel, Icon = coinIcon, State = stateLabel, Claim = claim}
+		hourlyRows[index] = {Row = row, Time = timeLabel, Amount = coinLabel, Icon = coinIcon,
+			TicketAmount = ticketAmount, TicketIcon = ticketIcon, State = stateLabel, Claim = claim}
 	end
 	local function fitHourly()
 		local phone = UIS.TouchEnabled
@@ -747,7 +766,7 @@ function M.Init()
 		local playedH = phone and 16 or 20
 		local top = headerH + playedGap + playedH + (phone and 6 or 8)
 		local text = phone and 13 or 14
-		local windowW = phone and 188 or 300
+		local windowW = phone and 240 or 340
 		local iconX = phone and 58 or 84
 		local iconSize = phone and 14 or 16
 		hourlyWindow.Size = UDim2.fromOffset(windowW, top + #Hourly.Tiers * stride + (phone and 6 or 10))
@@ -773,6 +792,13 @@ function M.Init()
 			row.Amount.TextSize = text
 			row.Amount.Position = UDim2.fromOffset(iconX + iconSize + (phone and 4 or 6), 3)
 			row.Amount.Size = UDim2.fromOffset(phone and 36 or 44, rowH - 6)
+			if row.TicketAmount then
+				row.TicketAmount.TextSize = text
+				row.TicketAmount.Position = UDim2.fromOffset(phone and 122 or 158, 3)
+				row.TicketAmount.Size = UDim2.fromOffset(phone and 22 or 24, rowH - 6)
+				row.TicketIcon.Position = UDim2.new(0, phone and 146 or 184, 0.5, 0)
+				row.TicketIcon.Size = UDim2.fromOffset(phone and 14 or 17, phone and 14 or 17)
+			end
 			row.State.TextSize = phone and 12 or 13
 			row.State.Position = UDim2.new(1, phone and -62 or -78, 0, 3)
 			row.State.Size = UDim2.fromOffset(phone and 54 or 66, rowH - 6)
@@ -891,6 +917,16 @@ function M.Init()
 		amount.TextColor3 = Style.Accent
 		amount.TextStrokeTransparency = 1
 		amount.ZIndex = 26
+		local ticketAmount = label(row, "+" .. Daily.Tickets[index], UDim2.fromOffset(166, 3), UDim2.fromOffset(28, 34))
+		ticketAmount.TextSize = 14
+		ticketAmount.TextColor3 = Style.Accent
+		ticketAmount.TextStrokeTransparency = 1
+		ticketAmount.ZIndex = 26
+		local ticketIcon = make("ImageLabel", row, {
+			BackgroundTransparency = 1, Image = Assets.RollTickets, ScaleType = Enum.ScaleType.Fit,
+			AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 195, 0.5, 0),
+			Size = UDim2.fromOffset(17, 17), ZIndex = 26,
+		})
 		local state = label(row, "", UDim2.new(1, -90, 0, 3), UDim2.fromOffset(78, 34))
 		state.TextSize = 13
 		state.TextXAlignment = Enum.TextXAlignment.Right
@@ -903,7 +939,8 @@ function M.Init()
 		claim.TextSize = 12
 		claim.Visible = false
 		claim.ZIndex = 27
-		dailyRows[index] = {Row = row, Day = dayLabel, Icon = coinIcon, Amount = amount, State = state, Claim = claim}
+		dailyRows[index] = {Row = row, Day = dayLabel, Icon = coinIcon, Amount = amount,
+			TicketAmount = ticketAmount, TicketIcon = ticketIcon, State = state, Claim = claim}
 	end
 	local function fitDaily()
 		local phone = UIS.TouchEnabled
@@ -911,7 +948,7 @@ function M.Init()
 		local rowH = phone and 28 or 40
 		local stride = phone and 32 or 46
 		local top = phone and 58 or 82
-		local width = phone and 214 or 324
+		local width = phone and 268 or 360
 		dailyWindow.Size = UDim2.fromOffset(width, top + #Daily.Coins * stride + (phone and 6 or 10))
 		dailyHeader.Size = UDim2.new(1, 0, 0, headerH)
 		dailyTitle.TextSize = phone and 13 or 18
@@ -934,6 +971,11 @@ function M.Init()
 			row.Amount.TextSize = phone and 12 or 14
 			row.Amount.Position = UDim2.fromOffset(phone and 76 or 102, 3)
 			row.Amount.Size = UDim2.fromOffset(phone and 48 or 54, rowH - 6)
+			row.TicketAmount.TextSize = phone and 12 or 14
+			row.TicketAmount.Position = UDim2.fromOffset(phone and 130 or 166, 3)
+			row.TicketAmount.Size = UDim2.fromOffset(phone and 22 or 28, rowH - 6)
+			row.TicketIcon.Position = UDim2.new(0, phone and 154 or 195, 0.5, 0)
+			row.TicketIcon.Size = UDim2.fromOffset(phone and 14 or 17, phone and 14 or 17)
 			row.State.TextSize = phone and 11 or 13
 			row.State.Position = UDim2.new(1, phone and -68 or -90, 0, 3)
 			row.State.Size = UDim2.fromOffset(phone and 60 or 78, rowH - 6)

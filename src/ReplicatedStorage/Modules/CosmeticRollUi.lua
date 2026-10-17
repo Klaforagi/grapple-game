@@ -331,6 +331,7 @@ function RollUi.Init()
 		if not activeZone then dismissed = false if not busy then show(false) end
 		elseif not dismissed then show(true) end
 		local coins = player:GetAttribute("Coins") or 0
+		local tickets = math.max(0, math.floor(tonumber(player:GetAttribute("RollTickets")) or 0))
 		balance.Text = "YOUR COINS  •  " .. withCommas(coins)
 		local allowed = player:GetAttribute("CosmeticRollAllowed") == true
 		local loaded = player:GetAttribute("CollectionLoaded") == true
@@ -339,7 +340,9 @@ function RollUi.Init()
 		rollButton.AutoButtonColor = enabled
 		rollButton.TextTransparency = enabled and 0 or 0.35
 		rollButton.Text = busy and "ROLLING..." or not loaded and "LOADING COLLECTION..." or not allowed and "ROLLS UNAVAILABLE"
-			or cooldown > 0 and ("READY IN " .. cooldown .. "s") or "ROLL  •  " .. Catalog.Cost .. " COINS"
+			or cooldown > 0 and ("READY IN " .. cooldown .. "s")
+			or tickets > 0 and ("ROLL  •  1 TICKET (" .. withCommas(tickets) .. " LEFT)")
+			or "ROLL  •  " .. Catalog.Cost .. " COINS"
 		footer.Text = allowed and "" or (player:GetAttribute("CosmeticRollPolicy") or "Checking roll availability...")
 	end)
 end

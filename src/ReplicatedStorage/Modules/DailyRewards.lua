@@ -2,6 +2,7 @@ local Hourly = require(script.Parent:WaitForChild("HourlyRewards"))
 
 local Daily = {}
 Daily.Coins = {25, 35, 50, 75, 100, 150, 250}
+Daily.Tickets = {1, 1, 1, 1, 1, 1, 5}
 Daily.DayKey = Hourly.DayKey
 Daily.ResetHourUtc = Hourly.ResetHourUtc
 

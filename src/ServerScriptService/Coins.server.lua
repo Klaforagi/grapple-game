@@ -286,6 +286,7 @@ local function joined(player)
 	local state = {id = HttpService:GenerateGUID(false), started = os.clock(), earned = 0, saved = 0, base = 0, lifetime = 0}
 	sessions[player] = state
 	player:SetAttribute("Coins", 0)
+	player:SetAttribute("RollTickets", 0)
 	task.spawn(function()
 		while sessions[player] == state and not state.loaded do
 			local ok, data = pcall(function() return store:GetAsync("player_" .. player.UserId) end)
@@ -299,6 +300,7 @@ local function joined(player)
 				state.loaded = true
 				publishCollection(player, data)
 				player:SetAttribute("Coins", state.base + state.earned)
+				player:SetAttribute("RollTickets", math.max(0, math.floor(tonumber(type(data) == "table" and data.rollTickets or 0) or 0)))
 				publishEarned(player, state.lifetime)
 				queueRank(player.UserId, state.lifetime)
 			else
@@ -355,7 +357,7 @@ end)
 -- earned. The purchase id stays on the record so a retried receipt does not pay
 -- twice. Unsaved minutes stay in state.earned, so the live balance is the stored
 -- total minus that checkpoint, plus the session total.
-local function grantCoins(userId, amount, purchaseId)
+local function grantCoins(userId, amount, purchaseId, tickets)
 	if type(userId) ~= "number" or type(purchaseId) ~= "string" or purchaseId == "" or #purchaseId > 100 then
 		return false
 	end
@@ -363,6 +365,8 @@ local function grantCoins(userId, amount, purchaseId)
 	if not amount then return false end
 	amount = math.floor(amount)
 	if amount <= 0 or amount > 100000000 then return false end
+	tickets = tonumber(tickets) or 0
+	if tickets ~= math.floor(tickets) or tickets < 0 or tickets > 1000 then return false end
 
 	local lookup = Players.GetPlayerByUserId
 	local player = type(lookup) == "function" and lookup(Players, userId) or nil
@@ -389,6 +393,7 @@ local function grantCoins(userId, amount, purchaseId)
 			local held, lifetime = heldAndEarned(record)
 			record.coins = held + amount
 			record.earned = lifetime + amount
+			record.rollTickets = math.max(0, math.floor(tonumber(record.rollTickets) or 0)) + tickets
 			record.purchases[purchaseId] = os.time()
 			return record
 		end)
@@ -402,6 +407,7 @@ local function grantCoins(userId, amount, purchaseId)
 			locked.base = coins - locked.saved
 			locked.lifetime = math.max(locked.lifetime or 0, lifetime + earned - locked.saved)
 			player:SetAttribute("Coins", locked.base + earned)
+			player:SetAttribute("RollTickets", math.max(0, math.floor(tonumber(data.rollTickets) or 0)))
 			publishEarned(player, locked.lifetime)
 			queueRank(player.UserId, locked.lifetime)
 		end
@@ -530,10 +536,12 @@ rollCosmetic.OnInvoke = function(player)
 			state.base = data.coins - state.saved
 			if sessions[player] == state then
 				player:SetAttribute("Coins", state.base + state.earned)
+				player:SetAttribute("RollTickets", math.max(0, math.floor(tonumber(data.rollTickets) or 0)))
 				publishCollection(player, data)
 			end
 			result = {ok = true, itemId = receipt.itemId, duplicate = receipt.duplicate,
-				copies = receipt.copies or catalog.Quantity(data.cosmetics and data.cosmetics[receipt.itemId])}
+				copies = receipt.copies or catalog.Quantity(data.cosmetics and data.cosmetics[receipt.itemId]),
+				payment = receipt.payment}
 		else
 			result = {ok = false, message = "You need " .. catalog.Cost .. " coins to roll."}
 		end
@@ -617,12 +625,44 @@ local function adminGrantHeld(userId, amount)
 	return ok and type(data) == "table"
 end
 
+local function adminGrantTickets(userId, amount)
+	if type(userId) ~= "number" or type(amount) ~= "number" or amount ~= math.floor(amount)
+		or amount <= 0 or amount > 100000000 then return false end
+	local player = Players:GetPlayerByUserId(userId)
+	local state = player and sessions[player]
+	if state and not state.loaded then
+		local started = os.clock()
+		while sessions[player] == state and not state.loaded and os.clock() - started < 20 do task.wait(0.1) end
+	end
+	if player and (not state or sessions[player] ~= state or not state.loaded) then return false end
+	if state then
+		while state.saving do task.wait() end
+		if sessions[player] ~= state then return false end
+		state.saving = true
+	end
+	local ok, data = pcall(function()
+		return store:UpdateAsync("player_" .. userId, function(previous)
+			local record = type(previous) == "table" and previous or {coins = 0, earned = 0}
+			record.rollTickets = math.max(0, math.floor(tonumber(record.rollTickets) or 0)) + amount
+			return record
+		end)
+	end)
+	if state then
+		if ok and type(data) == "table" and sessions[player] == state then
+			player:SetAttribute("RollTickets", data.rollTickets)
+		end
+		state.saving = false
+	end
+	return ok and type(data) == "table"
+end
+
 local function adminReadCoins(userId)
 	local lookup = Players.GetPlayerByUserId
 	local player = type(lookup) == "function" and lookup(Players, userId) or nil
 	local state = player and sessions[player]
 	if not state or not state.loaded or sessions[player] ~= state then return nil end
-	return {coins = state.base + state.earned, earned = state.lifetime or 0}
+	return {coins = state.base + state.earned, earned = state.lifetime or 0,
+		rollTickets = player:GetAttribute("RollTickets") or 0}
 end
 
 -- Admin cosmetic gifts use the same coin record as rolls, so they survive for
@@ -719,6 +759,7 @@ adminCoins.OnInvoke = function(action, userId, amount)
 	if action == "read" then return adminReadCoins(userId) end
 	if action == "reset" then return adminResetCoins(userId) end
 	if action == "grant" then return adminGrantHeld(userId, amount) end
+	if action == "grantTickets" then return adminGrantTickets(userId, amount) end
 	return false
 end
 adminCoins.Parent = ReplicatedStorage
