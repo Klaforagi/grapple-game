@@ -108,6 +108,14 @@ return function(sources)
 		for _, object in ipairs(self:GetChildren()) do if object:IsA(class) then return object end end
 	end
 	methods.FindFirstChildOfClass = methods.FindFirstChildWhichIsA
+	function methods:LoadAnimation(animation)
+		assert(self.ClassName == "Animator")
+		local track = {Animation = animation, PlayCount = 0, IsPlaying = false}
+		function track:Play() self.PlayCount += 1 self.IsPlaying = true end
+		function track:Stop() self.IsPlaying = false end
+		self.LastTrack = track
+		return track
+	end
 	function methods:GetPropertyChangedSignal(key) return self:GetAttributeChangedSignal("property:" .. key) end
 	function methods:FindFirstAncestorOfClass(class)
 		local parent = self.Parent
@@ -221,6 +229,15 @@ return function(sources)
 	local services = {Players = players, RunService = runService, ReplicatedStorage = storage, Workspace = world, PhysicsService = {}}
 	services.ServerStorage = instance("ServerStorage", "ServerStorage")
 	services.StarterPack = instance("StarterPack", "StarterPack")
+	local colorMT = {}
+	colorMT.__index = colorMT
+	function colorMT:Lerp(other, alpha)
+		return setmetatable({
+			self[1] + (other[1] - self[1]) * alpha,
+			self[2] + (other[2] - self[2]) * alpha,
+			self[3] + (other[3] - self[3]) * alpha,
+		}, colorMT)
+	end
 	local env = setmetatable({
 		warn = function() end,
 		game = {GetService = function(_, name) return assert(services[name], name) end},
@@ -228,7 +245,8 @@ return function(sources)
 		CFrame = {new = function() return identity end, lookAt = function(origin, target)
 			return setmetatable({Position = origin, LookVector = (target - origin).Unit}, {__mul = function(a) return a end})
 		end}, BrickColor = {new = function() return {} end},
-		Color3 = {fromRGB = function(...) return {...} end, fromHSV = function(...) return {...} end}, ColorSequence = {new = function() return {} end},
+		Color3 = {fromRGB = function(...) return setmetatable({...}, colorMT) end,
+			fromHSV = function(...) return setmetatable({...}, colorMT) end}, ColorSequence = {new = function() return {} end},
 		NumberSequence = {new = transparency},
 		PhysicalProperties = {new = function(d, f) return {Density = d, Friction = f} end},
 		RaycastParams = {new = function() return {} end}, OverlapParams = {new = function() return {} end},
@@ -237,6 +255,8 @@ return function(sources)
 			ForceLimitMode = {PerAxis = "PerAxis"}, ActuatorRelativeTo = {World = "World"},
 			PositionAlignmentMode = {OneAttachment = "OneAttachment"}, RaycastFilterType = {Exclude = "Exclude"},
 			Material = setmetatable({Neon = "Neon", Air = "Air", Water = "Water"}, {__index = function(_, key) return key end}),
+			AnimationPriority = {Action4 = "Action4"},
+			HumanoidRigType = {R6 = "R6", R15 = "R15"},
 			KeyCode = setmetatable({}, {__index = function(_, key) return key end})},
 		Region3 = {new = function(min, max)
 			return setmetatable({Min = min, Max = max}, {__index = {ExpandToGrid = function(self) return self end}})
@@ -1754,7 +1774,7 @@ return function(sources)
 		assert(height >= 50 and height <= 100 and range <= config.bombLaunchDistance + 0.001, "blast trajectory exceeded its configured target")
 	end
 
-	-- Exercise actual throw validation, 3.5-second fuse, cooldown, and explosion.
+	-- Exercise actual throw validation, fuse, cooldown, and explosion.
 	services.Debris = {AddItem = function() end}
 	services.TweenService = {Create = function() return {Play = function() end} end}
 	env.TweenInfo = {new = function() return {} end}
@@ -1800,9 +1820,13 @@ return function(sources)
 	attackerRoot.AssemblyLinearVelocity = V.zero
 	world.Raycast = function() return nil end
 	ragdoll.Set(attackerHumanoid, false)
+	attacker:SetAttribute("BombColor", "Gold")
 	execute(sources.bombs)
 	local bombTool = assert(attackerBackpack:FindFirstChild(config.bombToolName))
 	assert(bombTool:FindFirstChild("Handle").Shape == "Ball", "bomb must be a sphere")
+	assert(bombTool:FindFirstChild("Handle"):GetAttribute("RainbowPart")
+		and bombTool:FindFirstChild("Handle"):GetAttribute("RainbowPalette") == "Gold",
+		"held Gold bomb did not enable its cycling palette")
 	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(100, 0, 0))
 	assert(not world:FindFirstChild("ThrownBomb"), "unequipped bomb accepted")
 	bombTool.Parent = attacker.Character
@@ -1815,6 +1839,8 @@ return function(sources)
 	attackerHumanoid:SetAttribute("GrapplePhysicsLocked", nil)
 	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(100, 0, 0))
 	local thrown = assert(world:FindFirstChild("ThrownBomb"))
+	assert(thrown:GetAttribute("RainbowPart") and thrown:GetAttribute("RainbowPalette") == "Gold",
+		"thrown Gold bomb did not keep its cycling palette")
 	local thrownCast = bombCaster.lastCast
 	assert(thrown.Anchored and not thrown.CanCollide and not thrown.CanTouch, "bomb must be a FastCast-driven visual shell")
 	assert(thrownCast.behavior.Acceleration.Y == -world.Gravity and thrownCast.behavior.HighFidelityBehavior == "Always", "bomb did not configure a high-fidelity gravity cast")
@@ -1848,16 +1874,16 @@ return function(sources)
 	bombCaster.RayHit:Emit(thrownCast, {Instance = wall, Position = wall.Position, Normal = V.new(0, 1, 0)})
 	assert(weld.Part0 == victimRoot, "second contact replaced the first sticky target")
 	thrown.Position = V.new(-5, -2, 0)
-	now = threwAt + 3.49
+	now = threwAt + config.bombFuse - 0.01
 	runService.Heartbeat:Emit(0.1)
 	assert(not thrown.destroyed, "bomb detonated early")
 	remotes.ThrowBomb.OnServerEvent:Emit(attacker, V.new(10, 0, 0))
 	count = 0
 	for _, child in ipairs(world:GetChildren()) do if child.Name == "ThrownBomb" then count += 1 end end
-	assert(count == 1, "bomb allowed a new throw before six seconds")
+	assert(count == 1, "bomb allowed a new throw before cooldown ended")
 	now += 0.02
 	runService.Heartbeat:Emit(0.1)
-	assert(thrown.destroyed, "bomb missed 3.5-second fuse")
+	assert(thrown.destroyed, "bomb missed configured fuse")
 	assert(attackerRoot.AssemblyLinearVelocity.Magnitude == 0, "launch ran before the ragdoll assembly rebuild")
 	for _, joint in ipairs(attacker.Character:GetDescendants()) do
 		if joint:IsA("Motor6D") and joint:GetAttribute("GrappleRagdollJoint") then
@@ -1865,6 +1891,9 @@ return function(sources)
 		end
 	end
 	assert(playedSounds[#playedSounds].sound == explosionSound and playedSounds[#playedSounds].source.Name == "BombBlast", "explosion sound did not play at blast")
+	local goldBlast = playedSounds[#playedSounds].source
+	assert(goldBlast:GetAttribute("RainbowPart") and goldBlast:GetAttribute("RainbowPalette") == "Gold",
+		"Gold bomb explosion did not keep its cycling palette")
 	-- The engine puts an unequipped tool into Backpack; mirror that in this mock.
 	bombTool.Parent = attackerBackpack
 	local splitLimb = attacker.Character:FindFirstChild("Limb1")
@@ -1894,7 +1923,7 @@ return function(sources)
 	assert(attackerRoot.NetworkOwner == nil, "ownership audit stole bomb's temporary server simulation")
 	assert(attackerHumanoid:HasTag("Ragdoll") and attackerHumanoid:GetAttribute("Ragdolled"), "bomb did not ragdoll its target")
 	local lockedUntil = attackerHumanoid:GetAttribute("BombRagdollUntil")
-	assert(math.abs(lockedUntil - (threwAt + 3.51) - 5) < 0.001, "bomb lock must last five seconds after impact")
+	assert(math.abs(lockedUntil - (threwAt + config.bombFuse + 0.01) - 5) < 0.001, "bomb lock must last five seconds after impact")
 	remotes.ToggleRagdoll.OnServerEvent:Emit(attacker)
 	assert(attackerHumanoid:GetAttribute("Ragdolled"), "manual recovery bypassed bomb lock")
 	attackerHumanoid:RemoveTag("Ragdoll")
@@ -1958,7 +1987,11 @@ manualHumanoid:AddTag("Ragdoll")
 	-- The client obeys server cooldown state but only debounces unacknowledged
 	-- requests, so a rejected throw does not start a phantom six-second cooldown.
 	bombTool.Parent = attacker.Character
+	attackerHumanoid.RigType = env.Enum.HumanoidRigType.R15
+	instance("Animator", "Animator", attackerHumanoid)
 	execute(sources.bombClient)
+	assert(attackerHumanoid:FindFirstChildOfClass("Animator").LastTrack.Animation.AnimationId == config.pushAnimationR15Id,
+		"R15 Push animation was not warmed when the character loaded")
 	attackerHumanoid:SetAttribute("Ragdolled", true)
 	bombTool.Activated:Emit()
 	assert(#remotes.ThrowBomb.sent == 1, "bomb client did not send equipped throw")
@@ -2000,7 +2033,16 @@ manualHumanoid:AddTag("Ragdoll")
 	assert(#remotes.UsePush.sent == 1, "Push activation did not send a request")
 	attacker:SetAttribute("TestPass_Push", true)
 	remotes.UsePush.OnServerEvent:Emit(attacker)
-	assert(world:FindFirstChild("PushHitbox").Size.X == config.pushWidth and world:FindFirstChild("PushHitbox").Size.Z == config.pushRange, "Push visual does not match box")
+	local pushHitbox = assert(world:FindFirstChild("PushHitbox"))
+	assert(pushHitbox.Size.X == config.pushWidth and pushHitbox.Size.Z == config.pushRange
+		and pushHitbox.Transparency == 1, "Push hitbox should keep its range but stay invisible")
+	assert(#remotes.UsePush.messages == 1 and remotes.UsePush.messages[1].player == attacker,
+		"accepted Push did not notify the pushing client")
+	remotes.UsePush.OnClientEvent:Emit()
+	local pushTrack = assert(attackerHumanoid:FindFirstChildOfClass("Animator").LastTrack)
+	assert(pushTrack.Animation.AnimationId == config.pushAnimationR15Id and pushTrack.PlayCount == 1
+		and pushTrack.Priority == "Action4",
+		"accepted Push did not play its animation")
 	local pushDeadline = pushHumanoid:GetAttribute("BombRagdollUntil")
 	assert(pushDeadline == now + 5 and pushHumanoid:GetAttribute("Ragdolled"), "Push did not apply five-second ragdoll")
 	assert(pushHumanoid:GetAttribute("PushRagdollUntil") == world:GetServerTimeNow() + 5
@@ -2066,28 +2108,9 @@ manualHumanoid:AddTag("Ragdoll")
 	lateTarget.Parent:FindFirstChild("HumanoidRootPart").Position = attackerRoot.Position + V.new(3, 0, 0)
 	runService.PreSimulation:Emit(1 / 60)
 	assert(not lateTarget:GetAttribute("Ragdolled"), "Push hit after its active window expired")
-	-- Replication is deliberately held still while the rendered character moves/turns.
-	local visual
-	for _, child in ipairs(world:GetChildren()) do
-		if child.Name == "PushHitbox" then visual = child end
-	end
-	world.ChildAdded:Emit(visual)
-	attackerRoot.Position += V.new(4, 0, 0)
-	runService.RenderStepped:Emit(1 / 60)
-	assert((visual.CFrame.Position - attackerRoot.Position - V.new(config.pushRange / 2, 0, 0)).Magnitude < 0.001,
-		"Push visual lagged behind local movement without a server update")
-	attackerRoot.CFrame = {LookVector = V.new(0, 0, -1)}
-	runService.RenderStepped:Emit(1 / 60)
-	assert((visual.CFrame.Position - attackerRoot.Position - V.new(0, 0, -config.pushRange / 2)).Magnitude < 0.001,
-		"Push visual did not follow a local turn")
-	visual:Destroy()
-	local destroyedPose = visual.CFrame
-	attackerRoot.Position += V.new(4, 0, 0)
-	runService.RenderStepped:Emit(1 / 60)
-	assert(visual.CFrame == destroyedPose, "Destroyed push visual kept updating")
 	attacker.NetworkPing = 0
 	attackerRoot.AssemblyLinearVelocity = V.zero
-	print("PASS: moving push reach, latency cap, walls, expiry, and local visual following")
+	print("PASS: moving push reach, latency cap, walls, expiry, and hidden hitbox")
 	end)()
 	execute(sources.capsuleTests)({execute = execute, sources = sources, instance = instance,
 		methods = methods, signal = signal, env = env, services = services, world = world,

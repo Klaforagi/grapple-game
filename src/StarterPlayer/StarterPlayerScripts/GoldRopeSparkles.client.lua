@@ -1,4 +1,4 @@
--- Every client renders sparkles on Gold grapple guns and active Gold ropes.
+-- Every client renders sparkles on Gold guns, bombs, and active ropes.
 local Debris = game:GetService("Debris")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -22,6 +22,7 @@ local UPDATE_INTERVAL = 1 / 30
 local random = Random.new()
 local beams = {}
 local guns = {}
+local bombs = {}
 local maxLifetime = 0
 for _, source in ipairs(sources) do
 	maxLifetime = math.max(maxLifetime, source.Lifetime.Max)
@@ -58,6 +59,16 @@ end
 
 local function randomSurfacePoint(part)
 	local size = part.Size
+	if part:IsA("Part") and part.Shape == Enum.PartType.Ball then
+		local z = random:NextNumber(-1, 1)
+		local angle = random:NextNumber(0, 2 * math.pi)
+		local ring = math.sqrt(1 - z * z)
+		return Vector3.new(
+			ring * math.cos(angle) * size.X * 0.5,
+			z * size.Y * 0.5,
+			ring * math.sin(angle) * size.Z * 0.5
+		)
+	end
 	local x = random:NextNumber(-0.5, 0.5) * size.X
 	local y = random:NextNumber(-0.5, 0.5) * size.Y
 	local z = random:NextNumber(-0.5, 0.5) * size.Z
@@ -68,25 +79,18 @@ local function randomSurfacePoint(part)
 	return Vector3.new(x, y, z)
 end
 
-local function startGun(state, tool, now)
-	local parts = {}
-	for _, descendant in ipairs(tool:GetDescendants()) do
-		if descendant:IsA("BasePart") and descendant.Transparency < 0.95
-			and descendant:GetAttribute("RainbowPalette") == "Gold" then
-			table.insert(parts, descendant)
-		end
-	end
+local function startSurface(state, parts, now, maxParts, attachmentName)
 	table.sort(parts, function(a, b)
 		return a.Size.X * a.Size.Y * a.Size.Z > b.Size.X * b.Size.Y * b.Size.Z
 	end)
-	local count = math.min(#parts, MAX_GUN_PARTS)
+	local count = math.min(#parts, maxParts)
 	if count == 0 then return end
 	local attachments = {}
 	local emitters = {}
 	for index = 1, count do
 		local part = parts[index]
 		local attachment = Instance.new("Attachment")
-		attachment.Name = "GoldGunSparkle"
+		attachment.Name = attachmentName
 		attachment.Position = randomSurfacePoint(part)
 		attachment.Parent = part
 		table.insert(attachments, attachment)
@@ -98,7 +102,18 @@ local function startGun(state, tool, now)
 	state.emitters = emitters
 end
 
-local function retireGun(state)
+local function startGun(state, tool, now)
+	local parts = {}
+	for _, descendant in ipairs(tool:GetDescendants()) do
+		if descendant:IsA("BasePart") and descendant.Transparency < 0.95
+			and descendant:GetAttribute("RainbowPalette") == "Gold" then
+			table.insert(parts, descendant)
+		end
+	end
+	startSurface(state, parts, now, MAX_GUN_PARTS, "GoldGunSparkle")
+end
+
+local function retireSurface(state)
 	if not state.attachments then return end
 	for _, attachment in ipairs(state.attachments) do
 		for _, emitter in ipairs(attachment:GetChildren()) do
@@ -151,6 +166,9 @@ local function watch(instance)
 		beams[instance] = beams[instance] or {}
 	elseif instance:IsA("Tool") and instance.Name == Config.toolName then
 		guns[instance] = guns[instance] or {}
+	elseif (instance:IsA("Tool") and instance.Name == Config.bombToolName)
+		or (instance:IsA("BasePart") and instance.Name == "ThrownBomb") then
+		bombs[instance] = bombs[instance] or {}
 	end
 end
 
@@ -187,14 +205,31 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 	for tool, state in pairs(guns) do
 		if not tool:IsDescendantOf(workspace) then
-			retireGun(state)
+			retireSurface(state)
 			guns[tool] = nil
 		else
 			local handle = tool:FindFirstChild("Handle", true)
 			if not (handle and handle:IsA("BasePart") and handle:GetAttribute("RainbowPalette") == "Gold") then
-				retireGun(state)
+				retireSurface(state)
 			else
 				if not state.attachments then startGun(state, tool, now) end
+				if state.emitters then emitDue(state.emitters, now) end
+			end
+		end
+	end
+	for object, state in pairs(bombs) do
+		if not object:IsDescendantOf(workspace) then
+			retireSurface(state)
+			bombs[object] = nil
+		else
+			local part = object:IsA("Tool") and object:FindFirstChild("Handle") or object
+			if not (part and part:IsA("BasePart") and part:GetAttribute("RainbowPalette") == "Gold"
+				and part.Transparency < 0.95) then
+				retireSurface(state)
+			else
+				if not state.attachments then
+					startSurface(state, {part}, now, 1, "GoldBombSparkle")
+				end
 				if state.emitters then emitDue(state.emitters, now) end
 			end
 		end

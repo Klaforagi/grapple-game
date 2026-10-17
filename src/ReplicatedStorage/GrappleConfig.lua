@@ -56,7 +56,7 @@ return {
 	playerTetherDuration = 20, -- Unupgraded seconds. UpgradeCatalog rank 10 is 60.
 	-- Blue spawn bubble on the living character. SpawnLocation.Duration stays 0
 	-- so the engine bubble cannot attach to the ragdoll corpse.
-	spawnShieldSeconds = 6,
+	spawnShieldSeconds = 8,
 	-- Paid escape from a tether. The Robux button shows the price and does not
 	-- prompt until escapeRobuxProductId is a real 9-Robux developer product.
 	escapeShieldSeconds = 6,
@@ -93,16 +93,18 @@ return {
 	capsuleCaptureDistance = 12, -- Victim must be this close to the Trigger Part
 	capsulePromptDistance = 10,
 	capsuleDamagePerSecond = 5,
-	capsuleRescueShieldSeconds = 1,
+	capsuleRescueShieldSeconds = 4,
 
 	bombToolName = "Bomb",
 	bombToolIcon = "rbxassetid://90880415826748", -- Fallback Tool icon; the visible hotbar tints the image.
 	pushToolName = "Push",
 	pushToolIcon = "rbxassetid://7925887190", -- Roblox Backpack/hotbar icon
+	pushAnimationId = "rbxassetid://106513784076343", -- R6
+	pushAnimationR15Id = "rbxassetid://126136034770383",
 	pushRange = 6.5, -- Studs forward; walls block the push
 	pushWidth = 8,
 	pushHeight = 6,
-	pushCooldown = 4,
+	pushCooldown = 10,
 	pushActiveDuration = 0.35,
 	pushMaxMovementLead = 2, -- Maximum extra forward reach for movement replication delay
 	pushRagdollDuration = 5,
@@ -114,8 +116,8 @@ return {
 	flopLimbKickSpeed = 7,
 	flopSpinSpeed = 30, -- Radians/sec of the shoulder-axis roll; a short hop should land on the other side
 	flopSpinCap = 42,
-	bombFuse = 3.5, -- Seconds from throw, including time in flight
-	bombCooldown = 6, -- Seconds after throwing before another throw
+	bombFuse = 3, -- Seconds from throw, including time in flight
+	bombCooldown = 15, -- Seconds after throwing before another throw
 	bombRadius = 8, -- Root-to-explosion distance in studs
 	bombLaunchHeight = 82, -- Studs above impact position in unobstructed flight; edge hits ~57
 	bombLaunchDistance = 200, -- Horizontal studs back to impact height; directly underneath launches vertically

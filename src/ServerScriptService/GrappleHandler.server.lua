@@ -789,8 +789,8 @@ local function setGrappleColor(player, target, colorName)
 		local bomb = findInventoryTool(player, Config.bombToolName)
 		local handle = bomb and bomb:FindFirstChild("Handle")
 		if handle and handle:IsA("BasePart") then
-			handle:SetAttribute("RainbowPalette", "Bomb")
-			handle:SetAttribute("RainbowPart", colorName == "Rainbow")
+			handle:SetAttribute("RainbowPalette", colorName == "Gold" and "Gold" or "Bomb")
+			handle:SetAttribute("RainbowPart", colorName == "Rainbow" or colorName == "Gold")
 			if Palettes.Bomb[colorName] then
 				handle.Color = Palettes.Bomb[colorName]
 				handle:SetAttribute("SolidPartColor", Palettes.Bomb[colorName])
@@ -1062,7 +1062,7 @@ local function grantSpawnShield(player: Player, hinted)
 	if not (target:FindFirstChild("UpperTorso", true) or target:FindFirstChild("Torso", true)) then return end
 	local other = target:FindFirstChildOfClass("ForceField")
 	if other then other:Destroy() end
-	addShield(target, Config.spawnShieldSeconds or 6, "SpawnShield")
+	addShield(target, Config.spawnShieldSeconds or 8, "SpawnShield")
 end
 
 local shieldedLife = setmetatable({}, {__mode = "k"})
@@ -1223,8 +1223,9 @@ local function watchPlayer(player: Player)
 		local handle = bomb and bomb:FindFirstChild("Handle")
 		local color = Palettes.Bomb[player:GetAttribute("BombColor")]
 		if handle and handle:IsA("BasePart") then
-			handle:SetAttribute("RainbowPalette", "Bomb")
-handle:SetAttribute("RainbowPart", player:GetAttribute("BombColor") == "Rainbow")
+			handle:SetAttribute("RainbowPalette", player:GetAttribute("BombColor") == "Gold" and "Gold" or "Bomb")
+			handle:SetAttribute("RainbowPart", player:GetAttribute("BombColor") == "Rainbow"
+				or player:GetAttribute("BombColor") == "Gold")
 			if color then handle:SetAttribute("SolidPartColor", color) end
 		end
 		if color and handle and handle:IsA("BasePart") then handle.Color = color end

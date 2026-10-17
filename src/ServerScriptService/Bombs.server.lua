@@ -24,6 +24,8 @@ local bombColors = Palettes.Bomb
 local function bombPaint(name)
 	if name == "Rainbow" then
 		return Palettes.BombRainbow((workspace:GetServerTimeNow() * Palettes.CycleSpeed) % 1)
+	elseif name == "Gold" then
+		return Palettes.GoldAt((workspace:GetServerTimeNow() * Palettes.CycleSpeed) % 1)
 	end
 	return bombColors[name]
 end
@@ -93,13 +95,21 @@ local function giveBomb(player, character)
 	tool:SetAttribute("BombTool", true)
 	local colorName = player:GetAttribute("BombColor")
 	local handle = sphere("Handle", 1.2, bombPaint(colorName))
-	handle:SetAttribute("RainbowPalette", "Bomb")
-	handle:SetAttribute("RainbowPart", colorName == "Rainbow")
+	handle:SetAttribute("RainbowPalette", colorName == "Gold" and "Gold" or "Bomb")
+	handle:SetAttribute("RainbowPart", colorName == "Rainbow" or colorName == "Gold")
 	handle.CanCollide, handle.CanTouch, handle.CanQuery, handle.Massless = false, false, false, true
 	handle.Parent = tool
 	local banana
 	local function refreshSkin()
-		local selected = player:GetAttribute("BombColor") == "Banana"
+		local skin = player:GetAttribute("BombColor")
+		local selected = skin == "Banana"
+		handle:SetAttribute("RainbowPalette", skin == "Gold" and "Gold" or "Bomb")
+		handle:SetAttribute("RainbowPart", skin == "Rainbow" or skin == "Gold")
+		local solidColor = bombColors[skin]
+		if solidColor then
+			handle:SetAttribute("SolidPartColor", solidColor)
+			handle.Color = solidColor
+		end
 		if selected and not banana then
 			banana = bananaPart("BananaVisual")
 			if banana then
@@ -367,13 +377,15 @@ end
 
 local function explode(bomb, position, attacker, when)
 	-- Remove the sticky weld before any victim is ragdolled/launched.
-	local rainbow = bomb:GetAttribute("RainbowPart") == true
-	local bombColor = rainbow and bombPaint("Rainbow") or bomb:GetAttribute("ExplosionColor") or bomb.Color
+	local cycling = bomb:GetAttribute("RainbowPart") == true
+	local palette = bomb:GetAttribute("RainbowPalette")
+	local bombColor = cycling and bombPaint(palette == "Gold" and "Gold" or "Rainbow")
+		or bomb:GetAttribute("ExplosionColor") or bomb.Color
 	bomb:Destroy()
 	local radius = Config.bombRadius
 	local flash = sphere("BombBlast", 1, bombColor)
-	flash:SetAttribute("RainbowPalette", "Bomb")
-	flash:SetAttribute("RainbowPart", rainbow)
+	flash:SetAttribute("RainbowPalette", palette == "Gold" and "Gold" or "Bomb")
+	flash:SetAttribute("RainbowPart", cycling)
 	flash.Anchored, flash.CanCollide, flash.CanTouch, flash.CanQuery = true, false, false, false
 	flash.Position, flash.Transparency = position, 0.35
 	flash.Parent = workspace
@@ -464,19 +476,17 @@ Remotes.UsePush.OnServerEvent:Connect(function(player)
 	lastPush[player] = now
 	tool.Enabled = false
 	task.delay(Config.pushCooldown, function() if tool.Parent then tool.Enabled = true end end)
+	if not humanoid:FindFirstChildOfClass("Animator") then
+		Instance.new("Animator").Parent = humanoid
+	end
+	Remotes.UsePush:FireClient(player)
 	local hitbox = Instance.new("Part")
 	hitbox.Name = "PushHitbox"
 	hitbox.Size = Vector3.new(Config.pushWidth, Config.pushHeight, Config.pushRange)
-	hitbox.Material = Enum.Material.Neon
-	hitbox.Color = Color3.fromRGB(100, 230, 255)
 	hitbox.Anchored, hitbox.CanCollide, hitbox.CanTouch, hitbox.CanQuery = true, false, false, false
-	hitbox.CastShadow, hitbox.Transparency = false, 0.8
-	local followRoot = Instance.new("ObjectValue")
-	followRoot.Name, followRoot.Value = "PushRoot", root
-	followRoot.Parent = hitbox
+	hitbox.CastShadow, hitbox.Transparency = false, 1
 	hitbox.Parent = workspace
 	local duration = Config.pushActiveDuration or 0.35
-	TweenService:Create(hitbox, TweenInfo.new(duration), {Transparency = 1}):Play()
 	Debris:AddItem(hitbox, duration)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
@@ -518,8 +528,8 @@ Remotes.ThrowBomb.OnServerEvent:Connect(function(player, target)
 		if banana then bomb:Destroy() bomb = banana end
 		bomb:SetAttribute("ExplosionColor", bombColors.Banana)
 	end
-	bomb:SetAttribute("RainbowPalette", "Bomb")
-	bomb:SetAttribute("RainbowPart", colorName == "Rainbow")
+	bomb:SetAttribute("RainbowPalette", colorName == "Gold" and "Gold" or "Bomb")
+	bomb:SetAttribute("RainbowPart", colorName == "Rainbow" or colorName == "Gold")
 	local handle = tool:FindFirstChild("Handle")
 	bomb.Position = handle and handle:IsA("BasePart") and handle.Position or root.Position + Vector3.new(0, 1.5, 0)
 	-- This is a cosmetic shell driven by FastCast, never a competing physics body.

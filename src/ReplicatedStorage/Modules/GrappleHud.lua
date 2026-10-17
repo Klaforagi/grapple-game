@@ -7,6 +7,7 @@ local storage = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
 local CAS = game:GetService("ContextActionService")
 local RunService = game:GetService("RunService")
+local ContentProvider = game:GetService("ContentProvider")
 local Config = require(storage:WaitForChild("GrappleConfig"))
 local Assets = require(storage:WaitForChild("Assets"))
 local ShopUi = require(script.Parent:WaitForChild("ShopUi"))
@@ -56,6 +57,21 @@ function M.Init()
 		for key, value in pairs(properties) do instance[key] = value end
 		instance.Parent = parent
 		return instance
+	end
+	local function revealAfterImagesLoad(container, reveal)
+		task.spawn(function()
+			local images = {}
+			for _, descendant in ipairs(container:GetDescendants()) do
+				if descendant:IsA("ImageLabel") or descendant:IsA("ImageButton") then
+					table.insert(images, descendant)
+				end
+			end
+			if #images > 0 then
+				local ok, err = pcall(ContentProvider.PreloadAsync, ContentProvider, images)
+				if not ok then warn("[HUD] Could not preload menu images:", err) end
+			end
+			reveal()
+		end)
 	end
 	local screen = make("ScreenGui", playerGui, {
 		Name = "GrappleHUD", ResetOnSpawn = false, DisplayOrder = 20, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
@@ -445,9 +461,12 @@ function M.Init()
 	local settingsTitle = label(settingsHeader, "SETTINGS", UDim2.fromOffset(16, 8), UDim2.fromOffset(230, 30))
 	settingsTitle.TextSize = 20
 	local closeSettings = button(settingsHeader, "X", UDim2.fromOffset(284, 6), UDim2.fromOffset(34, 34), nil, CLOSE_RED)
+	local settingsRequest = 0
 	local function showSettings(visible)
+		settingsRequest += 1
+		local request = settingsRequest
 		settingsOpen = visible
-		settingsWindow.Visible = visible
+		settingsWindow.Visible = false
 		if visible and codexWindow then
 			codexOpen = false
 			codexWindow.Visible = false
@@ -457,6 +476,9 @@ function M.Init()
 			hideShop()
 			hideUpgrades()
 			hideAdmin()
+			revealAfterImagesLoad(settingsWindow, function()
+				if settingsRequest == request and settingsOpen then settingsWindow.Visible = true end
+			end)
 		end
 	end
 	closeSettings.Activated:Connect(function() showSettings(false) end)
@@ -634,13 +656,19 @@ function M.Init()
 		menuList.Position = UDim2.fromOffset(pos.X - origin.X, pos.Y + size.Y - origin.Y + 4)
 	end
 	local showHourly
+	local menuRequest = 0
 	local function showMenu(visible)
+		menuRequest += 1
+		local request = menuRequest
 		menuOpen = visible
-		menuList.Visible = visible
+		menuList.Visible = false
 		if visible then
 			placeMenuList()
 			if showHourly then showHourly(false) end
 			if M.dailyUi then M.dailyUi.show(false) end
+			revealAfterImagesLoad(menuList, function()
+				if menuRequest == request and menuOpen then menuList.Visible = true end
+			end)
 		end
 	end
 	local function pointerInside(gui, x, y)

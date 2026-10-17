@@ -650,7 +650,7 @@ local function restoreCharacter(state, rescued)
 			local shield = Instance.new("ForceField")
 			shield.Name = "CapsuleRescueShield"
 			shield.Parent = occupant.character
-			task.delay(Config.capsuleRescueShieldSeconds or 1, function()
+			task.delay(Config.capsuleRescueShieldSeconds or 4, function()
 				if shield.Parent then shield:Destroy() end
 			end)
 			humanoid.Sit = false

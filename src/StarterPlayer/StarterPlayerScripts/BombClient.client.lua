@@ -1,42 +1,45 @@
 local Players = game:GetService("Players")
 local Storage = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
 local Config = require(Storage:WaitForChild("GrappleConfig"))
 local Remotes = require(Storage.Modules:WaitForChild("GrappleRemotes"))
 local player = Players.LocalPlayer
 local initialized = setmetatable({}, {__mode = "k"})
 local lastRequest = -math.huge
 local lastPushRequest = -math.huge
--- Render accepted pushes against each client's current character pose rather
--- than the delayed world-space CFrame replicated for the server's visual.
-local pushVisuals = {}
-local function trackPushVisual(instance)
-	if instance:IsA("BasePart") and instance.Name == "PushHitbox" then
-		pushVisuals[instance] = true
+local pushTracks = setmetatable({}, {__mode = "k"})
+local pushAnimation = Instance.new("Animation")
+pushAnimation.AnimationId = Config.pushAnimationId
+local pushAnimationR15 = Instance.new("Animation")
+pushAnimationR15.AnimationId = Config.pushAnimationR15Id
+
+local function loadPushTrack(humanoid, animator)
+	local track = pushTracks[humanoid]
+	if not track then
+		local animation = humanoid.RigType == Enum.HumanoidRigType.R15 and pushAnimationR15 or pushAnimation
+		local ok, loaded = pcall(function() return animator:LoadAnimation(animation) end)
+		if not ok then
+			warn("[Push] Could not load animation:", loaded)
+			return
+		end
+		track = loaded
+		track.Priority = Enum.AnimationPriority.Action4
+		track.Looped = false
+		pushTracks[humanoid] = track
 	end
+	return track
 end
-workspace.ChildAdded:Connect(trackPushVisual)
-for _, child in ipairs(workspace:GetChildren()) do trackPushVisual(child) end
-RunService.RenderStepped:Connect(function()
-	for hitbox in pairs(pushVisuals) do
-		if not hitbox.Parent then
-			pushVisuals[hitbox] = nil
-			continue
-		end
-		local reference = hitbox:FindFirstChild("PushRoot")
-		local root = reference and reference.Value
-		if not root or not root.Parent then
-			hitbox.LocalTransparencyModifier = 1
-			continue
-		end
-		hitbox.LocalTransparencyModifier = 0
-		local look = root.CFrame.LookVector
-		local forward = Vector3.new(look.X, 0, look.Z)
-		forward = forward.Magnitude > 0.01 and forward.Unit or Vector3.new(0, 0, -1)
-		local center = root.Position + forward * (Config.pushRange / 2)
-		hitbox.CFrame = CFrame.lookAt(center, center + forward)
-	end
+
+Remotes.UsePush.OnClientEvent:Connect(function()
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then return end
+	local animator = humanoid:WaitForChild("Animator", 2)
+	if not animator then return end
+	local track = loadPushTrack(humanoid, animator)
+	if not track then return end
+	if track.IsPlaying then track:Stop(0) end
+	track:Play(0.05)
 end)
 
 local function push(tool)
@@ -105,6 +108,19 @@ end)
 
 local backpackConnection, characterConnection
 local function spawned(character)
+	task.spawn(function()
+		local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5)
+		if not humanoid then return end
+		local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid:WaitForChild("Animator", 5)
+		if not animator then return end
+		local deadline = os.clock() + 5
+		while player.Character == character and not character:IsDescendantOf(workspace) and os.clock() < deadline do
+			task.wait()
+		end
+		if player.Character == character and character:IsDescendantOf(workspace) then
+			loadPushTrack(humanoid, animator)
+		end
+	end)
 	if backpackConnection then backpackConnection:Disconnect() end
 	if characterConnection then characterConnection:Disconnect() end
 	local backpack = player:WaitForChild("Backpack")
